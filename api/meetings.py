@@ -3,7 +3,8 @@
 import asyncio
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Response
-from core.runtime import meeting_store, meeting_sessions
+from core.runtime import meeting_store, meeting_sessions, sessions
+from api.session_lifecycle import meeting_connection_lock, stop_and_join
 
 router = APIRouter()
 
@@ -68,7 +69,20 @@ async def save_meeting(meeting_id: str) -> dict:
 async def delete_meeting(meeting_id: str) -> dict:
     if not meeting_store.valid_id(meeting_id):
         raise HTTPException(status_code=400, detail="invalid meeting id")
-    ok = await asyncio.get_running_loop().run_in_executor(None, meeting_store.delete, meeting_id)
+    async with meeting_connection_lock(meeting_id):
+        active = meeting_sessions.get(meeting_id)
+        if active is not None:
+            if not await stop_and_join(active):
+                raise HTTPException(status_code=503, detail="active meeting is still finalizing")
+            if meeting_sessions.get(meeting_id) is active:
+                meeting_sessions.pop(meeting_id, None)
+            if sessions.get(active.id) is active:
+                sessions.pop(active.id, None)
+            try:
+                await active.ws.close(code=1000, reason="Meeting deleted")
+            except Exception:
+                pass
+        ok = await asyncio.get_running_loop().run_in_executor(None, meeting_store.delete, meeting_id)
     if not ok:
         raise HTTPException(status_code=404, detail="meeting not found")
     return {"ok": True}
@@ -85,8 +99,10 @@ async def export_meeting(
     loop = asyncio.get_running_loop()
     session = meeting_sessions.get(meeting_id)
     if session is not None:
-        # Persist the latest active session state before exporting.
-        await loop.run_in_executor(None, session.processor.request_save, 30.0)
+        # Do not export a stale snapshot after a failed save.
+        saved = await loop.run_in_executor(None, session.processor.request_save, 30.0)
+        if not saved:
+            raise HTTPException(status_code=503, detail="latest meeting state could not be saved")
     try:
         text = await loop.run_in_executor(None, meeting_store.export, meeting_id, format)
     except FileNotFoundError:

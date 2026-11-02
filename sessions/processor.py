@@ -35,6 +35,12 @@ from storage.hotwords import HotwordStore
 from inference.models import ModelManager
 from storage.speakers import SpeakerStore
 from storage.meetings import MeetingStore
+from sessions.save_queue import SaveQueue
+from observability.metrics import metrics
+from sessions.outbox import enqueue_message
+from sessions.speaker_fallback import (
+    UNIDENTIFIED_CLUSTER, fallback_speaker_id, normalized_embedding,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +101,9 @@ class SessionProcessor(threading.Thread):
         self.meeting_store = meeting_store
         self.meeting_id = meeting_id
         self.meeting_title = meeting_title
-        self._save_requested = threading.Event()
-        self._save_done = threading.Event()
+        self._save_queue = SaveQueue()
+        self._save_requested = self._save_queue.wake_event
+        self._final_save_ok = False
 
         # Handle transcripts and speaker assignments.
         self.speaker_store = speaker_store
@@ -160,53 +167,56 @@ class SessionProcessor(threading.Thread):
             # Handle transcripts and speaker assignments.
             self._finalize()
         except Exception:
+            metrics.increment("processor_crashes")
             logger.exception("session %s processor crashed", self.session_id)
             self._put({"type": "error", "message": "backend processor crashed"})
         finally:
-            self._save_requested.clear()
-            self._save_done.set()
-            self._put({"type": "closed"})
+            self._save_queue.close(succeeded=self._final_save_ok)
+            self._put({"type": "closed", "saved": self._final_save_ok})
 
     def _finalize(self) -> None:
-        if self.buffer.total_samples() <= 0 and not self.segments:
-            self._save_done.set()
-            return
         if self.buffer.seconds() >= self._final_discard_s:
             try:
                 self._cycle(final=True)
             except Exception:
-                logger.exception("session %s final cycle failed", self.session_id)
-        # Handle transcripts and speaker assignments.
-        self._do_save()
-        self._save_done.set()
+                logger.exception("session %s final transcription failed", self.session_id)
+                self._put({"type": "error", "message": "Final transcription failed; confirmed text may be incomplete"})
+        self._final_save_ok = self._do_save()
+        if not self._final_save_ok and self.meeting_store and self.meeting_id:
+            self._put({"type": "error", "message": "Unable to save the final meeting transcript"})
+        self._save_queue.close(succeeded=self._final_save_ok)
 
     # ------------------------------------------------------------ persistence
     def request_save(self, timeout: float = 30.0) -> bool:
-        """Audio transcription and speaker data handling."""
+        """Wait for this request's write to complete successfully."""
         if not self.meeting_store or not self.meeting_id:
             return False
-        self._save_requested.set()
+        if self.stopped or not self.is_alive():
+            return False
+        ticket = self._save_queue.submit()
+        if ticket is None:
+            return False
         self.buffer.wake()
-        return self._save_done.wait(timeout=timeout)
+        return ticket.completed.wait(timeout=timeout) and ticket.succeeded
 
     def _drain_save_requests(self) -> bool:
-        if not self._save_requested.is_set():
+        tickets = self._save_queue.take()
+        if not tickets:
             return False
-        try:
-            self._do_save()
-        finally:
-            self._save_requested.clear()
-            self._save_done.set()
+        succeeded = self._do_save()
+        self._save_queue.finish(tickets, succeeded)
         return True
 
-    def _do_save(self) -> None:
+    def _do_save(self) -> bool:
         if not self.meeting_store or not self.meeting_id:
-            return
+            return False
         try:
             self.meeting_store.save_state(self.snapshot_state())
             logger.info("meeting %s saved (%d segments)", self.meeting_id, len(self.segments))
+            return True
         except Exception:
             logger.exception("save meeting %s failed", self.meeting_id)
+            return False
 
     def snapshot_state(self) -> dict:
         """Audio transcription and speaker data handling."""
@@ -249,7 +259,7 @@ class SessionProcessor(threading.Thread):
                     "id": int(item["id"]),
                     "start_sample": int(item["start_sample"]),
                     "end_sample": int(item["end_sample"]),
-                    "emb": np.asarray(item["emb"], dtype=np.float32),
+                    "emb": normalized_embedding(item.get("emb")),
                     "cluster": int(item.get("cluster", -1)),
                     "speaker_id": int(item.get("speaker_id", item.get("cluster", -1))),
                     "speaker_name": item.get("speaker_name", ""),
@@ -347,9 +357,11 @@ class SessionProcessor(threading.Thread):
 
             # Handle transcripts and speaker assignments.
             seg_audio = audio[s_g - start_offset : e_g - start_offset]
-            emb = self.models.embed(seg_audio)
-            if emb is None:
-                continue
+            try:
+                emb = normalized_embedding(self.models.embed(seg_audio))
+            except Exception:
+                logger.exception("speaker embedding failed; preserving ASR text")
+                emb = None
 
             self.segments.append(
                 {
@@ -364,12 +376,10 @@ class SessionProcessor(threading.Thread):
             self._next_segment_id += 1
             local_end = max(local_end, e_g - start_offset)
             logger.info(
-                "[%s] [%.2f ~ %.2f] %s",
-                self.session_id[:8],
-                s_g / sr,
-                e_g / sr,
-                text,
+                "[%s] confirmed segment %d (%.2f ~ %.2f seconds)",
+                self.session_id[:8], self._next_segment_id - 1, s_g / sr, e_g / sr,
             )
+            metrics.increment("asr_segments_confirmed")
 
         # Handle transcripts and speaker assignments.
         if local_end > 0:
@@ -377,7 +387,11 @@ class SessionProcessor(threading.Thread):
 
         changed = False
         if self.segments:
-            self._recluster()
+            try:
+                self._recluster()
+            except Exception:
+                logger.exception("speaker clustering failed; publishing confirmed text")
+                self._fallback_labels()
             changed = self._rebuild_and_push()
 
         if not final:
@@ -397,6 +411,9 @@ class SessionProcessor(threading.Thread):
         matched: dict[int, str] = {}
         pool: list[int] = []
         for i, seg in enumerate(self.segments):
+            if seg["emb"] is None:
+                seg["cluster"] = UNIDENTIFIED_CLUSTER
+                continue
             participant_id, sim = self._match_participant(seg["emb"])
             if participant_id is not None and sim >= self.spk_threshold:
                 matched[seg["id"]] = participant_id
@@ -414,6 +431,13 @@ class SessionProcessor(threading.Thread):
 
         self._remap_speakers()
         self._assign_labels(matched)
+
+    def _fallback_labels(self) -> None:
+        """Publish all confirmed text even if clustering fails."""
+        for seg in self.segments:
+            if not isinstance(seg.get("speaker_id"), int):
+                seg["speaker_id"] = fallback_speaker_id(seg["id"])
+                seg["speaker_name"] = "Unidentified Speaker"
 
     def _match_participant(self, emb: np.ndarray) -> tuple[Optional[str], float]:
         """Audio transcription and speaker data handling."""
@@ -476,6 +500,10 @@ class SessionProcessor(threading.Thread):
                 self._participant_label_map[participant_id] = self._next_free_speaker_id()
         names = {p["id"]: p["name"] for p in self._participants}
         for seg in self.segments:
+            if seg["cluster"] == UNIDENTIFIED_CLUSTER:
+                seg["speaker_id"] = fallback_speaker_id(seg["id"])
+                seg["speaker_name"] = "Unidentified Speaker"
+                continue
             if seg["cluster"] == -1:
                 participant_id = matched.get(seg["id"])
                 stable = self._participant_label_map.get(participant_id or "", 1)
@@ -534,9 +562,9 @@ class SessionProcessor(threading.Thread):
         if loop is None or loop.is_closed():
             return
         try:
-            asyncio.run_coroutine_threadsafe(self.outbox.put(payload), loop)
-        except Exception:
-            pass
+            loop.call_soon_threadsafe(enqueue_message, self.outbox, payload)
+        except RuntimeError:
+            logger.warning("session %s outbox is no longer available", self.session_id)
 
     def _send_state(self) -> None:
         now = time.time()

@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 TEXT_SUFFIXES = {
     ".py", ".vue", ".ts", ".css", ".md", ".html",
     ".json", ".toml", ".yaml", ".yml", ".svg", ".txt",

@@ -40,9 +40,15 @@ export interface ServerState {
 
 export interface ServerClosed {
   type: 'closed'
+  saved?: boolean
 }
 
-export type ServerMessage = ServerReady | ServerTranscript | ServerState | ServerClosed
+export interface ServerError {
+  type: 'error'
+  message: string
+}
+
+export type ServerMessage = ServerReady | ServerTranscript | ServerState | ServerClosed | ServerError
 
 /* Audio processing and UI rendering. */
 export interface Segment extends TranscriptSegment {

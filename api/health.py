@@ -1,6 +1,8 @@
 """Health endpoint."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from core.runtime import infra
+from observability.metrics import metrics
 from core.runtime import settings, models, sessions, meeting_sessions
 
 router = APIRouter()
@@ -22,4 +24,12 @@ async def health() -> dict:
         "models": models.loaded_state(),
         "active_sessions": len(sessions),
         "active_meetings": len(meeting_sessions),
+        "infrastructure": infra.safe_summary(),
     }
+
+
+@router.get("/api/metrics")
+async def operational_metrics() -> dict:
+    if not infra.metrics_enabled:
+        raise HTTPException(status_code=404, detail="not found")
+    return metrics.snapshot()

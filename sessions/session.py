@@ -8,6 +8,7 @@ from audio.buffer import AudioBuffer
 from core.config import Settings
 from core.runtime import models, settings
 from sessions.processor import SessionProcessor
+from sessions.lifecycle import SessionLifecycle, SessionPhase
 from storage.meetings import MeetingStore
 from storage.speakers import SpeakerStore
 from storage.hotwords import HotwordStore
@@ -35,6 +36,7 @@ class Session:
     ):
         self.id = session_id
         self.ws = ws
+        self.lifecycle = SessionLifecycle()
         self.meeting_id = meeting_id
         self.settings = Settings(
             sample_rate=settings.sample_rate,
@@ -70,14 +72,20 @@ class Session:
         )
 
     def start(self, loop: asyncio.AbstractEventLoop, state: Optional[dict] = None) -> None:
-        self.processor.set_loop(loop)
-        if state is not None:
-            self.processor.load_state(state)
-        self.processor.load_participants()
-        self.processor.load_hotwords()
-        # Recompute labels when restoring a meeting with updated participant settings.
-        self.processor.rebuild_labels()
-        self.processor.start()
+        self.lifecycle.transition(SessionPhase.STARTING)
+        try:
+            self.processor.set_loop(loop)
+            if state is not None:
+                self.processor.load_state(state)
+            self.processor.load_participants()
+            self.processor.load_hotwords()
+            self.processor.rebuild_labels()
+            self.processor.start()
+        except Exception:
+            self.lifecycle.transition(SessionPhase.FAILED, "startup_failed")
+            raise
+        self.lifecycle.transition(SessionPhase.RUNNING)
 
     def stop(self) -> None:
+        self.lifecycle.stop()
         self.processor.stop()

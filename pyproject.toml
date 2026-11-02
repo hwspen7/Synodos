@@ -7,8 +7,12 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.141.1",
     "funasr==1.4.3",
+    "scipy-stubs~=1.18.1",
     "torch==2.7.0",
     "torchaudio==2.7.0",
     "uvicorn>=0.52.4",
     "websockets>=17.1",
 ]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary,pool]>=3.2,<4"]

@@ -19,6 +19,8 @@ from typing import Any
 import numpy as np
 
 from core.config import Settings
+from foundation.settings import InfrastructureSettings, load_infrastructure_settings
+from inference.scheduler import InferenceScheduler
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +36,13 @@ def clean_asr_text(text: str) -> str:
 class ModelManager:
     """Shared singleton model manager."""
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, infrastructure: InfrastructureSettings | None = None):
         self.settings = settings
+        limits = infrastructure or load_infrastructure_settings()
+        self._scheduler = InferenceScheduler(
+            max_queue=limits.inference_queue_size,
+            timeout_s=limits.inference_timeout_s,
+        )
         self._load_lock = threading.Lock()
         self._infer_lock = threading.Lock()
         self._asr = None
@@ -67,6 +74,9 @@ class ModelManager:
             return self._asr
 
     def transcribe(self, samples: np.ndarray, hotword: str | None = None) -> str:
+        return self._scheduler.submit("asr", lambda: self._transcribe(samples, hotword), priority=0)
+
+    def _transcribe(self, samples: np.ndarray, hotword: str | None = None) -> str:
         """Run ASR on 16 kHz mono float32 audio with VAD and punctuation."""
         if samples is None or len(samples) == 0:
             return ""
@@ -83,6 +93,13 @@ class ModelManager:
         return clean_asr_text(text)
 
     def transcribe_sentences(
+        self, samples: np.ndarray, hotword: str | None = None
+    ) -> list[dict]:
+        return self._scheduler.submit(
+            "asr_sentences", lambda: self._transcribe_sentences(samples, hotword), priority=0
+        )
+
+    def _transcribe_sentences(
         self, samples: np.ndarray, hotword: str | None = None
     ) -> list[dict]:
         """Transcribe a 16 kHz mono float32 audio window into timed sentences.
@@ -134,6 +151,9 @@ class ModelManager:
             return self._spk
 
     def embed(self, samples: np.ndarray) -> np.ndarray | None:
+        return self._scheduler.submit("embedding", lambda: self._embed(samples), priority=5)
+
+    def _embed(self, samples: np.ndarray) -> np.ndarray | None:
         """Return an L2-normalized one-dimensional float32 speaker embedding."""
         if samples is None or len(samples) == 0:
             return None
@@ -167,6 +187,9 @@ class ModelManager:
             return self._cluster
 
     def cluster(self, embeddings: np.ndarray) -> np.ndarray:
+        return self._scheduler.submit("clustering", lambda: self._cluster_embeddings(embeddings), priority=10)
+
+    def _cluster_embeddings(self, embeddings: np.ndarray) -> np.ndarray:
         """Cluster an [N, D] embedding matrix and return N integer labels."""
         if embeddings is None or len(embeddings) == 0:
             return np.empty(0, dtype=int)
@@ -191,3 +214,6 @@ class ModelManager:
         self._load_spk()
         self._load_cluster()
         logger.info("All models preloaded.")
+
+    def close(self) -> None:
+        self._scheduler.close()

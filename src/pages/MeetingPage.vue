@@ -55,6 +55,7 @@ let recorder: Awaited<ReturnType<typeof startMicRecording>> | null = null
 let clientSeq = 0
 let stickToBottom = true
 let stopRequested = false
+let realtimeError = false
 
 const statusText = computed(() => {
   switch (status.value) {
@@ -228,7 +229,7 @@ async function applyParticipants(): Promise<void> {
   error.value = ''
   try {
     showParticipants.value = false
-    await saveMeeting(true)
+    if (!(await saveMeeting(true))) return
     connect()
     showToast('Participant settings applied')
   } catch (err) {
@@ -245,7 +246,7 @@ async function applyHotwords(): Promise<void> {
   error.value = ''
   try {
     showHotwords.value = false
-    await saveMeeting(true)
+    if (!(await saveMeeting(true))) return
     connect()
     showToast('Hotword settings applied')
   } catch (err) {
@@ -346,15 +347,21 @@ function stopInternal(): void {
   micSilent.value = false
   client?.close()
   client = null
+  clientSeq += 1
 }
 
 function connect(autostart = false): void {
+  // Dispose the previous socket before attempting a new connection.
+  const previous = client
+  client = null
+  previous?.close()
   error.value = ''
   clearTranscript()
   bufferedMs.value = 0
   serverInfo.value = null
   stickToBottom = true
   stopRequested = false
+  realtimeError = false
 
   const mySeq = ++clientSeq
   client = new RealtimeClient({
@@ -379,7 +386,12 @@ function connect(autostart = false): void {
       if (clientSeq !== mySeq) return
       bufferedMs.value = ms
     },
-    onClosed: (reason) => {
+    onError: (message) => {
+      if (clientSeq !== mySeq) return
+      realtimeError = true
+      error.value = message
+    },
+    onClosed: (reason, saved) => {
       if (clientSeq !== mySeq) return
       client = null
       recording.value = false
@@ -387,9 +399,14 @@ function connect(autostart = false): void {
       recorder = null
       if (reason === 'closed') {
         status.value = 'idle'
-        if (stopRequested) showToast('Stopped and automatically saved')
+        if (saved === false) {
+          error.value = 'Final meeting save failed. Please check the server log.'
+        } else if (stopRequested && !realtimeError) {
+          showToast('Stopped and automatically saved')
+        }
       } else {
         status.value = 'disconnected'
+        if (!realtimeError) error.value = 'Connection lost before final confirmation.'
       }
       stopRequested = false
     },

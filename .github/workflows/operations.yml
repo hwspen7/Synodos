@@ -1,0 +1,21 @@
+name: Operations safety tests
+
+on:
+  push:
+    branches:
+      - refactor/flatten-project-root
+  pull_request:
+
+jobs:
+  operations-unit:
+    name: Backup integrity, restore safety, and load-test guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile operations tools
+        run: python -m compileall -q ops tests/operations
+      - name: Run offline safety tests
+        run: python -m unittest discover -s tests/operations -t . -v

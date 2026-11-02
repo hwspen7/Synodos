@@ -8,13 +8,22 @@ from __future__ import annotations
 
 import threading
 from typing import Tuple
+from foundation.settings import load_infrastructure_settings
+from observability.metrics import metrics
 
 import numpy as np
 
 
+class AudioBackpressureError(RuntimeError):
+    """The unconfirmed audio capacity has been reached."""
+
+
 class AudioBuffer:
-    def __init__(self, sample_rate: int):
+    def __init__(self, sample_rate: int, max_seconds: int | None = None):
         self.sample_rate = sample_rate
+        if max_seconds is None:
+            max_seconds = load_infrastructure_settings().max_audio_buffer_seconds
+        self._max_samples = int(sample_rate * max_seconds)
         self._chunks: list[np.ndarray] = []
         self._count = 0
         #: Absolute sample index of the first buffered sample.
@@ -27,8 +36,12 @@ class AudioBuffer:
         if arr.size == 0:
             return
         with self._cond:
+            if self._count + arr.size > self._max_samples:
+                metrics.increment("audio_overflow_rejected")
+                raise AudioBackpressureError("Audio processing is behind the recording stream")
             self._chunks.append(arr)
             self._count += arr.size
+            metrics.gauge("audio_last_buffered_seconds", self._count / self.sample_rate)
             self._cond.notify_all()
 
     def seconds(self) -> float:

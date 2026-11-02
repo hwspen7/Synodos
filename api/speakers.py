@@ -55,7 +55,16 @@ async def add_speaker_record(speaker_id: str, request: Request) -> dict:
     """Extract a voiceprint from 16 kHz mono signed 16-bit little-endian PCM."""
     if not speaker_store.valid_id(speaker_id):
         raise HTTPException(status_code=400, detail="invalid speaker id")
-    body = await request.body()
+    if request.headers.get("content-length", "").isdigit() and int(request.headers["content-length"]) > 16 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Audio upload too large")
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > 16 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Audio upload too large")
+    body = bytes(body)
+    if len(body) % 2:
+        raise HTTPException(status_code=400, detail="PCM requires an even number of bytes")
     if len(body) < 2:
         raise HTTPException(status_code=400, detail="No audio data received")
     pcm = np.frombuffer(body, dtype=np.int16).astype(np.float32) / 32768.0
