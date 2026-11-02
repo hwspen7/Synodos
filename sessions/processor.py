@@ -504,7 +504,7 @@ class SessionProcessor(threading.Thread):
                     "speaker_id", self._speaker_map.get(s["cluster"], s["cluster"])
                 ),
                 "speaker_name": s.get("speaker_name")
-                or f"Speaker {s.get('speaker_id', self._speaker_map.get(s['cluster'], s['cluster']))}"
+                or f"Speaker {s.get('speaker_id', self._speaker_map.get(s['cluster'], s['cluster']))}",
                 "start_ms": round(s["start_sample"] * 1000 / self.settings.sample_rate),
                 "end_ms": round(s["end_sample"] * 1000 / self.settings.sample_rate),
                 "text": s["text"],
