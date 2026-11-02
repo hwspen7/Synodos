@@ -16,6 +16,7 @@ from storage.meetings import MeetingStore  # noqa: E402
 
 class APIContractTests(unittest.TestCase):
     def test_http_route_contract(self) -> None:
+        """Check the effective public API, including nested FastAPI routers."""
         expected = {
             ("/api/health", "GET"), ("/api/meetings", "GET"),
             ("/api/meetings", "POST"), ("/api/meetings/{meeting_id}", "GET"),
@@ -33,25 +34,30 @@ class APIContractTests(unittest.TestCase):
             ("/api/hotwords/{hotword_id}", "PATCH"),
             ("/api/hotwords/{hotword_id}", "DELETE"),
         }
+        paths = app.openapi()["paths"]
         actual = {
-            (r.path, method)
-            for r in app.routes
-            for method in (getattr(r, "methods", None) or [])
+            (path, method.upper())
+            for path, operations in paths.items()
+            for method in operations
+            if method.upper() in {"GET", "POST", "PATCH", "PUT", "DELETE"}
         }
         self.assertTrue(
             expected <= actual,
-            f"Missing: {sorted(expected - actual)}; registered: {sorted(actual)}",
+            f"Missing operations: {sorted(expected - actual)}",
         )
 
     def test_websocket_and_openapi(self) -> None:
-        ws_paths = {r.path for r in app.routes if r.__class__.__name__ == "APIWebSocketRoute"}
-        self.assertIn(
-            "/ws/audio", ws_paths,
-            f"Registered routes: {[(type(r).__name__, r.path) for r in app.routes]}",
-        )
-        self.assertIn("/api/meetings", app.openapi()["paths"])
-        self.assertIn("/api/speakers", app.openapi()["paths"])
+        """Check the websocket declaration without assuming flattened app.routes."""
+        from api.websocket import router as websocket_router
 
+        websocket_paths = {
+            route.path for route in websocket_router.routes
+            if route.__class__.__name__ == "APIWebSocketRoute"
+        }
+        self.assertIn("/ws/audio", websocket_paths)
+        schema = app.openapi()
+        self.assertIn("/api/meetings", schema["paths"])
+        self.assertIn("/api/speakers", schema["paths"])
 
 class StorageTests(unittest.TestCase):
     def test_save_resume_and_export(self) -> None:
