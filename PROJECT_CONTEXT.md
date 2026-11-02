@@ -63,50 +63,40 @@
 
 前端声明 Vue `^3.5.40`、Vue Router `^4.6.4`、Vite `^8.1.5`、TypeScript `~6.0.0`；这些是声明范围，精确解析以锁文件为准。FastAPI 声明 `>=0.141.1`，Uvicorn 声明 `>=0.52.4`。
 
-当前目录确实存在两层同名目录，操作时不要少进入一层：
+前后端现在共用仓库根目录，以下是新的布局：
 
 ```text
 meeting/
-├─ PROJECT_CONTEXT.md              本文档
-├─ backend/
-│  └─ backend/                     后端实际工作目录
-│     ├─ pyproject.toml
-│     ├─ uv.lock
-│     ├─ app/
-│     │  ├─ main.py                HTTP / WebSocket 入口、会话管理
-│     │  ├─ config.py              配置、模型名与缓存路径解析
-│     │  ├─ buffer.py              线程安全音频缓冲与采样点偏移
-│     │  ├─ models.py              ASR、声纹、聚类模型管理
-│     │  ├─ processor.py           每会话后台处理、标签、保存与恢复
-│     │  ├─ store.py               会议存储、段落生成与导出
-│     │  ├─ speaker_store.py       声纹库
-│     │  └─ hotword_store.py       热词库
-│     ├─ meetings/                默认会议数据目录
-│     ├─ speakers/                默认声纹库目录
-│     ├─ hotwords/                默认热词库目录
-│     ├─ models_cache/            已存在模型缓存目录
-│     ├─ example/                 音频示例和手工验证脚本
-│     └─ uv-bin/                  当前目录附带 uv 工具
-└─ frontend/
-   └─ frontend/                   前端实际工作目录
-      ├─ package.json
-      ├─ pnpm-lock.yaml
-      ├─ vite.config.ts
-      └─ src/
-         ├─ App.vue、main.ts
-         ├─ router/index.ts       页面路由
-         ├─ types.ts              业务及通信类型
-         ├─ api/client.ts         HTTP API 封装
-         ├─ api/ws.ts             RealtimeClient
-         ├─ audio/recorder.ts     麦克风生命周期、电平
-         ├─ audio/pcm-processor.ts AudioWorklet 与 PCM 转换
-         ├─ speaker/clustering.ts 仅将说话人 ID 映射成颜色
-         ├─ components/           图标、声纹添加组件
-         ├─ pages/                首页、会议、说话人、热词页面
-         └─ assets/main.css       全局样式
+├─ app/                            后端 FastAPI 业务源码
+│  ├─ main.py                      HTTP / WebSocket、会话管理
+│  ├─ config.py                    配置与模型路径
+│  ├─ buffer.py                    音频缓冲
+│  ├─ models.py                    ASR、声纹、聚类模型
+│  ├─ processor.py                 后台处理与保存恢复
+│  ├─ store.py                     会议存储与导出
+│  ├─ speaker_store.py             声纹库
+│  └─ hotword_store.py             热词库
+├─ example/                        手动验证脚本
+├─ src/                            Vue 前端源码
+│  ├─ App.vue、main.ts
+│  ├─ router/index.ts
+│  ├─ types.ts
+│  ├─ api/client.ts、api/ws.ts
+│  ├─ audio/recorder.ts、pcm-processor.ts
+│  ├─ speaker/clustering.ts
+│  ├─ components/
+│  ├─ pages/
+│  └─ assets/main.css
+├─ public/                         前端静态资源
+├─ index.html、vite.config.ts      前端入口与开发代理
+├─ package.json、pnpm-lock.yaml    前端依赖
+├─ pyproject.toml、uv.lock         后端依赖
+├─ tsconfig.json 等                TypeScript 配置
+├─ README.md
+└─ PROJECT_CONTEXT.md
 ```
 
-依赖缓存、模型文件、日志、示例音频不是业务源码。后端 README 当前为空，前端 README 主要保留了 Vue/Vite 模板说明。
+依赖缓存、模型文件、日志、示例音频不是业务源码。仓库统一使用根目录 README.md，原先的空后端 README 和前端模板 README 已移除。
 
 ## 4. 系统架构和音频处理流程
 
@@ -310,19 +300,19 @@ transcript 示例（演示数据）：
 后端 PowerShell 终端：
 
 ```powershell
-Set-Location E:\Personal_Project\meeting\backend\backend
+Set-Location E:\Personal_Project\meeting
 uv sync
-# 当前缓存包含 models 子目录；使用前确认内部 iic/... 与模型仓库布局一致。
+# 只有已将模型缓存迁移到根目录时才设置以下路径，请核对内部 iic/... 层级。
 $env:MODELSCOPE_CACHE = Join-Path (Get-Location) 'models_cache\models'
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-如果 uv 未加入 PATH，当前目录附带 `uv-bin\uv.exe`，可用 `& .\uv-bin\uv.exe sync` 及 `& .\uv-bin\uv.exe run uvicorn app.main:app --host 127.0.0.1 --port 8000`。模型缓存不完整时仍可能下载模型；“本地推理”不等于首次启动无需网络。
+如果 uv 未加入 PATH，请先安装 uv 或指定本机已有的 uv 可执行文件。旧目录里的 uv-bin 不属于仓库管理文件，Git 不会自动搬迁。模型缓存不完整时仍可能下载模型；“本地推理”不等于首次启动无需网络。
 
 前端另开终端：
 
 ```powershell
-Set-Location E:\Personal_Project\meeting\frontend\frontend
+Set-Location E:\Personal_Project\meeting
 pnpm install
 pnpm dev
 ```
@@ -335,11 +325,15 @@ pnpm dev
 
 开发代理不会自动变成生产部署配置。正式部署需要安排静态文件服务、Vue history 路由回退、`/api` 转发和 WebSocket 升级转发；当前没有看到完整部署脚本。
 
+### 11.1 从旧目录迁移
+
+本次仅将 Git 管理的源码从 `backend/backend/` 与 `frontend/frontend/` 合并到根目录。现有本地 `meetings/`、`speakers/`、`hotwords/`、`models_cache/`、`.venv/`、`node_modules/`、`uv-bin/` 均被忽略，不会自动搬迁。迁移前停止旧服务，分别移动要保留的数据至新根目录，避免覆盖既有数据，然后在根目录重新运行 `uv sync` 和 `pnpm install`。
+
 ## 12. 测试资料与验证边界
 
 `example/stream_test.py` 读取示例 WAV、转单声道、重采样、拼接语音与静音，通过 WebSocket 推送并打印片段/段落，属于手动集成验证工具；它默认不带 meeting_id，因此不验证会议保存流程。其发送节奏也不是严格按真实音频时长播放。
 
-`example/test_stt.py` 用 FunASR 直接处理示例音频，属于模型可用性演示。它当前使用 `from backend.app.config import resolve_model`，与实际后端入口 `app.main:app` 的目录布局可能不一致，执行前需要核对导入路径。
+`example/test_stt.py` 用 FunASR 直接处理示例音频，属于模型可用性演示。其配置导入已更正为 `from app.config import resolve_model`，应从仓库根目录运行。
 
 这些脚本不等于系统性的自动化测试。当前业务目录没有看到覆盖保存续记、并发和协议的完整测试套件。本次没有验证现有日志是否仍能代表当前运行状态。
 

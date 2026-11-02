@@ -4,7 +4,7 @@
 （与前端段落视图一致）后打印。
 
 用法：
-  1. 先启动后端：cd backend && uvicorn app.main:app --port 8000
+  1. 从仓库根目录启动后端：uv run uvicorn app.main:app --port 8000
   2. python example/stream_test.py
 """
 

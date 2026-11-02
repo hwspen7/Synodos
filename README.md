@@ -6,12 +6,31 @@
 
 完整架构、接口、配置和使用说明见 [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)。
 
+## 统一根目录结构
+
+```text
+meeting/
+├─ app/                 后端 Python 源码
+├─ example/             后端手动测试
+├─ src/                 前端 Vue 源码
+├─ public/              前端静态资源
+├─ index.html
+├─ vite.config.ts
+├─ package.json
+├─ pnpm-lock.yaml
+├─ pyproject.toml
+├─ uv.lock
+├─ README.md
+└─ PROJECT_CONTEXT.md
+```
+
+前后端共享同一个工作目录，无需再进入 `backend` 或 `frontend` 子目录。
+
 ## 本地开发
 
 后端（Python ≥3.12，已安装 uv）：
 
 ```powershell
-cd backend/backend
 uv sync
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
@@ -21,12 +40,15 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 前端（Node `^22.18.0 || >=24.12.0`，已安装 pnpm），另开终端：
 
 ```powershell
-cd frontend/frontend
 pnpm install
 pnpm dev
 ```
 
 打开 Vite 输出的地址并允许麦克风权限。开发代理将 `/api`、`/ws` 转发到后端 8000 端口。
+
+## 从旧目录迁移
+
+本次将原 `backend/backend/`、`frontend/frontend/` 中的源码合并到仓库根目录。若本机已保存会议和声纹等业务数据，须在停止旧服务后，手动把原 `backend/backend/meetings/`、`speakers/`、`hotwords/` 迁移到根目录下的同名目录。模型缓存也需按实际存放位置迁移或重新配置 `MODELSCOPE_CACHE`，不要覆盖现有数据。Git 不会自动搬迁被忽略的本地文件。
 
 ## 仓库内容
 
@@ -34,4 +56,4 @@ pnpm dev
 
 运行时自动创建默认数据目录。项目不保存原始会议录音；导出的 JSON 不包含完整续记状态。
 
-`backend/backend/example/stream_test.py` 默认引用的示例 WAV 未纳入仓库，运行时请通过 `--wav` 指定自己的音频文件。
+`example/stream_test.py` 默认引用的示例 WAV 未纳入仓库，运行时请通过 `--wav` 指定自己的音频文件。
