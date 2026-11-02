@@ -14,13 +14,13 @@ from sessions.session import Session
 router = APIRouter()
 
 async def _outbox_forwarder(session: Session) -> None:
-    """把处理线程产生的消息按序发送给前端。"""
+    """Forward messages from the processor thread to the client in order."""
     while True:
         payload = await session.outbox.get()
         try:
             await session.ws.send_text(json.dumps(payload, ensure_ascii=False))
         except Exception:
-            # 客户端已断开：停止转发，处理线程的 _put 会静默丢弃后续消息
+            # Stop forwarding after client disconnection; processor messages may be dropped.
             return
 
 @router.websocket("/ws/audio")
@@ -54,21 +54,21 @@ async def ws_audio(
             meta = (loaded_state or {}).get("meta") or {}
             meeting_title = meta.get("title") or meeting_title
         else:
-            # 新会议：先建一条记录，结束/保存时再写入音频与识别状态
+            # Create the meeting record now; persist transcription state on save or stop.
             await loop.run_in_executor(None, meeting_store.create, meeting_id, title or "")
-        # 同一会议已有活动会话时，先关掉旧的
+        # Stop an existing active session for the same meeting.
         old = meeting_sessions.get(meeting_id)
         if old is not None:
             old.stop()
             meeting_sessions.pop(meeting_id, None)
 
-    # 会议参与者：优先使用前端显式传入的选择，否则回退到会议已保存的设置
+    # Explicitly selected participants take precedence over saved settings.
     if participants is not None:
         participant_ids = [p.strip() for p in participants.split(",") if p.strip()]
     else:
         participant_ids = list((loaded_state or {}).get("participant_ids") or [])
     participants_explicit = participants is not None
-    # 热词库：优先使用前端显式传入的选择，否则回退到会议已保存的设置
+    # Explicitly selected hotword libraries take precedence over saved settings.
     if hotwords is not None:
         hotword_ids = [h.strip() for h in hotwords.split(",") if h.strip()]
     else:
@@ -148,7 +148,7 @@ async def ws_audio(
                     except json.JSONDecodeError:
                         ctrl = {}
                     if ctrl.get("type") == "stop":
-                        # 前端主动收尾：处理完剩余音频后关闭
+                        # Finish processing the remaining buffered audio before closing.
                         stop_requested = True
                         break
             elif kind == "websocket.disconnect":
@@ -156,11 +156,11 @@ async def ws_audio(
     except WebSocketDisconnect:
         pass
     finally:
-        # 触发处理器收尾（自动保存 + 把窗口剩余语音也确认掉），等它推完再关闭连接
+        # Trigger final transcription and saving, then wait for outgoing messages.
         session.stop()
-        # join 放 executor，避免阻塞事件循环导致 WebSocket 心跳超时
+        # Join in an executor to avoid blocking WebSocket heartbeats.
         await asyncio.get_running_loop().run_in_executor(None, session.processor.join, 120)
-        # 给转发器一点时间把收尾消息（最终 transcript / closed）发完
+        # Give the forwarder time to deliver the final transcript and closed message.
         drain_deadline = time.monotonic() + 5.0
         while not session.outbox.empty() and time.monotonic() < drain_deadline:
             await asyncio.sleep(0.05)

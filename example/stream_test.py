@@ -1,10 +1,10 @@
-"""通过 WebSocket 向后端实时推送示例音频，验证 VAD -> 聚类 -> ASR 全流程。
+"""Stream audio through the backend WebSocket for ASR verification.
 
-后端只推送可信段列表；脚本按“同说话人 + 相邻间隔 < merge_gap_s”本地合并为段落
-（与前端段落视图一致）后打印。
+The server sends confirmed segments. This script joins nearby segments
+from the same speaker into paragraphs, as the frontend does.
 
-用法：
-  1. 从仓库根目录启动后端：uv run uvicorn main:app --port 8000
+Usage:
+    1. Launch backend from repository root: uv run uvicorn main:app --port 8000
   2. python example/stream_test.py
 """
 
@@ -19,7 +19,7 @@ from scipy.signal import resample_poly
 
 
 def build_paragraphs(segments: list[dict], merge_gap_s: float = 2.0) -> list[dict]:
-    """由可信段生成段落：同一说话人 + 间隔小于 merge_gap_s 才合并（与前端一致）。"""
+    """Group confirmed segments by speaker and merge_gap_s."""
     gap_ms = int(merge_gap_s * 1000)
     paras: list[dict] = []
     for seg in sorted(segments, key=lambda s: s["start_ms"]):
@@ -57,7 +57,7 @@ async def main() -> None:
     if sr != 16000:
         audio = resample_poly(audio, 16000, sr).astype("float32")
 
-    # 拼接：语音段 + 静音 两次，模拟“说一句话、停顿一下”
+    # Simulate speech followed by silence.
     speech = audio[: int(args.segment_s * 16000)]
     silence = np.zeros(int(args.silence_s * 16000), dtype=np.float32)
     stream = np.concatenate([speech, silence, speech, silence])
@@ -77,13 +77,13 @@ async def main() -> None:
                     segments = msg["segments"]
                     paragraphs = build_paragraphs(segments, merge_gap_s)
                     print(
-                        f"[transcript v{msg['version']}] {len(segments)} 片段 / "
-                        f"{len(paragraphs)} 段"
+                        f"[transcript v{msg['version']}] {len(segments)} segments / "
+                        f"{len(paragraphs)} paragraphs"
                     )
                     for p in paragraphs:
-                        text = p["text"] or "（无内容）"
+                        text = p["text"] or "(No content)"
                         print(
-                            f"  [说话人{p['speaker_id']}] "
+                            f"  [Speaker {p['speaker_id']}] "
                             f"{p['start_ms']}ms-{p['end_ms']}ms: {text}"
                         )
                 elif kind == "state":
@@ -97,7 +97,7 @@ async def main() -> None:
         for i in range(0, len(pcm), chunk):
             await ws.send(pcm[i : i + chunk].tobytes())
             await asyncio.sleep(0.02)
-        # 请求收尾：后端处理剩余音频后推送最终 transcript 并关闭
+        # Request final processing and wait for the server to close.
         await asyncio.sleep(0.5)
         await ws.send(json.dumps({"type": "stop"}))
         try:

@@ -59,15 +59,15 @@ let stopRequested = false
 const statusText = computed(() => {
   switch (status.value) {
     case 'connecting':
-      return '连接中…'
+      return 'Connecting...'
     case 'recording':
-      return '录音中'
+      return 'Recording'
     case 'stopping':
-      return '收尾中…'
+      return 'Finishing...'
     case 'disconnected':
-      return '连接已断开'
+      return 'Disconnected'
     default:
-      return '未开始'
+      return 'Not started'
   }
 })
 
@@ -76,7 +76,7 @@ const statusClass = computed(() => {
   return status.value === 'disconnected' ? 'bad' : 'muted'
 })
 
-/** 段落视图由片段在本地分组生成：同说话人 + 相邻间隔小于 merge_gap。 */
+/** Group neighboring same-speaker segments locally into paragraphs. */
 const paragraphs = computed<Paragraph[]>(() => buildParagraphs(segments.value))
 const displayed = computed<Array<Segment | Paragraph>>(() =>
   viewMode.value === 'paragraph' ? paragraphs.value : segments.value,
@@ -122,7 +122,7 @@ function mergeGapMs(): number {
   return Math.round((mergeGapS.value || 2) * 1000)
 }
 
-/** 由可信段生成段落：同一说话人 + 间隔小于 merge_gap 才合并。 */
+/** Merge adjacent segments with matching speakers and short gaps. */
 function buildParagraphs(segs: Segment[]): Paragraph[] {
   const ordered = [...segs].sort((a, b) => a.start_ms - b.start_ms)
   const gap = mergeGapMs()
@@ -153,7 +153,7 @@ function buildParagraphs(segs: Segment[]): Paragraph[] {
   return paras
 }
 
-/** 后端每次聚类结果变化都会推送完整 segment 快照，这里整体替换片段列表。 */
+/** Replace the entire segment list when the backend sends a snapshot. */
 function applyTranscript(msg: ServerTranscript): void {
   const segs: Segment[] = msg.segments.map((s) => ({
     ...s,
@@ -176,7 +176,7 @@ async function saveMeeting(quiet = false): Promise<boolean> {
   saving.value = true
   try {
     await meetingsApi.save(props.id)
-    if (!quiet) showToast('已保存到磁盘')
+    if (!quiet) showToast('Saved to disk')
     return true
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
@@ -186,7 +186,7 @@ async function saveMeeting(quiet = false): Promise<boolean> {
   }
 }
 
-/** 读取会议已保存的参与者配置 + 声纹库列表（连接前初始化）。 */
+/** Load saved participant selections and speaker records before connecting. */
 async function loadMeetingConfig(): Promise<void> {
   try {
     const { meeting } = await meetingsApi.get(props.id)
@@ -194,7 +194,7 @@ async function loadMeetingConfig(): Promise<void> {
     selectedHotwordIds.value = meeting.hotword_ids ?? []
     spkThreshold.value = meeting.spk_threshold ?? 0.3
   } catch {
-    // 新会议尚无配置，使用默认值（阈值 0.3、不选参与者/热词库）
+    // Use default threshold 0.3 and empty participant/hotword selections.
     selectedParticipantIds.value = []
     selectedHotwordIds.value = []
     spkThreshold.value = 0.3
@@ -221,7 +221,7 @@ function toggleHotword(id: string): void {
   selectedHotwordIds.value = [...next]
 }
 
-/** 应用参与者配置：保存到会议并重连（重连后后端按新配置重算标签）。 */
+/** Save participants and reconnect to update speaker labels. */
 async function applyParticipants(): Promise<void> {
   if (recording.value || applying.value) return
   applying.value = true
@@ -230,7 +230,7 @@ async function applyParticipants(): Promise<void> {
     showParticipants.value = false
     await saveMeeting(true)
     connect()
-    showToast('已应用参与者设置')
+    showToast('Participant settings applied')
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -238,7 +238,7 @@ async function applyParticipants(): Promise<void> {
   }
 }
 
-/** 应用热词库配置：保存到会议并重连（重连后后端按新热词识别）。 */
+/** Save hotword selections and reconnect with new recognition terms. */
 async function applyHotwords(): Promise<void> {
   if (recording.value || applying.value) return
   applying.value = true
@@ -247,7 +247,7 @@ async function applyHotwords(): Promise<void> {
     showHotwords.value = false
     await saveMeeting(true)
     connect()
-    showToast('已应用热词库设置')
+    showToast('Hotword settings applied')
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -259,12 +259,12 @@ async function exportMeeting(format: 'md' | 'json'): Promise<void> {
   const ok = await saveMeeting(true)
   if (!ok) return
   downloadUrl(meetingsApi.exportUrl(props.id, format))
-  showToast(format === 'md' ? '已导出 Markdown 文件' : '已导出 JSON 文件')
+  showToast(format === 'md' ? 'Markdown exported' : 'JSON exported')
 }
 
 async function copyTranscript(): Promise<void> {
   const text = displayed.value
-    .map((item) => `[${item.speaker_name || `说话人${item.speaker_id}`}] ${item.text}`)
+    .map((item) => `[${item.speaker_name || `Speaker ${item.speaker_id}`}] ${item.text}`)
     .join('\n')
   if (!text) return
   try {
@@ -277,7 +277,7 @@ async function copyTranscript(): Promise<void> {
     document.execCommand('copy')
     document.body.removeChild(ta)
   }
-  showToast('已复制全文')
+  showToast('Transcript copied')
 }
 
 function clearTranscript(): void {
@@ -297,7 +297,7 @@ async function startMic(): Promise<void> {
       16000,
       (level) => {
         micLevel.value = level
-        // 连续静音约 1.5 秒才提示（每块约 2.7ms，550 块 ≈ 1.5s）
+        // Warn after about 1.5 seconds of continuous microphone silence.
         if (level < 0.0003) {
           silentCount++
           if (silentCount > 550) micSilent.value = true
@@ -321,13 +321,13 @@ function start(): void {
     void startMic()
     return
   }
-  // 连接已断开（例如刚结束录音）：重新连接同一会议，恢复已有记录并自动继续录音
+  // Reconnect to resume the meeting after the previous session ends.
   error.value = ''
   connect(true)
 }
 
 function stop(): void {
-  // 停麦后让服务端收尾：处理剩余音频、自动保存、推送最终 transcript 后由服务端关闭
+  // Wait for final processing and automatic saving before closing.
   recording.value = false
   stopRequested = true
   recorder?.stop()
@@ -362,13 +362,13 @@ function connect(autostart = false): void {
     onReady: (msg) => {
       if (clientSeq !== mySeq) return
       serverInfo.value = msg
-      meetingTitle.value = msg.title ?? '未命名会议'
+      meetingTitle.value = msg.title ?? 'Untitled Meeting'
       mergeGapS.value = msg.merge_gap_s || 2
       if (msg.participant_ids) selectedParticipantIds.value = msg.participant_ids
       if (msg.hotword_ids) selectedHotwordIds.value = msg.hotword_ids
       if (msg.spk_threshold !== undefined) spkThreshold.value = msg.spk_threshold
       status.value = 'idle'
-      // 从首页「新建/继续」进入，或结束录音后再次点击「开始录音」时自动开始录音
+      // Start automatically on create, resume, or restart.
       if (autostart || route.query.autostart === '1') void startMic()
     },
     onTranscript: (msg) => {
@@ -387,7 +387,7 @@ function connect(autostart = false): void {
       recorder = null
       if (reason === 'closed') {
         status.value = 'idle'
-        if (stopRequested) showToast('已停止并自动保存到磁盘')
+        if (stopRequested) showToast('Stopped and automatically saved')
       } else {
         status.value = 'disconnected'
       }
@@ -435,26 +435,26 @@ onBeforeUnmount(() => stopInternal())
       <div class="meeting-head-left">
         <button class="btn btn-ghost btn-sm" @click="router.push('/')">
           <AppIcon name="arrow-left" :size="16" />
-          返回首页
+          Back to Home
         </button>
         <div>
-          <h1 class="meeting-title">{{ meetingTitle || '未命名会议' }}</h1>
+          <h1 class="meeting-title">{{ meetingTitle || 'Untitled Meeting' }}</h1>
           <p class="meeting-sub">
             <span class="status-chip" :class="statusClass">
               <span class="status-dot" aria-hidden="true"></span>{{ statusText }}
             </span>
-            <span v-if="recording" class="mic-level" :title="`麦克风电平 ${(micLevel * 100).toFixed(1)}%`">
+            <span v-if="recording" class="mic-level" :title="`Microphone level ${(micLevel * 100).toFixed(1)}%`">
               <span class="mic-level-bar" :style="{ width: Math.min(100, micLevel * 300) + '%' }"></span>
             </span>
-            <span v-if="serverInfo">缓冲 {{ (bufferedMs / 1000).toFixed(1) }}s</span>
-            <span>片段 {{ transcriptMeta.segments }} · 段落 {{ transcriptMeta.paragraphs }}</span>
+            <span v-if="serverInfo">Buffered {{ (bufferedMs / 1000).toFixed(1) }}s</span>
+            <span>Segments {{ transcriptMeta.segments }} · Paragraphs {{ transcriptMeta.paragraphs }}</span>
             <span v-if="participantNames.length > 0" class="participant-chip">
               <AppIcon name="users" :size="13" />
-              参与者：{{ participantNames.join('、') }}
+              Participants: {{ participantNames.join(', ') }}
             </span>
             <span v-if="hotwordNames.length > 0" class="hotword-chip">
               <AppIcon name="flame" :size="13" />
-              热词库：{{ hotwordNames.join('、') }}
+              Hotword Libraries: {{ hotwordNames.join(', ') }}
             </span>
           </p>
         </div>
@@ -462,26 +462,26 @@ onBeforeUnmount(() => stopInternal())
       <div class="meeting-actions">
         <button class="btn btn-ghost" :disabled="saving" @click="saveMeeting()">
           <AppIcon name="save" :size="16" />
-          {{ saving ? '保存中…' : '保存会议' }}
+          {{ saving ? 'Saving...' : 'Save Meeting' }}
         </button>
         <button class="btn btn-ghost" @click="exportMeeting('md')">
           <AppIcon name="download" :size="16" />
-          导出 MD
+          Export MD
         </button>
         <button class="btn btn-ghost" @click="exportMeeting('json')">
           <AppIcon name="file-text" :size="16" />
-          导出 JSON
+          Export JSON
         </button>
         <button class="btn btn-primary" :class="{ danger: recording }" @click="recording ? stop() : start()">
           <AppIcon :name="recording ? 'stop' : 'mic'" :size="16" />
-          {{ recording ? '停止录音' : '开始录音' }}
+          {{ recording ? 'Stop Recording' : 'Start Recording' }}
         </button>
       </div>
     </div>
 
     <div class="meeting-controls">
-      <label class="field" title="缓冲音频达到该时长时触发一轮识别处理">
-        处理阈值（秒）
+      <label class="field" title="Trigger recognition when this audio duration is buffered.">
+        Processing Window (s)
         <input
           v-model.number="vadThreshold"
           type="number"
@@ -491,8 +491,8 @@ onBeforeUnmount(() => stopInternal())
           :disabled="recording"
         />
       </label>
-      <label class="field" title="句子结束点距缓冲区末尾超过该时长才确认为可信段">
-        确认阈值（秒）
+      <label class="field" title="Confirm a sentence after this trailing audio delay.">
+        Confirmation Delay (s)
         <input
           v-model.number="recThreshold"
           type="number"
@@ -508,29 +508,29 @@ onBeforeUnmount(() => stopInternal())
         :disabled="segments.length === 0"
         @click="toggleView"
       >
-        {{ viewMode === 'paragraph' ? '片段视图' : '段落视图' }}
+        {{ viewMode === 'paragraph' ? 'Segment View' : 'Paragraph View' }}
       </button>
       <button class="btn btn-ghost" :disabled="displayed.length === 0" @click="copyTranscript">
-        复制全文
+        Copy Transcript
       </button>
       <button
         class="btn btn-ghost"
-        :title="recording ? '停止录音后才能修改参与者' : '选择声纹库中的说话人作为会议参与者'"
+        :title="recording ? 'Stop recording before changing participants' : 'Select enrolled speakers as participants'"
         @click="showParticipants = true"
       >
         <AppIcon name="users" :size="15" />
-        参与者{{ selectedParticipantIds.length > 0 ? `（${selectedParticipantIds.length} 人 · ${spkThreshold}）` : '' }}
+        Participants{{ selectedParticipantIds.length > 0 ? `(${selectedParticipantIds.length} people · ${spkThreshold})` : '' }}
       </button>
       <button
         class="btn btn-ghost"
-        :title="recording ? '停止录音后才能修改热词库' : '选择热词库，识别时优先输出热词'"
+        :title="recording ? 'Stop recording before changing hotwords' : 'Select hotwords for speech recognition'"
         @click="showHotwords = true"
       >
         <AppIcon name="flame" :size="15" />
-        热词库{{ selectedHotwordIds.length > 0 ? `（${selectedHotwordIds.length} 个）` : '' }}
+        Hotwords{{ selectedHotwordIds.length > 0 ? `(${selectedHotwordIds.length} items)` : '' }}
       </button>
       <button class="btn btn-ghost" :disabled="segments.length === 0" @click="clearTranscript">
-        清空
+        Clear
       </button>
     </div>
 
@@ -539,11 +539,11 @@ onBeforeUnmount(() => stopInternal())
     <main ref="transcriptEl" class="transcript" @scroll="onTranscriptScroll">
       <div v-if="segments.length === 0" class="empty-state">
         <div class="empty-icon"><AppIcon name="mic" :size="26" /></div>
-        <h3>{{ recording ? '正在聆听…' : '还没有内容' }}</h3>
-        <p v-if="!recording">点击「开始录音」并允许麦克风权限；说完一句话并停顿 2 秒以上即可生成片段。</p>
-        <p v-else>说完一句话并停顿 2 秒以上即可生成片段。</p>
+        <h3>{{ recording ? 'Listening...' : 'No transcript yet' }}</h3>
+        <p v-if="!recording">Start recording and pause at least two seconds after speaking.</p>
+        <p v-else>Pause for two seconds after speaking to create a segment.</p>
         <p v-if="recording && micSilent" class="hint-text warn-text" style="margin-top:8px">
-          未检测到麦克风输入，请检查浏览器是否已授权麦克风、系统麦克风是否开启且未静音。
+          No microphone input detected. Check browser permission and system microphone settings.
         </p>
       </div>
 
@@ -551,10 +551,10 @@ onBeforeUnmount(() => stopInternal())
         <article v-for="seg in segments" :key="seg.id" class="segment">
           <div class="para-head">
             <span class="speaker-dot" :style="{ background: seg.color }"></span>
-            <span class="speaker-name">{{ seg.speaker_name || `说话人${seg.speaker_id}` }}</span>
+            <span class="speaker-name">{{ seg.speaker_name || `Speaker ${seg.speaker_id}` }}</span>
             <span class="para-time">{{ formatTime(seg.start_ms) }} – {{ formatTime(seg.end_ms) }}</span>
           </div>
-          <p class="para-text">{{ seg.text || '（此段暂无内容）' }}</p>
+          <p class="para-text">{{ seg.text || '(No content in this segment)' }}</p>
         </article>
       </template>
 
@@ -562,23 +562,23 @@ onBeforeUnmount(() => stopInternal())
         <article v-for="para in paragraphs" :key="para.id" class="paragraph">
           <div class="para-head">
             <span class="speaker-dot" :style="{ background: para.color }"></span>
-            <span class="speaker-name">{{ para.speaker_name || `说话人${para.speaker_id}` }}</span>
+            <span class="speaker-name">{{ para.speaker_name || `Speaker ${para.speaker_id}` }}</span>
             <span v-if="para.segmentIds.length > 1" class="seg-count">
-              {{ para.segmentIds.length }} 段
+              {{ para.segmentIds.length }} segments
             </span>
             <span class="para-time">{{ formatTime(para.start_ms) }} – {{ formatTime(para.end_ms) }}</span>
           </div>
-          <p class="para-text">{{ para.text || '（此段暂无内容）' }}</p>
+          <p class="para-text">{{ para.text || '(No content in this segment)' }}</p>
         </article>
       </template>
     </main>
 
     <div v-if="showParticipants" class="dialog-backdrop" @click.self="showParticipants = false">
       <div class="dialog dialog-wide">
-        <h3>会议参与者</h3>
+        <h3>Meeting Participants</h3>
         <p class="dialog-sub">
-          选中声纹库中的说话人作为参与者。识别时每个片段先与参与者的全部声纹做余弦匹配，
-          相似度达到阈值即标注为该参与者姓名，其余片段进入聚类并标记为“未知说话人N”。
+          Select enrolled participants. Each segment is matched against their voiceprints.
+          Matched segments use participant names. Unmatched segments are clustered.
         </p>
         <div class="participant-list">
           <label
@@ -594,15 +594,15 @@ onBeforeUnmount(() => stopInternal())
             />
             <span class="speaker-avatar">{{ spk.name.slice(0, 1) }}</span>
             <span class="participant-name">{{ spk.name }}</span>
-            <span class="muted-text">{{ spk.vector_count }} 条声纹</span>
+            <span class="muted-text">{{ spk.vector_count }} voiceprints</span>
           </label>
           <div v-if="speakers.length === 0" class="empty-state small">
-            <p>声纹库为空，请先在首页「新建说话人」中添加声纹样本。</p>
+            <p>No enrolled voiceprints. Add a speaker first.</p>
           </div>
         </div>
         <div class="threshold-row">
           <label class="field">
-            匹配阈值
+            Match Threshold
             <input
               v-model.number="spkThreshold"
               type="number"
@@ -612,20 +612,20 @@ onBeforeUnmount(() => stopInternal())
             />
           </label>
           <span class="muted-text">
-            相似度 ≥ 阈值时直接标注为参与者（默认 0.3）；调低更容易命中，调高则更多进入未知说话人。
+            The default threshold is 0.3. Lower values match more readily.
           </span>
         </div>
         <p v-if="recording" class="hint-text warn-text">
-          录音中不能修改参与者，请先停止录音。
+          Stop recording before changing participants.
         </p>
         <div class="dialog-actions">
-          <button class="btn btn-ghost" @click="showParticipants = false">取消</button>
+          <button class="btn btn-ghost" @click="showParticipants = false">Cancel</button>
           <button
             class="btn btn-primary"
             :disabled="recording || applying"
             @click="applyParticipants"
           >
-            {{ applying ? '应用中…' : '应用并重连' }}
+            {{ applying ? 'Applying...' : 'Apply and Reconnect' }}
           </button>
         </div>
       </div>
@@ -633,10 +633,10 @@ onBeforeUnmount(() => stopInternal())
 
     <div v-if="showHotwords" class="dialog-backdrop" @click.self="showHotwords = false">
       <div class="dialog dialog-wide">
-        <h3>会议热词库</h3>
+        <h3>Meeting Hotwords</h3>
         <p class="dialog-sub">
-          选中热词库后，识别时引擎会优先输出库中的热词，适合包含大量专有名词、
-          人名或产品名的会议。可同时选择多个热词库（同一会议最多 200 个热词）。
+          Selected hotwords improve recognition of specialized terms,
+          names, and products, up to 200 hotwords per meeting.
         </p>
         <div class="hotword-pick-list">
           <label
@@ -654,7 +654,7 @@ onBeforeUnmount(() => stopInternal())
             <span class="hotword-pick-info">
               <span class="hotword-pick-name">
                 {{ lib.name }}
-                <span class="muted-text">{{ lib.word_count }} 个热词</span>
+                <span class="muted-text">{{ lib.word_count }} hotwords</span>
               </span>
               <span v-if="lib.words.length > 0" class="hotword-tags compact">
                 <span
@@ -671,20 +671,20 @@ onBeforeUnmount(() => stopInternal())
             </span>
           </label>
           <div v-if="hotwords.length === 0" class="empty-state small">
-            <p>还没有热词库，请先在首页「新建热词库」中添加。</p>
+            <p>No hotword libraries yet. Create one on the home page.</p>
           </div>
         </div>
         <p v-if="recording" class="hint-text warn-text">
-          录音中不能修改热词库，请先停止录音。
+          Stop recording before changing hotwords.
         </p>
         <div class="dialog-actions">
-          <button class="btn btn-ghost" @click="showHotwords = false">取消</button>
+          <button class="btn btn-ghost" @click="showHotwords = false">Cancel</button>
           <button
             class="btn btn-primary"
             :disabled="recording || applying"
             @click="applyHotwords"
           >
-            {{ applying ? '应用中…' : '应用并重连' }}
+            {{ applying ? 'Applying...' : 'Apply and Reconnect' }}
           </button>
         </div>
       </div>

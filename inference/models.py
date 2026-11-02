@@ -1,10 +1,10 @@
-"""ASR / 声纹 / 聚类模型的管理器（惰性加载 + 串行推理）。
+"""Model manager for ASR, voiceprints, and clustering (lazy loading).
 
-- paraformer-zh + fsmn-vad + ct-punc-c 做 ASR（sentence_timestamp=True，内部切句 + 标点恢复）
-- cam++ 提取 192 维声纹 embedding
-- FunASR ClusterBackend（谱聚类/UMAP+HDBSCAN + 余弦合并）做全量重聚类
+- Paraformer, FSMN-VAD, and CT-Transformer provide ASR, segmentation, and punctuation.
+- CAM++ extracts 192-dimensional speaker embeddings.
+- FunASR ClusterBackend reclusters all unmatched speaker embeddings.
 
-funasr 的 generate 不是线程安全的，所有推理用全局锁串行化。
+FunASR generate calls share a global inference lock for thread safety.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def clean_asr_text(text: str) -> str:
-    """去掉 paraformer 输出中汉字之间的空格，保留标点与英文单词。"""
+    """Remove redundant spaces between Chinese characters in ASR output."""
     if not text:
         return ""
     text = re.sub(r"(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])", "", text)
@@ -32,7 +32,7 @@ def clean_asr_text(text: str) -> str:
 
 
 class ModelManager:
-    """共享的模型单例。"""
+    """Shared singleton model manager."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -67,7 +67,7 @@ class ModelManager:
             return self._asr
 
     def transcribe(self, samples: np.ndarray, hotword: str | None = None) -> str:
-        """对一段 16k 单声道 float32 音频做 ASR（fsmn-vad 内部分段 + 标点恢复）。"""
+        """Run ASR on 16 kHz mono float32 audio with VAD and punctuation."""
         if samples is None or len(samples) == 0:
             return ""
         with self._infer_lock:
@@ -85,10 +85,10 @@ class ModelManager:
     def transcribe_sentences(
         self, samples: np.ndarray, hotword: str | None = None
     ) -> list[dict]:
-        """对一段 16k 单声道 float32 音频做 ASR，返回带时间戳的句子列表。
+        """Transcribe a 16 kHz mono float32 audio window into timed sentences.
 
-        返回 [{"start": ms, "end": ms, "text": str}, ...]。
-        hotword 为空格分隔的热词字符串（如 "达摩院 魔搭"），为空时不启用热词。
+        Return a list of dictionaries with start/end milliseconds and recognized text.
+        Hotwords are separated by spaces; None disables hotword biasing.
         """
         if samples is None or len(samples) == 0:
             return []
@@ -134,7 +134,7 @@ class ModelManager:
             return self._spk
 
     def embed(self, samples: np.ndarray) -> np.ndarray | None:
-        """提取一段音频的声纹向量，L2 归一化后的 1-D float32（如 192 维）。"""
+        """Return an L2-normalized one-dimensional float32 speaker embedding."""
         if samples is None or len(samples) == 0:
             return None
         with self._infer_lock:
@@ -167,7 +167,7 @@ class ModelManager:
             return self._cluster
 
     def cluster(self, embeddings: np.ndarray) -> np.ndarray:
-        """对 [N, D] 的声纹矩阵做全量聚类，返回长度 N 的 int 标签数组。"""
+        """Cluster an [N, D] embedding matrix and return N integer labels."""
         if embeddings is None or len(embeddings) == 0:
             return np.empty(0, dtype=int)
         embeddings = np.asarray(embeddings, dtype=np.float32)

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Meeting of Pioneers</title>
+  <rect width="64" height="64" rx="16" fill="#e97731"/>
+  <path d="M14 46V18L32 37L50 18V46" fill="none" stroke="#fff9f1" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

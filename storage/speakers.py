@@ -1,9 +1,9 @@
-"""说话人声纹库持久化：每个说话人可以保存多条声纹特征向量。
+"""Persist speaker identities with multiple voiceprint embeddings.
 
-存储结构：`<SPEAKERS_DIR>/speakers.pkl`（pickle 单文件，含 float32 声纹向量）。
-每条声纹向量记录来源（现场录音 / 会议片段）、时长、关联会议与片段、
-创建时间，以及 `short` 标记（时长低于配置的 `min_speaker_audio_s`，
-提示该语音过短、声纹特征可能不准确）。
+Storage: <SPEAKERS_DIR>/speakers.pkl, including float32 vectors.
+Each embedding records its source, duration, meeting and segment references,
+creation timestamp, and short flag. A short sample has a duration below
+min_speaker_audio_s and may be less reliable for matching.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ def _now_iso() -> str:
 
 
 class SpeakerStore:
-    """说话人声纹库，线程安全，pickle 持久化。"""
+    """Thread-safe pickle-backed speaker voiceprint library."""
 
     def __init__(self, root: Path):
         self.root = Path(root)
@@ -60,7 +60,7 @@ class SpeakerStore:
 
     @staticmethod
     def _vector_meta(v: dict) -> dict:
-        """API 使用的声纹元数据（不含 emb，便于 JSON 序列化）。"""
+        """Return voiceprint metadata without the embedding for JSON responses."""
         return {
             "id": v["id"],
             "duration_s": round(float(v.get("duration_s", 0.0)), 3),
@@ -95,7 +95,7 @@ class SpeakerStore:
             now = _now_iso()
             speaker = {
                 "id": sid,
-                "name": (name or "").strip() or "未命名说话人",
+                "name": (name or "").strip() or "Unnamed Speaker",
                 "created_at": now,
                 "updated_at": now,
                 "vectors": [],
@@ -109,13 +109,13 @@ class SpeakerStore:
             s = self._speakers.get(speaker_id)
             if s is None:
                 return None
-            s["name"] = (name or "").strip() or "未命名说话人"
+            s["name"] = (name or "").strip() or "Unnamed Speaker"
             s["updated_at"] = _now_iso()
             self._save()
             return self._summary(s)
 
     def add_vectors(self, speaker_id: str, vectors: list[dict]) -> list[dict] | None:
-        """追加声纹向量，返回新增向量的元数据；说话人不存在时返回 None。"""
+        """Append embeddings and return their metadata, or None for unknown speakers."""
         with self._lock:
             s = self._speakers.get(speaker_id)
             if s is None:
@@ -163,7 +163,7 @@ class SpeakerStore:
 
     # ------------------------------------------------------------ matching
     def get_for_matching(self, speaker_ids: list[str]) -> list[dict]:
-        """供会议处理器做参与者匹配：返回含 emb 数组的完整说话人快照。"""
+        """Return full speaker records with embeddings for participant matching."""
         with self._lock:
             out: list[dict] = []
             for sid in speaker_ids:

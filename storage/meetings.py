@@ -1,4 +1,4 @@
-"""会议记录持久化：元数据 + 会话中间状态（用于续记/导出），pickle 单文件存储。"""
+"""Persist meeting metadata and resumable session state as pickle files."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class MeetingStore:
-    """把会议快照写到磁盘；每个会议一个目录：meeting.pkl（pickle）。"""
+    """Store one meeting per directory, with a meeting.pkl snapshot."""
 
     def __init__(self, root: Path):
         self.root = Path(root)
@@ -45,7 +45,7 @@ class MeetingStore:
         return self.root / meeting_id
 
     def _read_payload(self, meeting_id: str) -> dict | None:
-        """读取会议载荷（meeting.pkl）。"""
+        """Read and deserialize the meeting.pkl payload."""
         d = self._dir(meeting_id)
         f = d / "meeting.pkl"
         if f.exists():
@@ -57,13 +57,13 @@ class MeetingStore:
 
     # ------------------------------------------------------------ crud
     def create(self, meeting_id: str | None = None, title: str = "") -> dict:
-        """创建一个空会议记录（仅元数据），返回 meta。"""
+        """Create an empty meeting with metadata and return its metadata."""
         mid = meeting_id or uuid.uuid4().hex
         d = self._dir(mid)
         d.mkdir(parents=True, exist_ok=True)
         meta = {
             "id": mid,
-            "title": (title or "未命名会议").strip() or "未命名会议",
+            "title": (title or "Untitled Meeting").strip() or "Untitled Meeting",
             "created_at": _now_iso(),
             "updated_at": _now_iso(),
             "sample_rate": 16000,
@@ -102,7 +102,7 @@ class MeetingStore:
         return meta if isinstance(meta, dict) else None
 
     def get_meeting(self, meeting_id: str) -> dict | None:
-        """返回会议摘要 + 参与者/热词库设置，供前端初始化会议配置。"""
+        """Return meeting metadata and participant/hotword settings for the UI."""
         payload = self._read_payload(meeting_id)
         if payload is None:
             return None
@@ -110,7 +110,7 @@ class MeetingStore:
         state = payload.get("state") or {}
         return {
             "id": meeting_id,
-            "title": meta.get("title") or "未命名会议",
+            "title": meta.get("title") or "Untitled Meeting",
             "created_at": meta.get("created_at"),
             "updated_at": meta.get("updated_at"),
             "participant_ids": list(state.get("participant_ids") or []),
@@ -119,7 +119,7 @@ class MeetingStore:
         }
 
     def list_segments(self, meeting_id: str) -> list[dict] | None:
-        """返回会议片段的摘要（不含声纹向量），供导入说话人声纹时选择。"""
+        """Return segment summaries without embeddings for speaker enrollment."""
         payload = self._read_payload(meeting_id)
         if payload is None:
             return None
@@ -144,7 +144,7 @@ class MeetingStore:
 
     # ------------------------------------------------------------ state
     def save_state(self, state: dict) -> dict:
-        """把处理器快照写入磁盘（meeting.pkl，原子替换；不再保存原始音频）。"""
+        """Atomically replace a meeting snapshot without storing raw audio."""
         mid = state["id"]
         d = self._dir(mid)
         d.mkdir(parents=True, exist_ok=True)
@@ -160,7 +160,7 @@ class MeetingStore:
         old = self.get_meta(mid) or {}
         meta = {
             "id": mid,
-            "title": (state.get("title") or "未命名会议").strip() or "未命名会议",
+            "title": (state.get("title") or "Untitled Meeting").strip() or "Untitled Meeting",
             "created_at": old.get("created_at") or _now_iso(),
             "updated_at": _now_iso(),
             "sample_rate": sr,
@@ -177,9 +177,9 @@ class MeetingStore:
         return meta
 
     def load_state(self, meeting_id: str) -> dict | None:
-        """读取会议完整状态，供“从末尾继续记录”。
+        """Load complete session state to resume the meeting.
 
-        只保存逐段文本与声纹，恢复时从最后一个已确认片段的末尾继续，不需要原始音频。
+        Only text and embeddings are stored; resume starts after the last confirmed segment.
         """
         payload = self._read_payload(meeting_id)
         if payload is None:
@@ -199,7 +199,7 @@ class MeetingStore:
 
     # ------------------------------------------------------------ export
     def export(self, meeting_id: str, fmt: str = "md") -> str:
-        """导出会议记录文本（md / json）。"""
+        """Export the meeting transcript as Markdown or JSON."""
         payload = self._read_payload(meeting_id)
         if payload is None:
             raise FileNotFoundError(meeting_id)
@@ -218,24 +218,24 @@ class MeetingStore:
                 indent=2,
             )
 
-        lines = [f"# {meta.get('title', '未命名会议')}", ""]
-        lines.append(f"- 创建时间：{meta.get('created_at', '')}")
-        lines.append(f"- 更新时间：{meta.get('updated_at', '')}")
-        lines.append(f"- 时长：{_fmt_ms(meta.get('duration_ms', 0))}")
-        lines.append(f"- 片段：{meta.get('segments', 0)} 个")
-        lines.append(f"- 说话人：{meta.get('speakers', 0)} 人")
+        lines = [f"# {meta.get('title', 'Untitled Meeting')}", ""]
+        lines.append(f"- Created: {meta.get('created_at', '')}")
+        lines.append(f"- Updated: {meta.get('updated_at', '')}")
+        lines.append(f"- Duration: {_fmt_ms(meta.get('duration_ms', 0))}")
+        lines.append(f"- Segments: {meta.get('segments', 0)}")
+        lines.append(f"- Speakers: {meta.get('speakers', 0)}")
         lines.append("")
         if not paragraphs:
-            lines.append("（暂无内容）")
+            lines.append("(No content yet)")
             return "\n".join(lines)
-        lines.append("## 记录")
+        lines.append("## Transcript")
         lines.append("")
         for i, p in enumerate(paragraphs, start=1):
-            name = p.get("speaker_name") or f"说话人{int(p.get('speaker_id', 0))}"
+            name = p.get("speaker_name") or f"Speaker {int(p.get('speaker_id', 0))}"
             lines.append(f"### {i}. {name}")
             lines.append(f"{_fmt_ms(p.get('start_ms', 0))} – {_fmt_ms(p.get('end_ms', 0))}")
             lines.append("")
-            lines.append(p.get("text") or "（无内容）")
+            lines.append(p.get("text") or "(No content)")
             lines.append("")
         return "\n".join(lines)
 
@@ -246,13 +246,13 @@ class MeetingStore:
         merge_gap_s: float,
         speaker_map: dict[int, int],
     ) -> list[dict]:
-        """由可信段生成段落：同一说话人 + 间隔小于 merge_gap 才合并（与前端一致）。"""
+        """Merge adjacent confirmed segments from the same speaker within merge_gap."""
         ordered = sorted(segments, key=lambda s: int(s.get("start_sample", 0)))
         gap_samples = int(merge_gap_s * sr)
         groups: list[dict] = []
         for seg in ordered:
             cluster = int(seg.get("cluster", -1))
-            # 参与者段 cluster 为 -1，优先使用已持久化的 speaker_id，旧数据回退到聚类映射
+            # Prefer persisted speaker IDs for participants; fall back to cluster mappings.
             speaker_id = int(seg.get("speaker_id", speaker_map.get(cluster, cluster)))
             last = groups[-1] if groups else None
             if (

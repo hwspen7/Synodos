@@ -1,5 +1,5 @@
 /* ==========================================================================
-   开拓者会议 — 暖橙主题（参考 bitnp-ideas 的纸张感 + 橙色调）
+   Meeting of Pioneers - warm orange design theme
    ========================================================================== */
 :root {
   color-scheme: light;
@@ -63,7 +63,7 @@ button {
   min-height: 100vh;
 }
 
-/* ── 顶栏 ─────────────────────────────────────────────── */
+/* Header */
 .app-bar {
   position: sticky;
   top: 0;
@@ -136,7 +136,7 @@ button {
   color: var(--mop-primary-strong);
 }
 
-/* ── 通用布局 ─────────────────────────────────────────── */
+/* Shared layouts */
 .page-shell {
   max-width: 1080px;
   margin: 0 auto;
@@ -166,7 +166,7 @@ button {
   font-size: 13px;
 }
 
-/* ── 按钮 ─────────────────────────────────────────────── */
+/* Buttons */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -250,7 +250,7 @@ button {
   border-radius: 8px;
 }
 
-/* ── Hero（首页） ─────────────────────────────────────── */
+/* Home hero */
 .hero {
   position: relative;
   overflow: hidden;
@@ -328,7 +328,7 @@ button {
   margin-top: 30px;
 }
 
-/* ── 统计卡片 ─────────────────────────────────────────── */
+/* Statistics */
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(150px, 1fr));
@@ -388,7 +388,7 @@ button {
   font-weight: 800;
 }
 
-/* ── 会议列表 ─────────────────────────────────────────── */
+/* Meetings */
 .meeting-list {
   display: flex;
   flex-direction: column;
@@ -454,7 +454,7 @@ button {
   border-left: 1px solid var(--mop-border);
 }
 
-/* ── 空状态 / 错误 ────────────────────────────────────── */
+/* Empty states */
 .empty-state {
   display: flex;
   min-height: 240px;
@@ -503,7 +503,7 @@ button {
   font-size: 13px;
 }
 
-/* ── 弹窗 ─────────────────────────────────────────────── */
+/* Dialogs */
 .dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -546,7 +546,7 @@ button {
   margin-top: 20px;
 }
 
-/* ── 输入 ─────────────────────────────────────────────── */
+/* Form controls */
 .text-input {
   width: 100%;
   padding: 11px 13px;
@@ -584,7 +584,7 @@ button {
   border-color: var(--mop-primary);
 }
 
-/* ── 会议页 ───────────────────────────────────────────── */
+/* Meeting view */
 .meeting-page {
   max-width: 1080px;
   margin: 0 auto;
@@ -698,7 +698,7 @@ button {
   transition: width 0.08s linear;
 }
 
-/* ── 记录区 ───────────────────────────────────────────── */
+/* Transcript */
 .transcript {
   height: 62vh;
   min-height: 360px;
@@ -761,7 +761,7 @@ button {
   white-space: pre-wrap;
 }
 
-/* ── 通用页面头（说话人页等） ─────────────────────────── */
+/* Page header */
 .speaker-head {
   display: flex;
   flex-wrap: wrap;
@@ -868,7 +868,7 @@ button {
   font-weight: 800;
 }
 
-/* ── 标签页 ───────────────────────────────────────────── */
+/* Tabs */
 .tab-bar {
   display: inline-flex;
   gap: 4px;
@@ -898,7 +898,7 @@ button {
   box-shadow: 0 2px 8px rgba(91, 54, 21, 0.1);
 }
 
-/* ── 现场录音 ─────────────────────────────────────────── */
+/* Live audio */
 .record-area {
   display: flex;
   flex-direction: column;
@@ -985,7 +985,7 @@ button {
   font-weight: 600;
 }
 
-/* ── 从会议选取 ───────────────────────────────────────── */
+/* Import from meeting */
 .meeting-pick-area {
   display: flex;
   flex-direction: column;
@@ -1063,7 +1063,7 @@ button {
   padding: 22px 16px;
 }
 
-/* ── 声纹结果 ─────────────────────────────────────────── */
+/* Voiceprints */
 .adder-results {
   margin-top: 16px;
   padding-top: 12px;
@@ -1106,7 +1106,7 @@ button {
   white-space: nowrap;
 }
 
-/* ── 说话人库列表 ─────────────────────────────────────── */
+/* Speakers */
 .speaker-list {
   display: flex;
   flex-direction: column;
@@ -1204,7 +1204,7 @@ button {
   color: var(--mop-danger);
 }
 
-/* ── 宽弹窗（参与者选择） ─────────────────────────────── */
+/* Participants */
 .dialog.dialog-wide {
   max-width: 560px;
 }
@@ -1284,7 +1284,7 @@ button {
   font-weight: 600;
 }
 
-/* ── 首页声纹库卡片 ───────────────────────────────────── */
+/* Home speaker section */
 .speaker-lib-section {
   margin-bottom: 34px;
 }
@@ -1335,7 +1335,7 @@ button {
   gap: 8px;
 }
 
-/* ── 首页热词库卡片 ───────────────────────────────────── */
+/* Home hotwords section */
 .hotword-lib-section {
   margin-bottom: 34px;
 }
@@ -1386,7 +1386,7 @@ button {
   gap: 8px;
 }
 
-/* ── 热词库列表 ───────────────────────────────────────── */
+/* Hotword library */
 .hotword-list {
   display: flex;
   flex-direction: column;
@@ -1487,7 +1487,7 @@ button {
   font-weight: 600;
 }
 
-/* ── 新建/编辑热词库表单 ─────────────────────────────── */
+/* Hotword form */
 .hotword-form-head {
   display: flex;
   flex-wrap: wrap;
@@ -1534,7 +1534,7 @@ button {
   width: 100%;
 }
 
-/* ── 会议页热词库选择 ─────────────────────────────────── */
+/* Hotword selection */
 .hotword-pick-list {
   display: flex;
   max-height: 300px;
@@ -1630,7 +1630,7 @@ button {
   transform: translate(-50%, 12px);
 }
 
-/* ── 响应式 ───────────────────────────────────────────── */
+/* Responsive */
 @media (max-width: 900px) {
   .app-bar {
     padding: 0 16px;

@@ -76,7 +76,7 @@ function exportMeeting(meeting: MeetingSummary, format: 'md' | 'json'): void {
 }
 
 async function removeMeeting(meeting: MeetingSummary): Promise<void> {
-  if (!window.confirm(`确定删除会议「${meeting.title}」？此操作不可恢复。`)) return
+  if (!window.confirm(`Delete meeting "${meeting.title}"? This action cannot be undone.`)) return
   error.value = ''
   try {
     await meetingsApi.remove(meeting.id)
@@ -91,9 +91,9 @@ function fmtDuration(ms: number): string {
   const h = Math.floor(total / 3600)
   const m = Math.floor((total % 3600) / 60)
   const s = total % 60
-  if (h > 0) return `${h} 小时 ${m} 分`
-  if (m > 0) return `${m} 分 ${s} 秒`
-  return `${s} 秒`
+  if (h > 0) return `${h} h ${m} min`
+  if (m > 0) return `${m} min ${s} s`
+  return `${s} s`
 }
 
 function fmtDate(iso: string): string {
@@ -117,29 +117,29 @@ onMounted(load)
       <div class="hero-inner">
         <p class="eyebrow">MEETING OF PIONEERS</p>
         <h1>
-          让每一场会议
-          <span class="hero-accent">都留下清晰印记</span>
+          Make every meeting
+          <span class="hero-accent">memorable</span>
         </h1>
         <p class="lead">
-          实时语音识别 · 自动说话人分段 · 一键成文。
-          打开麦克风，专注交谈，剩下的交给我们。
+          Realtime transcription, speaker recognition and export.
+          Enable your microphone and focus on the conversation.
         </p>
         <div class="hero-actions">
           <button class="btn btn-primary btn-lg" @click="showCreate = true">
             <AppIcon name="plus" :size="18" />
-            新建会议记录
+            Create Meeting
           </button>
           <a class="btn btn-ghost btn-lg" href="#meetings">
             <AppIcon name="file-text" :size="18" />
-            浏览已保存会议
+            Browse Saved Meetings
           </a>
           <RouterLink class="btn btn-ghost btn-lg" to="/speakers/new">
             <AppIcon name="user-plus" :size="18" />
-            新建说话人
+            Create Speaker
           </RouterLink>
           <RouterLink class="btn btn-ghost btn-lg" to="/speakers">
             <AppIcon name="users" :size="18" />
-            管理说话人
+            Manage Speakers
           </RouterLink>
         </div>
       </div>
@@ -150,28 +150,28 @@ onMounted(load)
         <div class="metric-tile">
           <div class="metric-icon tone-primary"><AppIcon name="file-text" :size="20" /></div>
           <div>
-            <div class="metric-label">会议记录</div>
+            <div class="metric-label">Meetings</div>
             <div class="metric-value">{{ meetings.length }}</div>
           </div>
         </div>
         <div class="metric-tile">
           <div class="metric-icon tone-secondary"><AppIcon name="clock" :size="20" /></div>
           <div>
-            <div class="metric-label">累计时长</div>
+            <div class="metric-label">Total Duration</div>
             <div class="metric-value">{{ fmtDuration(totalDurationMs) }}</div>
           </div>
         </div>
         <div class="metric-tile">
           <div class="metric-icon tone-accent"><AppIcon name="mic" :size="20" /></div>
           <div>
-            <div class="metric-label">语音片段</div>
+            <div class="metric-label">Audio Segments</div>
             <div class="metric-value">{{ totalSegments }}</div>
           </div>
         </div>
       <div class="metric-tile">
         <div class="metric-icon tone-success"><AppIcon name="users" :size="20" /></div>
         <div>
-          <div class="metric-label">累计说话人</div>
+          <div class="metric-label">Total Speakers</div>
           <div class="metric-value">{{ totalSpeakers }}</div>
         </div>
       </div>
@@ -181,30 +181,30 @@ onMounted(load)
         <div class="speaker-lib-card">
           <div class="speaker-lib-icon"><AppIcon name="users" :size="24" /></div>
           <div class="speaker-lib-info">
-            <h2>说话人声纹库</h2>
+            <h2>Speaker Voiceprint Library</h2>
             <p class="section-sub">
-              现场录音或从会议片段提取声纹，为每个说话人保存多条特征向量；
-              开会时选中参与者即可自动标注姓名。
+              Record audio or extract voiceprints from saved meetings.
+              Select participants to identify them automatically.
             </p>
           </div>
           <div class="speaker-lib-stats">
             <div>
-              <div class="metric-label">说话人</div>
+              <div class="metric-label">Speaker</div>
               <div class="metric-value">{{ speakers.length }}</div>
             </div>
             <div>
-              <div class="metric-label">声纹样本</div>
+              <div class="metric-label">Voiceprint Samples</div>
               <div class="metric-value">{{ totalSpeakerVectors }}</div>
             </div>
           </div>
           <div class="speaker-lib-actions">
             <button class="btn btn-primary" @click="router.push('/speakers/new')">
               <AppIcon name="user-plus" :size="16" />
-              新建说话人
+              Create Speaker
             </button>
             <button class="btn btn-ghost" @click="router.push('/speakers')">
               <AppIcon name="list" :size="16" />
-              管理说话人
+              Manage Speakers
             </button>
           </div>
         </div>
@@ -214,30 +214,30 @@ onMounted(load)
         <div class="hotword-lib-card">
           <div class="hotword-lib-icon"><AppIcon name="flame" :size="24" /></div>
           <div class="hotword-lib-info">
-            <h2>热词库</h2>
+            <h2>Hotword Libraries</h2>
             <p class="section-sub">
-              为专业术语、人名、产品名等建立热词库；开会时选中对应热词库，
-              识别引擎会优先输出这些热词，提升专有名词的识别准确率。
+              Create libraries for terminology, names and products.
+              Selected hotwords improve recognition of specific terms.
             </p>
           </div>
           <div class="hotword-lib-stats">
             <div>
-              <div class="metric-label">热词库</div>
+              <div class="metric-label">Hotword Libraries</div>
               <div class="metric-value">{{ hotwords.length }}</div>
             </div>
             <div>
-              <div class="metric-label">热词</div>
+              <div class="metric-label">Hotwords</div>
               <div class="metric-value">{{ totalHotwordWords }}</div>
             </div>
           </div>
           <div class="hotword-lib-actions">
             <button class="btn btn-primary" @click="router.push('/hotwords/new')">
               <AppIcon name="flame" :size="16" />
-              新建热词库
+              Create Hotword Library
             </button>
             <button class="btn btn-ghost" @click="router.push('/hotwords')">
               <AppIcon name="list" :size="16" />
-              管理热词库
+              Manage Hotword Libraries
             </button>
           </div>
         </div>
@@ -248,25 +248,25 @@ onMounted(load)
       <section id="meetings" class="meetings-section">
         <div class="toolbar-row">
           <div>
-            <h2>已保存的会议</h2>
-            <p class="section-sub">保存到磁盘的记录，可继续记录、查看或导出。</p>
+            <h2>Saved Meetings</h2>
+            <p class="section-sub">Saved transcripts can be resumed, viewed, or exported.</p>
           </div>
           <button class="btn btn-primary" @click="showCreate = true">
             <AppIcon name="plus" :size="16" />
-            新建会议
+            New Meeting
           </button>
         </div>
 
         <div v-if="loading" class="empty-state">
-          <p>正在加载会议记录…</p>
+          <p>Loading meetings...</p>
         </div>
         <div v-else-if="meetings.length === 0" class="empty-state">
           <div class="empty-icon"><AppIcon name="mic" :size="26" /></div>
-          <h3>还没有会议记录</h3>
-          <p>点击「新建会议记录」，打开麦克风开始第一场会议。</p>
+          <h3>No meetings yet</h3>
+          <p>Create a meeting and enable microphone access.</p>
           <button class="btn btn-primary" @click="showCreate = true">
             <AppIcon name="plus" :size="16" />
-            新建会议记录
+            Create Meeting
           </button>
         </div>
         <div v-else class="meeting-list">
@@ -274,38 +274,38 @@ onMounted(load)
             <div class="meeting-main" @click="viewMeeting(meeting)">
               <h3 class="meeting-title">{{ meeting.title }}</h3>
               <p class="meeting-meta">
-                更新于 {{ fmtDate(meeting.updated_at) }}
+                Updated {{ fmtDate(meeting.updated_at) }}
                 <span class="dot-sep">·</span>
-                时长 {{ fmtDuration(meeting.duration_ms) }}
+                Duration {{ fmtDuration(meeting.duration_ms) }}
                 <span class="dot-sep">·</span>
-                {{ meeting.segments }} 个片段
+                {{ meeting.segments }} segments
                 <span class="dot-sep">·</span>
-                {{ meeting.speakers }} 位说话人
+                {{ meeting.speakers }} speakers
               </p>
             </div>
             <div class="meeting-actions">
-              <button class="btn btn-ghost btn-sm" title="查看记录" @click="viewMeeting(meeting)">
+              <button class="btn btn-ghost btn-sm" title="View Transcript" @click="viewMeeting(meeting)">
                 <AppIcon name="edit" :size="15" />
-                查看
+                View
               </button>
               <button
                 class="btn btn-primary btn-sm"
-                title="从末尾继续记录"
+                title="Resume from End"
                 @click="resumeMeeting(meeting)"
               >
                 <AppIcon name="play" :size="14" />
-                继续记录
+                Resume
               </button>
               <div class="action-group">
-                <button class="btn btn-ghost btn-sm" title="导出 Markdown" @click="exportMeeting(meeting, 'md')">
+                <button class="btn btn-ghost btn-sm" title="Export Markdown" @click="exportMeeting(meeting, 'md')">
                   <AppIcon name="download" :size="15" />
                   MD
                 </button>
-                <button class="btn btn-ghost btn-sm" title="导出 JSON" @click="exportMeeting(meeting, 'json')">
+                <button class="btn btn-ghost btn-sm" title="Export JSON" @click="exportMeeting(meeting, 'json')">
                   <AppIcon name="file-text" :size="15" />
                   JSON
                 </button>
-                <button class="btn btn-danger btn-sm" title="删除" @click="removeMeeting(meeting)">
+                <button class="btn btn-danger btn-sm" title="Delete" @click="removeMeeting(meeting)">
                   <AppIcon name="trash" :size="15" />
                 </button>
               </div>
@@ -317,23 +317,23 @@ onMounted(load)
 
     <div v-if="showCreate" class="dialog-backdrop" @click.self="showCreate = false">
       <div class="dialog">
-        <h3>新建会议记录</h3>
-        <p class="dialog-sub">给这场会议起个名字，稍后可以随时从末尾继续记录。</p>
+        <h3>Create Meeting</h3>
+        <p class="dialog-sub">Name your meeting. You can resume it later.</p>
         <input
           v-model="newTitle"
           class="text-input"
-          placeholder="例如：产品周会 / 项目复盘"
+          placeholder="e.g. Weekly Product Meeting / Project Review"
           autofocus
           @keyup.enter="createMeeting"
         />
         <div class="dialog-actions">
-          <button class="btn btn-ghost" @click="showCreate = false">取消</button>
+          <button class="btn btn-ghost" @click="showCreate = false">Cancel</button>
           <button
             class="btn btn-primary"
             :disabled="!newTitle.trim() || creating"
             @click="createMeeting"
           >
-            {{ creating ? '创建中…' : '创建并开始记录' }}
+            {{ creating ? 'Creating...' : 'Create and Start' }}
           </button>
         </div>
       </div>

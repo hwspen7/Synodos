@@ -1,7 +1,7 @@
-"""热词库持久化：每个热词库保存一组热词，会议开始时按库选择后注入 ASR。
+"""Persist named hotword libraries for selection at meeting startup.
 
-存储结构：`<HOTWORDS_DIR>/hotwords.pkl`（pickle 单文件）。
-每个热词库包含名称、热词列表（自动去重、忽略空串）与创建/更新时间。
+Storage format: <HOTWORDS_DIR>/hotwords.pkl (a single pickle file).
+Each library stores a name, deduplicated words, and creation/update timestamps.
 """
 
 from __future__ import annotations
@@ -23,13 +23,13 @@ def _now_iso() -> str:
 
 
 def normalize_words(words) -> list[str]:
-    """清洗热词：去空白、去重、忽略空串，保留顺序。"""
+    """Trim whitespace, skip empty entries, deduplicate, and preserve order."""
     seen: set[str] = set()
     out: list[str] = []
     for item in words or []:
         if not isinstance(item, str):
             continue
-        for w in item.replace("，", " ").replace("、", " ").replace("；", " ").split():
+        for w in item.replace("\uFF0C", " ").replace("\u3001", " ").replace("\uFF1B", " ").split():
             w = w.strip()
             if w and w not in seen:
                 seen.add(w)
@@ -38,7 +38,7 @@ def normalize_words(words) -> list[str]:
 
 
 class HotwordStore:
-    """热词库，线程安全，pickle 持久化。"""
+    """Thread-safe pickle-backed hotword library."""
 
     def __init__(self, root: Path):
         self.root = Path(root)
@@ -92,7 +92,7 @@ class HotwordStore:
             now = _now_iso()
             lib = {
                 "id": lib_id,
-                "name": (name or "").strip() or "未命名热词库",
+                "name": (name or "").strip() or "Untitled Hotword Library",
                 "words": normalize_words(words),
                 "created_at": now,
                 "updated_at": now,
@@ -102,13 +102,13 @@ class HotwordStore:
             return self._summary(lib)
 
     def update(self, hotword_id: str, name=None, words=None) -> dict | None:
-        """更新热词库名称与热词列表；未提供的字段保持不变。"""
+        """Update a hotword library while preserving unspecified fields."""
         with self._lock:
             lib = self._libraries.get(hotword_id)
             if lib is None:
                 return None
             if name is not None:
-                lib["name"] = (name or "").strip() or "未命名热词库"
+                lib["name"] = (name or "").strip() or "Untitled Hotword Library"
             if words is not None:
                 lib["words"] = normalize_words(words)
             lib["updated_at"] = _now_iso()
@@ -125,7 +125,7 @@ class HotwordStore:
 
     # ------------------------------------------------------------ meeting
     def get_words_for_meeting(self, hotword_ids: list[str], limit: int = 200) -> list[str]:
-        """按库 ID 取热词并合并去重，供 ASR 注入使用。"""
+        """Merge hotwords from selected library IDs without duplicates for ASR."""
         with self._lock:
             out: list[str] = []
             seen: set[str] = set()
@@ -145,7 +145,7 @@ class HotwordStore:
         return out
 
     def get_summaries(self, hotword_ids: list[str]) -> list[dict]:
-        """返回指定库的摘要（不含 words 全文），供会议 ready 消息使用。"""
+        """Return selected library summaries without their full word lists."""
         with self._lock:
             return [
                 {

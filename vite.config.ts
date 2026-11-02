@@ -12,7 +12,7 @@ export default defineConfig({
   ],
   server: {
     proxy: {
-      // 前端通过同源路径连接后端 WebSocket（Vite 会把 ws 升级转发给 8000 端口）
+      // Proxy WebSocket upgrade connections to the backend on port 8000.
       '/ws': {
         target: 'http://localhost:8000',
         ws: true,

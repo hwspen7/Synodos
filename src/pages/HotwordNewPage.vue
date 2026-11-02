@@ -12,11 +12,11 @@ const name = ref('')
 const wordsText = ref('')
 const creating = ref(false)
 
-/** 按空白/中英文逗号/顿号切分热词。 */
+/** Split hotwords on whitespace and punctuation. */
 function parseWords(text: string): string[] {
   const seen = new Set<string>()
   const out: string[] = []
-  for (const item of text.replace(/[，、;；]/g, ' ').split(/\s+/)) {
+  for (const item of text.replace(/[\uFF0C\u3001;\uFF1B]/g, ' ').split(/\s+/)) {
     const w = item.trim()
     if (w && !seen.has(w)) {
       seen.add(w)
@@ -42,7 +42,7 @@ async function createLibrary(): Promise<void> {
   error.value = ''
   try {
     await hotwordsApi.create(title, words.value)
-    showToast(`已创建热词库「${title}」`)
+    showToast(`Created hotword library "${title}".`)
     window.setTimeout(() => void router.push('/hotwords'), 500)
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
@@ -58,11 +58,11 @@ async function createLibrary(): Promise<void> {
       <div class="speaker-head-left">
         <button class="btn btn-ghost btn-sm" @click="router.push('/hotwords')">
           <AppIcon name="arrow-left" :size="16" />
-          返回热词库
+          Back to Hotwords
         </button>
         <div>
-          <h1 class="page-title">新建热词库</h1>
-          <p class="page-sub">把会议中经常出现的专有名词收集起来，开会时按需选择。</p>
+          <h1 class="page-title">Create Hotword Library</h1>
+          <p class="page-sub">Collect frequently used names and terminology for meetings.</p>
         </div>
       </div>
       <button
@@ -71,18 +71,18 @@ async function createLibrary(): Promise<void> {
         @click="createLibrary"
       >
         <AppIcon name="check" :size="16" />
-        {{ creating ? '创建中…' : '创建热词库' }}
+        {{ creating ? 'Creating...' : 'Create Hotword Library' }}
       </button>
     </div>
 
     <p v-if="error" class="error-banner">{{ error }}</p>
 
     <section class="panel">
-      <h2 class="panel-title">热词库名称</h2>
+      <h2 class="panel-title">Library Name</h2>
       <input
         v-model="name"
         class="text-input"
-        placeholder="例如：产品术语 / 项目代号 / 医学名词"
+        placeholder="e.g. Product Terms / Project Codes / Medical Terms"
         :disabled="creating"
         @keyup.enter="createLibrary"
       />
@@ -90,19 +90,19 @@ async function createLibrary(): Promise<void> {
 
     <section class="panel">
       <div class="hotword-form-head">
-        <h2 class="panel-title">热词列表</h2>
-        <span class="hotword-count">{{ words.length }} 个热词</span>
+        <h2 class="panel-title">Hotword List</h2>
+        <span class="hotword-count">{{ words.length }} hotwords</span>
       </div>
       <textarea
         v-model="wordsText"
         class="text-area"
         rows="8"
-        placeholder="每行一个热词，例如：&#10;达摩院&#10;魔搭&#10;大模型"
+        placeholder="One term per line, e.g. &#10;Research Institute&#10;ModelScope&#10;Large Language Model"
         :disabled="creating"
       ></textarea>
       <p class="hint-text">
-        建议使用单行词语（可包含中文、英文、数字）；多个热词用换行、空格或逗号分隔。
-        识别时会优先输出这些热词，同一会议最多注入 200 个。
+        Enter terms separated by newlines, spaces, or commas.
+        Prioritize selected hotwords during recognition, up to 200 per meeting.
       </p>
       <div v-if="words.length > 0" class="hotword-tags">
         <span v-for="w in words" :key="w" class="hotword-tag">{{ w }}</span>

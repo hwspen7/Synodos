@@ -52,20 +52,20 @@ async def delete_speaker(speaker_id: str) -> dict:
 
 @router.post("/api/speakers/{speaker_id}/vectors/record")
 async def add_speaker_record(speaker_id: str, request: Request) -> dict:
-    """现场录音：请求体为 16kHz 单声道 Int16 小端 PCM，后端提取声纹向量。"""
+    """Extract a voiceprint from 16 kHz mono signed 16-bit little-endian PCM."""
     if not speaker_store.valid_id(speaker_id):
         raise HTTPException(status_code=400, detail="invalid speaker id")
     body = await request.body()
     if len(body) < 2:
-        raise HTTPException(status_code=400, detail="没有收到音频数据")
+        raise HTTPException(status_code=400, detail="No audio data received")
     pcm = np.frombuffer(body, dtype=np.int16).astype(np.float32) / 32768.0
     duration_s = len(pcm) / settings.sample_rate
     if duration_s < 0.2:
-        raise HTTPException(status_code=400, detail="录音过短，无法提取声纹特征")
+        raise HTTPException(status_code=400, detail="Recording is too short to extract a voiceprint")
     loop = asyncio.get_running_loop()
     emb = await loop.run_in_executor(None, models.embed, pcm)
     if emb is None:
-        raise HTTPException(status_code=400, detail="无法从该录音提取声纹特征")
+        raise HTTPException(status_code=400, detail="Unable to extract a voiceprint from this recording")
     vector = {
         "emb": emb,
         "duration_s": duration_s,
@@ -85,7 +85,7 @@ async def add_speaker_record(speaker_id: str, request: Request) -> dict:
 
 @router.post("/api/speakers/{speaker_id}/vectors/meeting")
 async def add_speaker_from_meeting(speaker_id: str, payload: Optional[dict] = None) -> dict:
-    """从已保存会议中选一条或多条 segment，使用记录中的声纹特征向量。"""
+    """Enroll one or more voiceprints from segments of a saved meeting."""
     if not speaker_store.valid_id(speaker_id):
         raise HTTPException(status_code=400, detail="invalid speaker id")
     meeting_id = (payload or {}).get("meeting_id") or ""
@@ -93,7 +93,7 @@ async def add_speaker_from_meeting(speaker_id: str, payload: Optional[dict] = No
     if not meeting_id or not meeting_store.valid_id(meeting_id):
         raise HTTPException(status_code=400, detail="invalid meeting id")
     if not segment_ids:
-        raise HTTPException(status_code=400, detail="请至少选择一个片段")
+        raise HTTPException(status_code=400, detail="Select at least one segment")
 
     loop = asyncio.get_running_loop()
     state = await loop.run_in_executor(None, meeting_store.load_state, meeting_id)
@@ -127,7 +127,7 @@ async def add_speaker_from_meeting(speaker_id: str, payload: Optional[dict] = No
             }
         )
     if not vectors:
-        raise HTTPException(status_code=400, detail="所选片段没有可用的声纹向量")
+        raise HTTPException(status_code=400, detail="Selected segments have no usable voiceprint embeddings")
 
     added = await loop.run_in_executor(
         None, speaker_store.add_vectors, speaker_id, vectors

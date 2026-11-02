@@ -1,22 +1,22 @@
-"""每个 WebSocket 会话的后台处理线程。
+"""Background processor for a single WebSocket meeting session.
 
-处理流程：
-1. 缓冲音频累积超过 process_threshold（默认 10s）后，对整段缓冲做一次 ASR
-   （paraformer + fsmn-vad + ct-punc，sentence_timestamp=True，内部自带 VAD 切句）
-2. ASR 返回的句子中，结束点距缓冲末尾超过 trusted_threshold （默认 2s） 的句子视为可信段：
-   - 该句文本一经确认不再重算（不会因为后续聚类/合并结果变化而重新 ASR）
-   - 用 cam++ 从该句音频提取一次声纹向量，不再重算
-3. 说话人标签计算：
-   - 对每个可信段，先与每个被选择的“会议参与者”的全部声纹向量做余弦相似度计算，
-     取最大值；若超过阈值（默认 0.5，前端可调），直接标注为该参与者的姓名；
-   - 其余可信段交给 FunASR ClusterBackend 全量重聚类，
-     分配“未知说话人1 / 未知说话人2 …”标签（未选择参与者时保持“说话人N”），
-     并把原始簇标签映射为稳定说话人 ID，减少前端标签抖动
-4. 可信段列表有变化时，把完整 segment 快照推给前端；
-   段落（paragraph）不再由后端计算，改由前端按“同说话人 + 间隔 < merge_gap”展示
+Processing pipeline:
+1. Run ASR on buffered audio after the processing window threshold.
+   Paraformer performs recognition with VAD, punctuation, and sentence timestamps.
+2. Confirm sentences ending sufficiently before the end of the audio window.
+   Confirmed transcripts do not undergo repeated recognition.
+   CAM++ extracts a single embedding for each confirmed segment.
+3. Assign speaker identities:
+   Match each embedding against selected participant voiceprints.
+   Use the configured cosine similarity threshold for participant matching.
+   Cluster the remaining segments using FunASR ClusterBackend.
+   Assign unknown-speaker labels when no known participant matches.
+   Maintain stable speaker IDs across clustering updates.
+4. Send complete segment snapshots when the confirmed transcript changes.
+   The frontend groups adjacent same-speaker segments into paragraphs.
 
-每个可信段只确认一次：确认后立即从窗口裁剪掉，之后的任何聚类变化
-都不会再碰它的文本与声纹，因此更省算力、结果更稳定。
+Confirmed segments are removed from the rolling buffer to reduce recomputation.
+Their text and voiceprint embeddings remain unchanged after confirmation.
 """
 
 from __future__ import annotations
@@ -66,24 +66,24 @@ class SessionProcessor(threading.Thread):
         self.settings = settings
         self.models = models
         self.outbox = outbox
-        # 注意：不能用 self._stop 命名——会遮蔽 threading.Thread._stop()，
-        # 导致 join() 内部调用 _stop() 时报 "'Event' object is not callable"
+        # Handle transcripts and speaker assignments.
+        # Handle transcripts and speaker assignments.
         self._stop_event = stop_event or threading.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
 
         sr = settings.sample_rate
-        # 缓冲达到该时长触发一轮 ASR 处理
+        # Handle transcripts and speaker assignments.
         self._process_threshold_s = settings.vad_threshold_s
-        # 句子结束点距缓冲末尾超过该时长才视为可信段
+        # Handle transcripts and speaker assignments.
         self._trusted_threshold_s = settings.rec_threshold_s
-        # 收尾时缓冲剩余少于该时长直接丢弃
+        # Handle transcripts and speaker assignments.
         self._final_discard_s = settings.final_discard_s
 
-        # 全局可信段
+        # Handle transcripts and speaker assignments.
         self.segments: list[dict] = []
         self._next_segment_id = 1
 
-        # 原始簇标签 -> 稳定说话人 ID 的映射
+        # Handle transcripts and speaker assignments.
         self._speaker_map: dict[int, int] = {}
         self._speaker_seg_ids: dict[int, set[int]] = {}
 
@@ -91,21 +91,21 @@ class SessionProcessor(threading.Thread):
         self._transcript_version = 0
         self._last_state_sent = 0.0
 
-        # 会议持久化（保存/续记）
+        # Handle transcripts and speaker assignments.
         self.meeting_store = meeting_store
         self.meeting_id = meeting_id
         self.meeting_title = meeting_title
         self._save_requested = threading.Event()
         self._save_done = threading.Event()
 
-        # 会议参与者声纹匹配（说话人声纹库）
+        # Handle transcripts and speaker assignments.
         self.speaker_store = speaker_store
         self.participant_ids: list[str] = list(participant_ids or [])
-        # 会议热词库（热词识别）：开会时按库选择，注入 ASR hotword 参数
+        # Handle transcripts and speaker assignments.
         self.hotword_store: Optional[HotwordStore] = hotword_store
         self.hotword_ids: list[str] = list(hotword_ids or [])
         self._hotword_str: str = ""
-        # 单次会话最多注入的热词数，防止热词过多影响识别速度/效果
+        # Handle transcripts and speaker assignments.
         self._hotword_limit = 200
         self.spk_threshold: float = float(
             spk_threshold
@@ -114,9 +114,9 @@ class SessionProcessor(threading.Thread):
         )
         self._participants: list[dict] = []
         self._participant_label_map: dict[str, int] = {}
-        # 未知说话人展示序号（与参与者标签独立，始终从 1 开始）
+        # Handle transcripts and speaker assignments.
         self._unknown_index: dict[int, int] = {}
-        # 前端是否显式传入了参与者/阈值；未传入时允许从会议保存的状态恢复
+        # Handle transcripts and speaker assignments.
         self._participants_explicit = participants_explicit
         self._hotwords_explicit = hotwords_explicit
         self._spk_threshold_explicit = spk_threshold_explicit
@@ -154,10 +154,10 @@ class SessionProcessor(threading.Thread):
                 if self._drain_save_requests():
                     continue
                 if not changed:
-                    # 本轮没有新内容：等缓冲区再增长约 0.5s 再检查，避免空转
+                    # Handle transcripts and speaker assignments.
                     current = self.buffer.seconds()
                     self.buffer.wait_until(current + 0.5, self._stop_event, self._save_requested)
-            # 收尾：把窗口里剩余（尚未满足确认阈值）的语音也处理掉
+            # Handle transcripts and speaker assignments.
             self._finalize()
         except Exception:
             logger.exception("session %s processor crashed", self.session_id)
@@ -176,13 +176,13 @@ class SessionProcessor(threading.Thread):
                 self._cycle(final=True)
             except Exception:
                 logger.exception("session %s final cycle failed", self.session_id)
-        # 收尾时自动保存到磁盘
+        # Handle transcripts and speaker assignments.
         self._do_save()
         self._save_done.set()
 
     # ------------------------------------------------------------ persistence
     def request_save(self, timeout: float = 30.0) -> bool:
-        """请求处理器线程保存会议状态（由保存接口调用）。"""
+        """Audio transcription and speaker data handling."""
         if not self.meeting_store or not self.meeting_id:
             return False
         self._save_requested.set()
@@ -209,7 +209,7 @@ class SessionProcessor(threading.Thread):
             logger.exception("save meeting %s failed", self.meeting_id)
 
     def snapshot_state(self) -> dict:
-        """导出可落盘的完整会话状态（处理器线程内调用）。"""
+        """Audio transcription and speaker data handling."""
         return {
             "id": self.meeting_id,
             "title": self.meeting_title,
@@ -232,7 +232,7 @@ class SessionProcessor(threading.Thread):
                         self._speaker_map.get(s["cluster"], s["cluster"]),
                     ),
                     "speaker_name": s.get("speaker_name", ""),
-                    "emb": s["emb"],  # float32 数组，pickle 直接序列化更省空间
+                    "emb": s["emb"],  # Preserve behavior.
                 }
                 for s in self.segments
             ],
@@ -241,7 +241,7 @@ class SessionProcessor(threading.Thread):
         }
 
     def load_state(self, state: dict) -> None:
-        """恢复已保存的会议状态，从末尾继续记录。"""
+        """Audio transcription and speaker data handling."""
         self.segments = []
         for item in state.get("segments", []) or []:
             self.segments.append(
@@ -276,7 +276,7 @@ class SessionProcessor(threading.Thread):
             int(k): int(v) for k, v in (state.get("unknown_index") or {}).items()
         }
 
-        # 不保存原始音频：续记时从最后一个已确认片段的末尾继续
+        # Handle transcripts and speaker assignments.
         offset = max((int(s["end_sample"]) for s in self.segments), default=0)
         self.buffer.set_start_offset(offset)
 
@@ -284,23 +284,23 @@ class SessionProcessor(threading.Thread):
         self.meeting_title = state.get("title") or self.meeting_title
 
     def load_participants(self) -> None:
-        """从声纹库加载被选择的会议参与者（含全部声纹向量）。"""
+        """Audio transcription and speaker data handling."""
         if not self.speaker_store or not self.participant_ids:
             self._participants = []
             return
         self._participants = self.speaker_store.get_for_matching(self.participant_ids)
-        # 参与者可能已被删除，同步过滤
+        # Handle transcripts and speaker assignments.
         self.participant_ids = [p["id"] for p in self._participants]
 
     def load_hotwords(self) -> None:
-        """从热词库加载被选择的库，合并成空格分隔的热词串注入 ASR。"""
+        """Audio transcription and speaker data handling."""
         if not self.hotword_store or not self.hotword_ids:
             self._hotword_str = ""
             return
         words = self.hotword_store.get_words_for_meeting(
             self.hotword_ids, limit=self._hotword_limit
         )
-        # 热词库可能已被删除，只保留仍然存在的库
+        # Handle transcripts and speaker assignments.
         valid_ids = {lib["id"] for lib in self.hotword_store.list_hotwords()}
         self.hotword_ids = [hid for hid in self.hotword_ids if hid in valid_ids]
         self._hotword_str = " ".join(words)
@@ -312,7 +312,7 @@ class SessionProcessor(threading.Thread):
             )
 
     def rebuild_labels(self) -> None:
-        """恢复会议后按当前参与者/阈值重新计算一遍说话人标签。"""
+        """Audio transcription and speaker data handling."""
         if self.segments:
             self._recluster()
             self._rebuild_and_push()
@@ -329,14 +329,14 @@ class SessionProcessor(threading.Thread):
                 self._send_state()
             return False
 
-        # 对整段缓冲做一次 ASR（内部 fsmn-vad 切句 + 标点恢复）
+        # Handle transcripts and speaker assignments.
         sentences = self.models.transcribe_sentences(audio, hotword=self._hotword_str or None)
         local_end = 0
         for sentence in sentences:
             start_ms = int(sentence["start"])
             end_ms = int(sentence["end"])
             text = sentence["text"]
-            # 可信条件：句子结束距缓冲末尾足够远（收尾时不再要求）
+            # Handle transcripts and speaker assignments.
             if not final and buffer_s - end_ms / 1000.0 < self._trusted_threshold_s:
                 break
 
@@ -345,7 +345,7 @@ class SessionProcessor(threading.Thread):
             if e_g <= s_g:
                 continue
 
-            # 从当前缓冲切片提取声纹
+            # Handle transcripts and speaker assignments.
             seg_audio = audio[s_g - start_offset : e_g - start_offset]
             emb = self.models.embed(seg_audio)
             if emb is None:
@@ -371,7 +371,7 @@ class SessionProcessor(threading.Thread):
                 text,
             )
 
-        # 裁剪掉已确认的音频（新来的音频不受影响）
+        # Handle transcripts and speaker assignments.
         if local_end > 0:
             self.buffer.drop_before(local_end)
 
@@ -386,11 +386,11 @@ class SessionProcessor(threading.Thread):
 
     # --------------------------------------------------------------- cluster
     def _recluster(self) -> None:
-        """计算所有可信段的说话人标签。
+        """Recompute speaker assignments for all confirmed segments.
 
-        1. 每个段先与所选会议参与者的全部声纹做余弦匹配，超过阈值直接标注为参与者姓名；
-        2. 其余段交给 FunASR ClusterBackend 聚类，分配“未知说话人N”；
-        3. 把原始簇标签映射为稳定说话人 ID，减少标签抖动。
+        Match segments to participants when cosine similarity is high enough.
+        Cluster unmatched segments with the FunASR clustering backend.
+        Map cluster labels to stable speaker IDs.
         """
         if not self.segments:
             return
@@ -405,7 +405,7 @@ class SessionProcessor(threading.Thread):
                 seg["cluster"] = -2
                 pool.append(i)
 
-        # 剩余段进入 funasr 默认聚类
+        # Handle transcripts and speaker assignments.
         if pool:
             embs = np.stack([self.segments[i]["emb"] for i in pool]).astype(np.float32)
             labels = self.models.cluster(embs)
@@ -416,7 +416,7 @@ class SessionProcessor(threading.Thread):
         self._assign_labels(matched)
 
     def _match_participant(self, emb: np.ndarray) -> tuple[Optional[str], float]:
-        """与每个参与者的每条声纹做余弦相似度，返回 (参与者id, 最大相似度)。"""
+        """Audio transcription and speaker data handling."""
         if not self._participants:
             return None, -1.0
         best_pid: Optional[str] = None
@@ -438,7 +438,7 @@ class SessionProcessor(threading.Thread):
         return free_id
 
     def _remap_speakers(self) -> None:
-        """只对进入聚类的段（cluster >= 0）做稳定映射，跳过参与者段。"""
+        """Audio transcription and speaker data handling."""
         clustered = [s for s in self.segments if s["cluster"] >= 0]
         raw_labels = sorted({s["cluster"] for s in clustered})
         old_map = self._speaker_map
@@ -462,7 +462,7 @@ class SessionProcessor(threading.Thread):
                 new_map[raw] = best_stable
                 used.add(best_stable)
             else:
-                # 复用被释放的 ID，避免说话人 ID 随着聚类变化不断增大（ID 从 1 开始）
+                # Handle transcripts and speaker assignments.
                 free_id = self._next_free_speaker_id(used)
                 new_map[raw] = free_id
                 used.add(free_id)
@@ -470,7 +470,7 @@ class SessionProcessor(threading.Thread):
         self._speaker_seg_ids = new_seg_ids
 
     def _assign_labels(self, matched: dict[int, str]) -> None:
-        """给每个段写入稳定的 speaker_id 与展示用的 speaker_name。"""
+        """Audio transcription and speaker data handling."""
         for participant_id in matched.values():
             if participant_id not in self._participant_label_map:
                 self._participant_label_map[participant_id] = self._next_free_speaker_id()
@@ -480,7 +480,7 @@ class SessionProcessor(threading.Thread):
                 participant_id = matched.get(seg["id"])
                 stable = self._participant_label_map.get(participant_id or "", 1)
                 seg["speaker_id"] = stable
-                seg["speaker_name"] = names.get(participant_id or "", "参与者")
+                seg["speaker_name"] = names.get(participant_id or "", "Participant")
             else:
                 stable = self._speaker_map.get(seg["cluster"], seg["cluster"])
                 seg["speaker_id"] = stable
@@ -489,13 +489,13 @@ class SessionProcessor(threading.Thread):
                         self._unknown_index[stable] = (
                             max(self._unknown_index.values(), default=0) + 1
                         )
-                    seg["speaker_name"] = f"未知说话人{self._unknown_index[stable]}"
+                    seg["speaker_name"] = f"Unknown Speaker {self._unknown_index[stable]}"
                 else:
-                    seg["speaker_name"] = f"说话人{stable}"
+                    seg["speaker_name"] = f"Speaker {stable}"
 
     # ---------------------------------------------------------------- push
     def _rebuild_and_push(self) -> bool:
-        """重建 segment 快照并推送给前端；内容没变化时不推送。"""
+        """Audio transcription and speaker data handling."""
         ordered = sorted(self.segments, key=lambda s: s["start_sample"])
         items = [
             {
@@ -504,7 +504,7 @@ class SessionProcessor(threading.Thread):
                     "speaker_id", self._speaker_map.get(s["cluster"], s["cluster"])
                 ),
                 "speaker_name": s.get("speaker_name")
-                or f"说话人{s.get('speaker_id', self._speaker_map.get(s['cluster'], s['cluster']))}",
+                or f"Speaker {s.get('speaker_id', self._speaker_map.get(s['cluster'], s['cluster']))}"
                 "start_ms": round(s["start_sample"] * 1000 / self.settings.sample_rate),
                 "end_ms": round(s["end_sample"] * 1000 / self.settings.sample_rate),
                 "text": s["text"],

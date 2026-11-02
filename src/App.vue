@@ -9,13 +9,13 @@ const route = useRoute()
   <div class="app-shell">
     <header class="app-bar">
       <RouterLink to="/" class="brand">
-        <span class="brand-mark">拓</span>
-        <span class="brand-name">开拓者会议</span>
+        <span class="brand-mark">M</span>
+        <span class="brand-name">Meeting of Pioneers</span>
       </RouterLink>
       <nav class="app-nav">
         <RouterLink to="/" class="nav-link" :class="{ active: route.name === 'home' }">
           <AppIcon name="home" :size="15" />
-          首页
+          Home
         </RouterLink>
         <RouterLink
           to="/speakers"
@@ -23,7 +23,7 @@ const route = useRoute()
           :class="{ active: ['speakers', 'speaker-new'].includes(route.name as string) }"
         >
           <AppIcon name="users" :size="15" />
-          说话人
+          Speakers
         </RouterLink>
         <RouterLink
           to="/hotwords"
@@ -31,7 +31,7 @@ const route = useRoute()
           :class="{ active: ['hotwords', 'hotword-new'].includes(route.name as string) }"
         >
           <AppIcon name="flame" :size="15" />
-          热词库
+          Hotwords
         </RouterLink>
       </nav>
     </header>

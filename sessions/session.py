@@ -13,7 +13,7 @@ from storage.speakers import SpeakerStore
 from storage.hotwords import HotwordStore
 
 class Session:
-    """一个 WebSocket 连接对应的会话：音频缓冲 + 全量音频 + 处理线程 + 出站队列。"""
+    """A WebSocket session with an audio buffer, processor thread, and outbox."""
 
     def __init__(
         self,
@@ -75,7 +75,7 @@ class Session:
             self.processor.load_state(state)
         self.processor.load_participants()
         self.processor.load_hotwords()
-        # 恢复历史段后按当前参与者/阈值重算标签，保证续记与会话内逻辑一致
+        # Recompute labels when restoring a meeting with updated participant settings.
         self.processor.rebuild_labels()
         self.processor.start()
 

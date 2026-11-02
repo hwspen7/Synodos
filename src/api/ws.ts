@@ -8,7 +8,7 @@ export interface RealtimeClientOptions {
   onClosed?: (reason: 'closed' | 'disconnected') => void
 }
 
-/** 实时音频上传 + transcript 快照接收的 WebSocket 客户端。 */
+/* Audio processing and UI rendering. */
 export class RealtimeClient {
   private ws: WebSocket | null = null
   private settled = false
@@ -52,7 +52,7 @@ export class RealtimeClient {
       }
     }
     ws.onclose = () => {
-      // 服务端收尾后会先发 closed JSON 再断开，避免重复回调
+      // Process audio and meeting metadata.
       if (!this.settled) this.options.onClosed?.('disconnected')
     }
     ws.onerror = () => ws.close()
@@ -62,12 +62,12 @@ export class RealtimeClient {
   sendPcm(chunk: Int16Array): void {
     const ws = this.ws
     if (ws && ws.readyState === WebSocket.OPEN) {
-      // Int16Array.buffer 的类型是 ArrayBufferLike，WebSocket 需要 ArrayBuffer
+      // Process audio and meeting metadata.
       ws.send(chunk.buffer as ArrayBuffer)
     }
   }
 
-  /** 请求服务端收尾：把剩余音频处理完、推送最终 transcript 后由服务端关闭。 */
+  /* Audio processing and UI rendering. */
   sendStop(): void {
     const ws = this.ws
     if (ws && ws.readyState === WebSocket.OPEN) {

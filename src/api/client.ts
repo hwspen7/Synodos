@@ -12,7 +12,7 @@ const BASE = '/api'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers)
-  // 默认按 JSON 发送；二进制上传（如 PCM）由调用方显式指定 Content-Type
+  // Process audio and meeting metadata.
   if (init?.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
@@ -67,7 +67,7 @@ export const speakersApi = {
     }),
   remove: (id: string) =>
     request<{ ok: boolean }>(`/speakers/${id}`, { method: 'DELETE' }),
-  /** 上传现场录音（16kHz 单声道 Int16 小端 PCM），后端提取声纹向量 */
+  /* Audio processing and UI rendering. */
   addRecord: (id: string, blob: Blob) =>
     request<{ vectors: SpeakerVector[]; min_audio_s: number }>(
       `/speakers/${id}/vectors/record`,
@@ -77,7 +77,7 @@ export const speakersApi = {
         body: blob,
       },
     ),
-  /** 从已保存会议中选择一条或多条 segment，使用记录中的声纹向量 */
+  /* Audio processing and UI rendering. */
   addFromMeeting: (id: string, meetingId: string, segmentIds: number[]) =>
     request<{ vectors: SpeakerVector[]; missing: number[]; min_audio_s: number }>(
       `/speakers/${id}/vectors/meeting`,
@@ -112,7 +112,7 @@ export const systemApi = {
   health: () => request<HealthInfo>('/health'),
 }
 
-/** 触发浏览器下载（后端通过 Content-Disposition 给出文件名）。 */
+/* Audio processing and UI rendering. */
 export function downloadUrl(url: string): void {
   const a = document.createElement('a')
   a.href = url

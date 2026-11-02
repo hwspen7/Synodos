@@ -19,14 +19,14 @@ export interface ServerReady {
 export interface TranscriptSegment {
   id: number
   speaker_id: number
-  /** 展示用说话人名称：参与者姓名 / 未知说话人N / 说话人N */
+  /* Audio processing and UI rendering. */
   speaker_name?: string
   start_ms: number
   end_ms: number
   text: string
 }
 
-/** 后端下发的完整 segment 快照：只下发可信段，段落由前端本地分组。 */
+/* Audio processing and UI rendering. */
 export interface ServerTranscript {
   type: 'transcript'
   version: number
@@ -44,17 +44,17 @@ export interface ServerClosed {
 
 export type ServerMessage = ServerReady | ServerTranscript | ServerState | ServerClosed
 
-/** 前端展示用的可信段：附上说话人颜色。 */
+/* Audio processing and UI rendering. */
 export interface Segment extends TranscriptSegment {
   color: string
 }
 
 /**
- * 前端本地由可信段分组生成的段落：
- * 同一说话人（speaker_id）且相邻段间隔小于 merge_gap_s 才合并。
+  * Audio processing and UI rendering.
+  * Audio processing and UI rendering.
  */
 export interface Paragraph {
-  /** 段落 id：等于段落第一个可信段的 id，分组结构变化时随之变化 */
+  /* Audio processing and UI rendering. */
   id: number
   speaker_id: number
   speaker_name?: string
@@ -65,7 +65,7 @@ export interface Paragraph {
   color: string
 }
 
-/** 已保存到磁盘的会议记录摘要 */
+/* Audio processing and UI rendering. */
 export interface MeetingSummary {
   id: string
   title: string
@@ -78,7 +78,7 @@ export interface MeetingSummary {
   speakers: number
 }
 
-/** 会议详情：meta + 参与者设置（用于初始化“会议参与者”选择） */
+/* Audio processing and UI rendering. */
 export interface MeetingDetail {
   id: string
   title: string
@@ -89,7 +89,7 @@ export interface MeetingDetail {
   spk_threshold: number
 }
 
-/** 说话人的一条声纹向量（元数据，不含向量本身） */
+/* Audio processing and UI rendering. */
 export interface SpeakerVector {
   id: string
   duration_s: number
@@ -98,7 +98,7 @@ export interface SpeakerVector {
   segment_ids: number[]
   text?: string
   created_at: string
-  /** 时长低于 min_speaker_audio_s，声纹可能不准确 */
+  /* Audio processing and UI rendering. */
   short: boolean
 }
 
@@ -111,7 +111,7 @@ export interface Speaker {
   vectors: SpeakerVector[]
 }
 
-/** 热词库：一组热词，会议开始时按库选择后注入 ASR */
+/* Audio processing and UI rendering. */
 export interface HotwordLibrary {
   id: string
   name: string
@@ -121,7 +121,7 @@ export interface HotwordLibrary {
   updated_at: string
 }
 
-/** 会议中的一个可信段摘要（用于导入说话人声纹时选择） */
+/* Audio processing and UI rendering. */
 export interface MeetingSegment {
   id: number
   text: string

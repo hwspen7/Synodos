@@ -1,7 +1,7 @@
-"""线程安全的音频缓冲。
+"""Thread-safe rolling audio buffer.
 
-- AudioBuffer：VAD 滑动窗口，只保留最近一段时间，处理器周期性对其做 VAD；
-  已确认的文本与声纹不再重算，因此不需要保留全量音频。
+- AudioBuffer holds the current window of unconfirmed audio.
+    Confirmed text and embeddings are retained separately, not as raw audio.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ class AudioBuffer:
         self.sample_rate = sample_rate
         self._chunks: list[np.ndarray] = []
         self._count = 0
-        #: 缓冲区第一个样本在整个会话音频流中的绝对采样点序号
+        #: Absolute sample index of the first buffered sample.
         self._start_offset = 0
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)
@@ -44,7 +44,7 @@ class AudioBuffer:
             return self._start_offset
 
     def set_start_offset(self, offset: int) -> None:
-        """设置窗口第一个样本的全局偏移（恢复已保存会议时使用）。"""
+        """Set the global offset of the first sample when resuming a meeting."""
         with self._lock:
             self._start_offset = int(offset)
 
@@ -54,7 +54,7 @@ class AudioBuffer:
         stop_event: threading.Event,
         wake_event: threading.Event | None = None,
     ) -> bool:
-        """等待缓冲区达到 min_seconds 秒（或 wake_event 置位）；被停止时返回 False。"""
+        """Wait for the buffer to reach min_seconds or wake_event, returning False on stop."""
         with self._cond:
             while not stop_event.is_set():
                 if wake_event is not None and wake_event.is_set():
@@ -65,19 +65,19 @@ class AudioBuffer:
         return False
 
     def wake(self) -> None:
-        """唤醒等待中的处理器线程（用于停止会话时）。"""
+        """Wake the processor thread, for example when stopping a session."""
         with self._cond:
             self._cond.notify_all()
 
     def snapshot(self) -> Tuple[int, np.ndarray]:
-        """返回 (缓冲区起始绝对采样点, 全部样本的拷贝)。"""
+        """Return the absolute starting sample index and a copy of buffered samples."""
         with self._lock:
             if not self._chunks:
                 return self._start_offset, np.empty(0, dtype=np.float32)
             return self._start_offset, np.concatenate(self._chunks)
 
     def drop_before(self, drop_samples: int) -> None:
-        """丢弃缓冲区最前面的 drop_samples 个样本（只从队首移除，不影响新追加的数据）。"""
+        """Drop the oldest drop_samples without affecting newly appended audio."""
         if drop_samples <= 0:
             return
         with self._cond:

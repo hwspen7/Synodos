@@ -5,9 +5,9 @@ export interface MicRecorder {
 }
 
 /**
- * 打开麦克风，用 AudioWorklet 实时降采样为 16kHz 单声道 Int16 PCM，
- * 每个处理块通过 onPcm 回调交给调用方（通常是 WebSocket）。
- * onLevel 可选，回调返回当前音频 RMS 电平（0~1），用于麦克风状态指示。
+  * Audio processing and UI rendering.
+  * Audio processing and UI rendering.
+  * Audio processing and UI rendering.
  */
 export async function startMicRecording(
   onPcm: (chunk: Int16Array) => void,
@@ -43,14 +43,14 @@ export async function startMicRecording(
     })
     node.port.onmessage = (event: MessageEvent) => {
       const data = event.data
-      // 调试消息：AudioWorklet 输入信号最大值
+      // Process audio and meeting metadata.
       if (data && typeof data === 'object' && data.type === 'dbg') {
         console.debug(`[mic-input] max=${(data.max as number).toFixed(5)}`)
         return
       }
       const pcm = data as Int16Array
       if (!pcm || pcm.length === 0) return
-      // 先计算电平，再发送，避免部分浏览器 ws.send 分离 ArrayBuffer 导致数据失效
+      // Process audio and meeting metadata.
       if (onLevel) {
         let sum = 0
         let maxAbs = 0
@@ -62,7 +62,7 @@ export async function startMicRecording(
         }
         const level = Math.sqrt(sum / pcm.length)
         onLevel(level)
-        // 调试：每秒输出一次采样最大值，帮助确认麦克风是否真正采集到声音
+        // Process audio and meeting metadata.
         if (Math.random() < 0.02) {
           console.debug(`[mic] rms=${level.toFixed(5)} max=${maxAbs.toFixed(5)}`)
         }
@@ -86,7 +86,7 @@ export async function startMicRecording(
       },
     }
   } catch (err) {
-    // 初始化失败时释放麦克风，避免权限一直被占用
+    // Process audio and meeting metadata.
     stream.getTracks().forEach((track) => track.stop())
     void ctx?.close()
     throw err

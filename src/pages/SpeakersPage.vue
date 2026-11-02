@@ -62,7 +62,7 @@ async function renameSpeaker(): Promise<void> {
     await speakersApi.rename(renameTarget.value.id, renameName.value.trim())
     renameTarget.value = null
     await load()
-    showToast('已重命名')
+    showToast('Renamed')
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -71,12 +71,12 @@ async function renameSpeaker(): Promise<void> {
 }
 
 async function removeVector(speaker: Speaker, vectorId: string): Promise<void> {
-  if (!window.confirm(`确定删除这条声纹？此操作不可恢复。`)) return
+  if (!window.confirm('Delete this voiceprint? This action cannot be undone.')) return
   error.value = ''
   try {
     await speakersApi.deleteVector(speaker.id, vectorId)
     await load()
-    showToast('已删除声纹')
+    showToast('Voiceprint deleted')
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   }
@@ -84,18 +84,18 @@ async function removeVector(speaker: Speaker, vectorId: string): Promise<void> {
 
 async function onVectorsAdded(vectors: SpeakerVector[]): Promise<void> {
   await load()
-  showToast(`已为「${addTarget.value?.name ?? ''}」添加 ${vectors.length} 条声纹`)
+  showToast(`Added ${vectors.length} voiceprints for ${addTarget.value?.name ?? ''}`)
 }
 
 async function removeSpeaker(speaker: Speaker): Promise<void> {
-  if (!window.confirm(`确定删除说话人「${speaker.name}」及其全部 ${speaker.vector_count} 条声纹？此操作不可恢复。`)) {
+  if (!window.confirm(`Delete speaker "${speaker.name}" and all ${speaker.vector_count} voiceprints? This cannot be undone.`)) {
     return
   }
   error.value = ''
   try {
     await speakersApi.remove(speaker.id)
     await load()
-    showToast('已删除说话人')
+    showToast('Speaker deleted')
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   }
@@ -110,31 +110,31 @@ onMounted(load)
       <div class="speaker-head-left">
         <button class="btn btn-ghost btn-sm" @click="router.push('/')">
           <AppIcon name="arrow-left" :size="16" />
-          返回首页
+          Back to Home
         </button>
         <div>
-          <h1 class="page-title">说话人声纹库</h1>
-          <p class="page-sub">每个说话人可保存多条声纹特征向量，供会议识别参与者使用。</p>
+          <h1 class="page-title">Speaker Voiceprint Library</h1>
+          <p class="page-sub">Store multiple voiceprints for each speaker to improve meeting identification.</p>
         </div>
       </div>
       <button class="btn btn-primary" @click="router.push('/speakers/new')">
         <AppIcon name="user-plus" :size="16" />
-        新建说话人
+        Create Speaker
       </button>
     </div>
 
     <p v-if="error" class="error-banner">{{ error }}</p>
 
     <div v-if="loading" class="empty-state">
-      <p>正在加载说话人…</p>
+      <p>Loading speakers...</p>
     </div>
     <div v-else-if="speakers.length === 0" class="empty-state">
       <div class="empty-icon"><AppIcon name="users" :size="26" /></div>
-      <h3>还没有保存的说话人</h3>
-      <p>新建说话人并添加声纹样本（现场录音或会议片段），之后可在会议中标注参与者。</p>
+      <h3>No speakers yet</h3>
+      <p>Create a speaker and enroll a recording or meeting segment.</p>
       <button class="btn btn-primary" @click="router.push('/speakers/new')">
         <AppIcon name="user-plus" :size="16" />
-        新建说话人
+        Create Speaker
       </button>
     </div>
     <div v-else class="speaker-list">
@@ -144,26 +144,26 @@ onMounted(load)
           <div class="speaker-info">
             <h3 class="speaker-card-title">{{ speaker.name }}</h3>
             <p class="speaker-meta">
-              {{ speaker.vector_count }} 条声纹
+              {{ speaker.vector_count }} voiceprints
               <span class="dot-sep">·</span>
-              更新于 {{ fmtDate(speaker.updated_at) }}
+              Updated {{ fmtDate(speaker.updated_at) }}
             </p>
           </div>
         </div>
         <div class="speaker-actions">
           <button
             class="btn btn-ghost btn-sm"
-            title="为这个说话人添加新的声纹样本"
+            title="Add another voiceprint for this speaker"
             @click="addTarget = speaker"
           >
             <AppIcon name="mic" :size="14" />
-            添加声纹
+            Add Voiceprint
           </button>
-          <button class="btn btn-ghost btn-sm" title="重命名" @click="openRename(speaker)">
+          <button class="btn btn-ghost btn-sm" title="Rename" @click="openRename(speaker)">
             <AppIcon name="edit" :size="14" />
-            重命名
+            Rename
           </button>
-          <button class="btn btn-danger btn-sm" title="删除" @click="removeSpeaker(speaker)">
+          <button class="btn btn-danger btn-sm" title="Delete" @click="removeSpeaker(speaker)">
             <AppIcon name="trash" :size="14" />
           </button>
         </div>
@@ -172,50 +172,50 @@ onMounted(load)
           <div v-for="v in speaker.vectors" :key="v.id" class="vector-row">
             <AppIcon name="list" :size="13" class="vector-icon" />
             <span class="vector-src">
-              {{ v.source === 'recording' ? '现场录音' : '会议片段' }}
+              {{ v.source === 'recording' ? 'Live Recording' : 'Meeting Segment' }}
             </span>
-            <span class="muted-text">{{ v.duration_s.toFixed(1) }} 秒</span>
+            <span class="muted-text">{{ v.duration_s.toFixed(1) }} s</span>
             <span v-if="v.source === 'meeting' && v.meeting_id" class="muted-text">
-              会议 {{ v.meeting_id.slice(0, 8) }} · 片段 #{{ v.segment_ids.join(', ') }}
+              Meeting {{ v.meeting_id.slice(0, 8) }} · segments #{{ v.segment_ids.join(', ') }}
             </span>
             <span v-if="v.text" class="muted-text vector-text">{{ v.text }}</span>
-            <span v-if="v.short" class="warn-badge" title="语音过短，声纹特征可能不准确">
+            <span v-if="v.short" class="warn-badge" title="Short audio may lead to unreliable voiceprint matching.">
               <AppIcon name="alert" :size="12" />
-              过短
+              Too short
             </span>
             <span class="vector-date">{{ fmtDate(v.created_at) }}</span>
             <button
               class="icon-btn danger"
-              title="删除这条声纹"
+              title="Delete this voiceprint"
               @click="removeVector(speaker, v.id)"
             >
               <AppIcon name="trash" :size="13" />
             </button>
           </div>
         </div>
-        <p v-else class="hint-text">还没有声纹样本，建议尽快添加。</p>
+        <p v-else class="hint-text">No voiceprints yet. Add a sample.</p>
       </article>
     </div>
 
     <div v-if="renameTarget" class="dialog-backdrop" @click.self="renameTarget = null">
       <div class="dialog">
-        <h3>重命名说话人</h3>
-        <p class="dialog-sub">修改后，会议记录中已标注的姓名会随之更新。</p>
+        <h3>Rename Speaker</h3>
+        <p class="dialog-sub">The updated name will also appear in saved meetings.</p>
         <input
           v-model="renameName"
           class="text-input"
-          placeholder="说话人姓名"
+          placeholder="Speaker Name"
           autofocus
           @keyup.enter="renameSpeaker"
         />
         <div class="dialog-actions">
-          <button class="btn btn-ghost" @click="renameTarget = null">取消</button>
+          <button class="btn btn-ghost" @click="renameTarget = null">Cancel</button>
           <button
             class="btn btn-primary"
             :disabled="!renameName.trim() || renaming"
             @click="renameSpeaker"
           >
-            {{ renaming ? '保存中…' : '保存' }}
+            {{ renaming ? 'Saving...' : 'Save' }}
           </button>
         </div>
       </div>
@@ -223,8 +223,8 @@ onMounted(load)
 
     <div v-if="addTarget" class="dialog-backdrop" @click.self="addTarget = null">
       <div class="dialog dialog-wide">
-        <h3>为「{{ addTarget.name }}」添加声纹</h3>
-        <p class="dialog-sub">现场录音或从已保存会议中选取片段，为这个说话人追加声纹样本。</p>
+        <h3>Add Voiceprints for {{ addTarget.name }}</h3>
+        <p class="dialog-sub">Add voiceprints from recordings or meeting segments.</p>
         <SpeakerVectorAdder
           :key="addTarget.id"
           :speaker="addTarget"
@@ -232,7 +232,7 @@ onMounted(load)
           @error="error = $event"
         />
         <div class="dialog-actions">
-          <button class="btn btn-ghost" @click="addTarget = null">关闭</button>
+          <button class="btn btn-ghost" @click="addTarget = null">Close</button>
         </div>
       </div>
     </div>

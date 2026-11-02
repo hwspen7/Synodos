@@ -15,7 +15,7 @@ async def list_meetings() -> dict:
 
 @router.get("/api/meetings/{meeting_id}")
 async def get_meeting(meeting_id: str) -> dict:
-    """会议摘要 + 参与者设置，供前端初始化“会议参与者”选择。"""
+    """Return meeting metadata and participant settings to initialize the frontend."""
     if not meeting_store.valid_id(meeting_id):
         raise HTTPException(status_code=400, detail="invalid meeting id")
     meeting = await asyncio.get_running_loop().run_in_executor(
@@ -28,7 +28,7 @@ async def get_meeting(meeting_id: str) -> dict:
 
 @router.get("/api/meetings/{meeting_id}/segments")
 async def get_meeting_segments(meeting_id: str) -> dict:
-    """返回会议片段摘要（不含声纹向量），供导入说话人声纹时选择。"""
+    """Return segment summaries without embeddings for voiceprint enrollment."""
     if not meeting_store.valid_id(meeting_id):
         raise HTTPException(status_code=400, detail="invalid meeting id")
     segments = await asyncio.get_running_loop().run_in_executor(
@@ -85,7 +85,7 @@ async def export_meeting(
     loop = asyncio.get_running_loop()
     session = meeting_sessions.get(meeting_id)
     if session is not None:
-        # 导出前先落盘最新状态
+        # Persist the latest active session state before exporting.
         await loop.run_in_executor(None, session.processor.request_save, 30.0)
     try:
         text = await loop.run_in_executor(None, meeting_store.export, meeting_id, format)

@@ -17,7 +17,7 @@ const editName = ref('')
 const editWordsText = ref('')
 const editing = ref(false)
 
-/** 展示前 12 个热词，其余折叠。 */
+/** Preview the first twelve hotwords. */
 const PREVIEW_LIMIT = 12
 
 function showToast(message: string): void {
@@ -54,7 +54,7 @@ function fmtDate(iso: string): string {
 function parseWords(text: string): string[] {
   const seen = new Set<string>()
   const out: string[] = []
-  for (const item of text.replace(/[，、;；]/g, ' ').split(/\s+/)) {
+  for (const item of text.replace(/[\uFF0C\u3001;\uFF1B]/g, ' ').split(/\s+/)) {
     const w = item.trim()
     if (w && !seen.has(w)) {
       seen.add(w)
@@ -85,7 +85,7 @@ async function saveEdit(): Promise<void> {
     })
     editTarget.value = null
     await load()
-    showToast('已保存热词库')
+    showToast('Library saved')
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -94,14 +94,14 @@ async function saveEdit(): Promise<void> {
 }
 
 async function removeLibrary(lib: HotwordLibrary): Promise<void> {
-  if (!window.confirm(`确定删除热词库「${lib.name}」及其 ${lib.word_count} 个热词？此操作不可恢复。`)) {
+  if (!window.confirm(`Delete library "${lib.name}" and its ${lib.word_count} terms? This cannot be undone.`)) {
     return
   }
   error.value = ''
   try {
     await hotwordsApi.remove(lib.id)
     await load()
-    showToast('已删除热词库')
+    showToast('Library deleted')
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   }
@@ -116,31 +116,31 @@ onMounted(load)
       <div class="speaker-head-left">
         <button class="btn btn-ghost btn-sm" @click="router.push('/')">
           <AppIcon name="arrow-left" :size="16" />
-          返回首页
+          Back to Home
         </button>
         <div>
-          <h1 class="page-title">热词库</h1>
-          <p class="page-sub">维护一组组热词，开会时选中热词库即可提升专有名词识别率。</p>
+          <h1 class="page-title">Hotword Libraries</h1>
+          <p class="page-sub">Manage libraries of specialized terminology.</p>
         </div>
       </div>
       <button class="btn btn-primary" @click="router.push('/hotwords/new')">
         <AppIcon name="flame" :size="16" />
-        新建热词库
+        Create Hotword Library
       </button>
     </div>
 
     <p v-if="error" class="error-banner">{{ error }}</p>
 
     <div v-if="loading" class="empty-state">
-      <p>正在加载热词库…</p>
+      <p>Loading hotword libraries...</p>
     </div>
     <div v-else-if="libraries.length === 0" class="empty-state">
       <div class="empty-icon"><AppIcon name="flame" :size="26" /></div>
-      <h3>还没有热词库</h3>
-      <p>新建一个热词库，把会议中常出现的专有名词放进去，开会时按需选择。</p>
+      <h3>No hotword libraries yet</h3>
+      <p>Create a library of frequently used names and terms.</p>
       <button class="btn btn-primary" @click="router.push('/hotwords/new')">
         <AppIcon name="flame" :size="16" />
-        新建热词库
+        Create Hotword Library
       </button>
     </div>
     <div v-else class="hotword-list">
@@ -149,14 +149,14 @@ onMounted(load)
           <div class="hotword-card-title-wrap">
             <span class="hotword-card-icon"><AppIcon name="flame" :size="16" /></span>
             <h3 class="hotword-card-title">{{ lib.name }}</h3>
-            <span class="hotword-count-badge">{{ lib.word_count }} 个热词</span>
+            <span class="hotword-count-badge">{{ lib.word_count }} hotwords</span>
           </div>
           <div class="hotword-card-actions">
-            <button class="btn btn-ghost btn-sm" title="编辑热词库" @click="openEdit(lib)">
+            <button class="btn btn-ghost btn-sm" title="Edit Library" @click="openEdit(lib)">
               <AppIcon name="edit" :size="14" />
-              编辑
+              Edit
             </button>
-            <button class="btn btn-danger btn-sm" title="删除热词库" @click="removeLibrary(lib)">
+            <button class="btn btn-danger btn-sm" title="Delete Library" @click="removeLibrary(lib)">
               <AppIcon name="trash" :size="14" />
             </button>
           </div>
@@ -170,39 +170,39 @@ onMounted(load)
             {{ w }}
           </span>
           <span v-if="lib.words.length > PREVIEW_LIMIT" class="hotword-more">
-            +{{ lib.words.length - PREVIEW_LIMIT }} 个
+            +{{ lib.words.length - PREVIEW_LIMIT }} more
           </span>
         </div>
-        <p v-else class="hint-text">热词列表为空。</p>
-        <p class="hotword-meta">更新于 {{ fmtDate(lib.updated_at) }}</p>
+        <p v-else class="hint-text">No hotwords in this library.</p>
+        <p class="hotword-meta">Updated {{ fmtDate(lib.updated_at) }}</p>
       </article>
     </div>
 
     <div v-if="editTarget" class="dialog-backdrop" @click.self="editTarget = null">
       <div class="dialog dialog-wide">
-        <h3>编辑热词库</h3>
-        <p class="dialog-sub">修改名称或热词列表；已选择该库的会议会在下次连接时生效。</p>
+        <h3>Edit Hotword Library</h3>
+        <p class="dialog-sub">Changes take effect when the meeting reconnects.</p>
         <label class="field dialog-field">
-          热词库名称
-          <input v-model="editName" class="text-input" placeholder="热词库名称" />
+          Library Name
+          <input v-model="editName" class="text-input" placeholder="Library Name" />
         </label>
         <label class="field dialog-field">
-          热词列表（{{ editWordCount }} 个）
+          Hotwords ({{ editWordCount }})
           <textarea
             v-model="editWordsText"
             class="text-area"
             rows="7"
-            placeholder="每行一个热词"
+            placeholder="One hotword per line"
           ></textarea>
         </label>
         <div class="dialog-actions">
-          <button class="btn btn-ghost" @click="editTarget = null">取消</button>
+          <button class="btn btn-ghost" @click="editTarget = null">Cancel</button>
           <button
             class="btn btn-primary"
             :disabled="!editName.trim() || editWordCount === 0 || editing"
             @click="saveEdit"
           >
-            {{ editing ? '保存中…' : '保存' }}
+            {{ editing ? 'Saving...' : 'Save' }}
           </button>
         </div>
       </div>

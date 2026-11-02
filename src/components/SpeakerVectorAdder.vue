@@ -18,7 +18,7 @@ const tab = ref<Tab>('record')
 const minAudioS = ref(5)
 const addedVectors = ref<SpeakerVector[]>([])
 
-// ── 现场录音 ────────────────────────────────────────────
+// ── Live Recording ────────────────────────────────────────────
 const recording = ref(false)
 const recDurationS = ref(0)
 const recReady = ref(false)
@@ -26,7 +26,7 @@ const submittingRec = ref(false)
 const pcmChunks: Int16Array[] = []
 let recorder: Awaited<ReturnType<typeof startMicRecording>> | null = null
 
-// ── 从会议选取 ──────────────────────────────────────────
+// ── From Meeting ──────────────────────────────────────────
 const meetings = ref<MeetingSummary[]>([])
 const selectedMeetingId = ref('')
 const segments = ref<MeetingSegment[]>([])
@@ -54,7 +54,7 @@ function fmtDuration(ms: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-// ── 现场录音 ────────────────────────────────────────────
+// ── Live Recording ────────────────────────────────────────────
 async function startRecord(): Promise<void> {
   if (recording.value) return
   error.value = ''
@@ -80,14 +80,14 @@ function stopRecord(): void {
   recorder = null
   recReady.value = recDurationS.value >= 0.2
   if (!recReady.value) {
-    error.value = '录音太短，无法提取声纹特征，请重新录制'
+    error.value = 'Recording too short. Please try again.'
     pcmChunks.length = 0
     recDurationS.value = 0
   }
 }
 
 function pcmBlob(): Blob {
-  // Int16Array 的 buffer 可能带额外字节，按视图实际字节范围构造 Blob
+  // Copy the exact byte span of the Int16Array view into a Blob.
   return new Blob(
     pcmChunks.map((c) => c.buffer.slice(c.byteOffset, c.byteOffset + c.byteLength) as ArrayBuffer),
     { type: 'application/octet-stream' },
@@ -117,7 +117,7 @@ async function submitRecording(): Promise<void> {
   }
 }
 
-// ── 从会议选取 ──────────────────────────────────────────
+// ── From Meeting ──────────────────────────────────────────
 async function loadMeetingSegments(): Promise<void> {
   if (!selectedMeetingId.value) {
     segments.value = []
@@ -158,7 +158,7 @@ async function submitMeetingSelection(): Promise<void> {
     addedVectors.value = vectors
     emit('added', vectors)
     if (missing.length > 0) {
-      error.value = `有 ${missing.length} 个片段没有可用的声纹向量，已跳过`
+      error.value = `${missing.length} segments have no usable embeddings and were skipped`
       emit('error', error.value)
     }
     selectedSegIds.value = new Set()
@@ -175,7 +175,7 @@ onMounted(async () => {
     const health = await systemApi.health()
     minAudioS.value = health.min_speaker_audio_s
   } catch {
-    /* 保留默认 5 秒 */
+    /* Keep the default five-second value. */
   }
   try {
     const { meetings: list } = await meetingsApi.list()
@@ -196,25 +196,25 @@ onBeforeUnmount(() => {
     <div class="tab-bar">
       <button class="tab-btn" :class="{ active: tab === 'record' }" @click="tab = 'record'">
         <AppIcon name="mic" :size="15" />
-        现场录音
+        Live Recording
       </button>
       <button class="tab-btn" :class="{ active: tab === 'meeting' }" @click="tab = 'meeting'">
         <AppIcon name="file-text" :size="15" />
-        从会议选取
+        From Meeting
       </button>
     </div>
 
     <p v-if="error" class="error-banner">{{ error }}</p>
 
-    <!-- 现场录音 -->
+    <!-- Live Recording -->
     <div v-if="tab === 'record'" class="record-area">
       <div class="read-card">
         <div class="read-card-head">
           <AppIcon name="mic" :size="15" />
-          请朗读以下内容（建议 {{ minAudioS }} 秒以上）
+          Read the following passage for at least {{ minAudioS }} seconds.
         </div>
         <blockquote class="read-passage">
-          网络开拓者协会（简称“网协”），成立于1997年，是目前北京理工大学校内规模最大的校级学生组织之一，同时也是校团委领导的唯一校级IT 类学生组织。本着“网络无限，开拓不懈”的精神，网协不断助力校园网络和信息化建设。
+          Meeting of Pioneers provides local speech transcription, speaker identification, and meeting archiving. Please read this paragraph clearly for voiceprint enrollment.
         </blockquote>
       </div>
       <button
@@ -223,18 +223,18 @@ onBeforeUnmount(() => {
         @click="recording ? stopRecord() : startRecord()"
       >
         <AppIcon :name="recording ? 'stop' : 'mic'" :size="18" />
-        {{ recording ? '停止录音' : '开始录音' }}
+        {{ recording ? 'Stop Recording' : 'Start Recording' }}
       </button>
       <div v-if="recDurationS > 0 || recReady" class="rec-meta">
-        <span class="rec-time">{{ recDurationS.toFixed(1) }} 秒</span>
+        <span class="rec-time">{{ recDurationS.toFixed(1) }} s</span>
         <span v-if="recReady && recDurationS < minAudioS" class="warn-badge">
           <AppIcon name="alert" :size="13" />
-          语音过短（&lt; {{ minAudioS }} 秒），声纹特征可能不准确
+          Audio too short (&lt; {{ minAudioS }} s). Matching may be unreliable.
         </span>
-        <span v-else-if="recReady" class="ok-badge">录音完成</span>
+        <span v-else-if="recReady" class="ok-badge">Recording complete</span>
       </div>
       <p class="hint-text">
-        建议先通读一遍上方内容再开始录音；低于 {{ minAudioS }} 秒会提示声纹可能不准确，但也可以保存。
+        Read the passage before recording. Samples shorter than {{ minAudioS }} seconds may be less reliable, but can still be saved.
       </p>
       <button
         v-if="recReady"
@@ -243,24 +243,24 @@ onBeforeUnmount(() => {
         @click="submitRecording"
       >
         <AppIcon name="check" :size="16" />
-        {{ submittingRec ? '提取中…' : '提取声纹并保存' }}
+        {{ submittingRec ? 'Extracting...' : 'Extract and Save Voiceprint' }}
       </button>
     </div>
 
-    <!-- 从会议选取 -->
+    <!-- From Meeting -->
     <div v-else class="meeting-pick-area">
       <div class="field">
-        选择会议
+        Select Meeting
         <select v-model="selectedMeetingId" class="text-input" @change="loadMeetingSegments">
-          <option value="" disabled>请选择已保存的会议…</option>
+          <option value="" disabled>Select a saved meeting...</option>
           <option v-for="m in meetings" :key="m.id" :value="m.id">
-            {{ m.title }}（{{ m.segments }} 个片段）
+            {{ m.title }} ({{ m.segments }} segments)
           </option>
         </select>
       </div>
 
       <div v-if="loadingSegments" class="empty-state small">
-        <p>正在加载片段…</p>
+        <p>Loading segments...</p>
       </div>
       <div v-else-if="segments.length > 0" class="seg-select-list">
         <label
@@ -274,24 +274,24 @@ onBeforeUnmount(() => {
             :checked="selectedSegIds.has(seg.id)"
             @change="toggleSegment(seg.id)"
           />
-          <span class="seg-text">{{ seg.text || '（此段暂无内容）' }}</span>
+          <span class="seg-text">{{ seg.text || '(No content in this segment)' }}</span>
           <span class="seg-time">{{ fmtDuration(seg.start_ms) }} – {{ fmtDuration(seg.end_ms) }}</span>
           <span class="seg-duration">{{ seg.duration_s.toFixed(1) }}s</span>
           <span v-if="seg.duration_s < minAudioS" class="warn-badge">
             <AppIcon name="alert" :size="12" />
-            过短
+            Too short
           </span>
         </label>
       </div>
       <div v-else-if="selectedMeetingId" class="empty-state small">
-        <p>该会议还没有可信片段，无法导入声纹。</p>
+        <p>No confirmed segments are available to import.</p>
       </div>
 
       <div v-if="selectedCount > 0" class="pick-summary">
-        <span>已选 {{ selectedCount }} 个片段，共 {{ totalSelectedDuration.toFixed(1) }} 秒</span>
+        <span>Selected {{ selectedCount }} segments totaling {{ totalSelectedDuration.toFixed(1) }} s</span>
         <span v-if="selectedShortCount > 0" class="warn-badge">
           <AppIcon name="alert" :size="13" />
-          其中 {{ selectedShortCount }} 个短于 {{ minAudioS }} 秒，声纹可能不准确
+          {{ selectedShortCount }} samples are shorter than {{ minAudioS }} seconds. Voiceprint accuracy may be lower.
         </span>
       </div>
       <button
@@ -301,23 +301,23 @@ onBeforeUnmount(() => {
         @click="submitMeetingSelection"
       >
         <AppIcon name="check" :size="16" />
-        {{ submittingSeg ? '导入中…' : '导入声纹' }}
+        {{ submittingSeg ? 'Importing...' : 'Import Voiceprints' }}
       </button>
     </div>
 
     <div v-if="addedVectors.length > 0" class="adder-results">
-      <h3 class="adder-results-title">刚添加的声纹</h3>
+      <h3 class="adder-results-title">New Voiceprints</h3>
       <div class="vector-result-list">
         <div v-for="v in addedVectors" :key="v.id" class="vector-result">
           <AppIcon name="check" :size="15" class="vector-ok" />
-          <span>{{ v.source === 'recording' ? '现场录音' : '会议片段' }}</span>
-          <span class="muted-text">{{ v.duration_s.toFixed(1) }} 秒</span>
+          <span>{{ v.source === 'recording' ? 'Live Recording' : 'Meeting Segment' }}</span>
+          <span class="muted-text">{{ v.duration_s.toFixed(1) }} s</span>
           <span v-if="v.source === 'meeting' && v.segment_ids.length" class="muted-text">
-            片段 #{{ v.segment_ids.join(', ') }}
+            Segments #{{ v.segment_ids.join(', ') }}
           </span>
           <span v-if="v.short" class="warn-badge">
             <AppIcon name="alert" :size="12" />
-            语音过短
+            Audio too short
           </span>
           <span v-if="v.text" class="muted-text vector-text">{{ v.text }}</span>
         </div>
