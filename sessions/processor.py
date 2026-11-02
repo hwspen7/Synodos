@@ -29,12 +29,12 @@ from typing import Optional
 
 import numpy as np
 
-from .buffer import AudioBuffer
-from .config import Settings
-from .hotword_store import HotwordStore
-from .models import ModelManager
-from .speaker_store import SpeakerStore
-from .store import MeetingStore
+from audio.buffer import AudioBuffer
+from core.config import Settings
+from storage.hotwords import HotwordStore
+from inference.models import ModelManager
+from storage.speakers import SpeakerStore
+from storage.meetings import MeetingStore
 
 logger = logging.getLogger(__name__)
 

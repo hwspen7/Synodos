@@ -18,7 +18,7 @@ from typing import Any
 
 import numpy as np
 
-from .config import Settings
+from core.config import Settings
 
 logger = logging.getLogger(__name__)
 

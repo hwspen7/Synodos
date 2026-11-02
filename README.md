@@ -10,7 +10,14 @@
 
 ```text
 meeting/
-├─ app/                 后端 Python 源码
+├─ main.py              FastAPI 启动入口
+├─ api/                 HTTP / WebSocket 接口
+├─ core/                全局配置与共享状态
+├─ audio/               后端音频缓冲
+├─ inference/           ASR、声纹和聚类模型
+├─ sessions/            会话和转写处理
+├─ storage/             会议、声纹和热词存储
+├─ tests/               后端回归测试
 ├─ example/             后端手动测试
 ├─ src/                 前端 Vue 源码
 ├─ public/              前端静态资源
@@ -32,7 +39,7 @@ meeting/
 
 ```powershell
 uv sync
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+uv run uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
 模型首次运行可能需要下载；也可以通过 `ASR_MODEL`、`FSMN_VAD_MODEL`、`PUNC_MODEL`、`SPK_MODEL` 指定本地模型目录，详见完整说明。
@@ -57,3 +64,15 @@ pnpm dev
 运行时自动创建默认数据目录。项目不保存原始会议录音；导出的 JSON 不包含完整续记状态。
 
 `example/stream_test.py` 默认引用的示例 WAV 未纳入仓库，运行时请通过 `--wav` 指定自己的音频文件。
+
+## 后端模块划分
+
+`main.py` 只组装 FastAPI、路由和模型预加载。业务 API 放在 `api/`，共享实例放在 `core/`，音频缓冲在 `audio/`，模型调用在 `inference/`，实时会话和处理线程在 `sessions/`，会议、声纹与热词持久化在 `storage/`。原有 HTTP、WebSocket 路径和协议不变。
+
+后端基础测试：
+
+```powershell
+uv run python -m unittest discover -s tests
+```
+
+测试不执行语音模型推理。实际模型运行、并发和长会议仍需要额外验收。

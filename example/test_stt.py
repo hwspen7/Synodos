@@ -8,7 +8,7 @@ from funasr import AutoModel
 
 # 复用后端配置里的模型名 -> 本地缓存路径解析，避免 funasr 短名注册问题
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from app.config import resolve_model  # noqa: E402
+from core.config import resolve_model  # noqa: E402
 
 WAV = Path(__file__).resolve().parent / "Genshin-1222a.wav"
 
