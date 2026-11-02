@@ -38,11 +38,11 @@ class APIContractTests(unittest.TestCase):
             for r in app.routes
             for method in (getattr(r, "methods", None) or [])
         }
-        self.assertTrue(expected <= actual)
+        self.assertTrue(\n            expected <= actual,\n            f"Missing: {sorted(expected - actual)}; registered: {sorted(actual)}",\n        )
 
     def test_websocket_and_openapi(self) -> None:
         ws_paths = {r.path for r in app.routes if r.__class__.__name__ == "APIWebSocketRoute"}
-        self.assertIn("/ws/audio", ws_paths)
+        self.assertIn(\n            "/ws/audio", ws_paths,\n            f"Registered routes: {[(type(r).__name__, r.path) for r in app.routes]}",\n        )
         self.assertIn("/api/meetings", app.openapi()["paths"])
         self.assertIn("/api/speakers", app.openapi()["paths"])
 
