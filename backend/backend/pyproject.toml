@@ -1,0 +1,14 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.141.1",
+    "funasr==1.4.3",
+    "torch==2.7.0",
+    "torchaudio==2.7.0",
+    "uvicorn>=0.52.4",
+    "websockets>=17.1",
+]

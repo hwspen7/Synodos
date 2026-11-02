@@ -1,0 +1,74 @@
+# Local editor and operating system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+!.env.template
+*.local
+.aws/
+
+# Python environments and caches (keep uv.lock)
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# JavaScript dependencies, package-manager caches and builds
+node_modules/
+.pnpm-store/
+.pnpm-home/
+.npm/
+dist/
+dist-ssr/
+build/
+coverage/
+*.tsbuildinfo
+.eslintcache
+
+# Downloaded models and local tool distributions
+models_cache/
+uv-bin/
+uv.zip
+*.pt
+*.pth
+*.onnx
+*.safetensors
+*.ckpt
+
+# Private runtime data: transcripts, voiceprints and personal hotwords
+/backend/backend/meetings/
+/backend/backend/speakers/
+/backend/backend/hotwords/
+*.pkl
+*.pickle
+
+# Local audio/video samples and recordings
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+*.webm
+*.mp4
+*.pcm
+
+# Logs and temporary files
+logs/
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
