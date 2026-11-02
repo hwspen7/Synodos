@@ -9,6 +9,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from observability.logging_setup import configure_logging, request_id
 from observability.metrics import metrics
 from api.health import router as health_router
+from api.speech_features import router as speech_router
 from api.meetings import router as meeting_router
 from api.speakers import router as speaker_router
 from api.hotwords import router as hotword_router
@@ -45,6 +46,7 @@ async def request_observability(request: Request, call_next):
 
 
 app.include_router(health_router)
+app.include_router(speech_router)
 app.include_router(meeting_router)
 app.include_router(speaker_router)
 app.include_router(hotword_router)

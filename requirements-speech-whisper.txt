@@ -1,0 +1,2 @@
+# Optional multilingual recognition backend.
+faster-whisper>=1.2,<3

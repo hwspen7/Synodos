@@ -200,6 +200,22 @@ class ModelManager:
             labels = self._load_cluster()(embeddings, oracle_num=None)
         return np.asarray(labels).reshape(-1).astype(int)
 
+    # ------------------------------------------------------- multilingual ASR
+    def recognize_multilingual(self, samples: np.ndarray, *, language: str = "auto",
+                               terms: str = "", config=None):
+        """Run multilingual recognition through the shared inference scheduler.
+
+        Keep scheduler and inference-lock ownership inside ModelManager rather
+        than requiring processors to access private implementation details.
+        """
+        from speech.engine import recognize
+
+        def inference_job():
+            with self._infer_lock:
+                return recognize(samples, language=language, terms=terms, config=config)
+
+        return self._scheduler.submit("multilingual_asr", inference_job, priority=0)
+
     # ------------------------------------------------------------------ misc
     def loaded_state(self) -> dict[str, bool]:
         return {
@@ -210,7 +226,9 @@ class ModelManager:
 
     def preload(self) -> None:
         logger.info("Preloading models ...")
-        self._load_asr()
+        from speech.config import load_settings
+        if load_settings().engine == "legacy":
+            self._load_asr()
         self._load_spk()
         self._load_cluster()
         logger.info("All models preloaded.")

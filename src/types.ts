@@ -14,6 +14,9 @@ export interface ServerReady {
   hotwords?: Array<{ id: string; name: string; word_count: number }>
   spk_threshold?: number
   min_speaker_audio_s?: number
+  asr_engine?: string
+  asr_language?: string
+  translation_target?: string
 }
 
 export interface TranscriptSegment {
@@ -24,6 +27,10 @@ export interface TranscriptSegment {
   start_ms: number
   end_ms: number
   text: string
+  language?: string
+  translation?: string
+  timestamp_quality?: string
+  revision?: number
 }
 
 /* Audio processing and UI rendering. */
@@ -48,7 +55,22 @@ export interface ServerError {
   message: string
 }
 
-export type ServerMessage = ServerReady | ServerTranscript | ServerState | ServerClosed | ServerError
+export interface ServerPartial {
+  type: 'partial'
+  text: string
+  language: string
+  revision: number
+}
+export interface ServerFeatureWarning {
+  type: 'feature_warning'
+  feature: string
+  message: string
+}
+export interface ServerAudioAnalysis {
+  type: 'audio_analysis'
+  result: { emotion?: string | null, events?: string[], overlap?: Array<{start_ms: number, end_ms: number}>, quality?: { rms: number } }
+}
+export type ServerMessage = ServerReady | ServerTranscript | ServerState | ServerClosed | ServerError | ServerPartial | ServerFeatureWarning | ServerAudioAnalysis
 
 /* Audio processing and UI rendering. */
 export interface Segment extends TranscriptSegment {

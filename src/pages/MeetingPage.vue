@@ -20,6 +20,18 @@ const route = useRoute()
 const router = useRouter()
 
 const WS_BASE = (import.meta.env.VITE_WS_URL as string | undefined) ?? ''
+const language = ref('auto')
+const translationTarget = ref('')
+const recordAudio = ref(false)
+const partialText = ref('')
+const partialLanguage = ref('')
+const audioAnalysis = ref('')
+const recordingList = ref<string[]>([])
+const supportedLanguages = [
+  ['auto', 'Auto detect'], ['zh', 'Chinese'], ['en', 'English'],
+  ['ja', 'Japanese'], ['ko', 'Korean'], ['es', 'Spanish'],
+  ['fr', 'French'], ['de', 'German'], ['pt', 'Portuguese'], ['ru', 'Russian'],
+]
 
 type Status = 'idle' | 'connecting' | 'recording' | 'stopping' | 'disconnected'
 type ViewMode = 'segments' | 'paragraph'
@@ -100,6 +112,9 @@ function wsUrl(): string {
     vad_threshold: String(vadThreshold.value),
     rec_threshold: String(recThreshold.value),
     meeting_id: props.id,
+    language: language.value,
+    translate_to: translationTarget.value,
+    record_audio: String(recordAudio.value),
     participants: selectedParticipantIds.value.join(','),
     hotwords: selectedHotwordIds.value.join(','),
     spk_threshold: String(spkThreshold.value),
@@ -358,6 +373,7 @@ function connect(autostart = false): void {
   error.value = ''
   clearTranscript()
   bufferedMs.value = 0
+  partialText.value = ''
   serverInfo.value = null
   stickToBottom = true
   stopRequested = false
@@ -378,8 +394,24 @@ function connect(autostart = false): void {
       // Start automatically on create, resume, or restart.
       if (autostart || route.query.autostart === '1') void startMic()
     },
+    onPartial: (text, detectedLanguage) => {
+      if (clientSeq !== mySeq) return
+      partialText.value = text
+      partialLanguage.value = detectedLanguage
+    },
+    onAudioAnalysis: (result) => {
+      if (clientSeq !== mySeq) return
+      audioAnalysis.value = [result.emotion, ...(result.events || []),
+        (result.overlap?.length || 0) > 0 ? 'Overlapping speech detected' : '']
+        .filter(Boolean).join(', ')
+    },
+    onFeatureWarning: (message) => {
+      if (clientSeq !== mySeq) return
+      error.value = message
+    },
     onTranscript: (msg) => {
       if (clientSeq !== mySeq) return
+      partialText.value = ''
       applyTranscript(msg)
     },
     onState: (ms) => {
@@ -436,6 +468,35 @@ function formatTime(ms: number): string {
   const mm = String(m).padStart(2, '0')
   const ss = String(s).padStart(2, '0')
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
+}
+
+async function loadRecordings(): Promise<void> {
+  try {
+    const response = await fetch(`/api/speech/meetings/${encodeURIComponent(props.id)}/recordings`)
+    if (!response.ok) throw new Error('Unable to load recordings')
+    const payload = await response.json() as { recordings: Array<{ name: string }> }
+    recordingList.value = payload.recordings.map((r) => r.name)
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  }
+}
+
+async function correctTranscript(seg: Segment): Promise<void> {
+  if (recording.value || status.value === 'stopping') return
+  const text = window.prompt('Correct transcript segment', seg.text)
+  if (text === null || !text.trim() || text === seg.text) return
+  try {
+    const response = await fetch(`/api/speech/meetings/${encodeURIComponent(props.id)}/segments/${seg.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, revision: seg.revision ?? 0 }),
+    })
+    if (!response.ok) throw new Error(await response.text())
+    const result = await response.json() as { text: string, revision: number }
+    segments.value = segments.value.map((item) => item.id === seg.id ? { ...item, text: result.text, revision: result.revision } : item)
+    showToast('Correction saved')
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  }
 }
 
 onMounted(async () => {
@@ -497,6 +558,20 @@ onBeforeUnmount(() => stopInternal())
     </div>
 
     <div class="meeting-controls">
+      <label class="field">Recognition Language
+        <select v-model="language" :disabled="recording || status === 'connecting' || status === 'stopping'">
+          <option v-for="entry in supportedLanguages" :key="entry[0]" :value="entry[0]">{{ entry[1] }}</option>
+        </select>
+      </label>
+      <label class="field">Translate to
+        <select v-model="translationTarget" :disabled="recording || status === 'connecting' || status === 'stopping'">
+          <option value="">No translation</option>
+          <option v-for="entry in supportedLanguages.filter((item) => item[0] !== 'auto')" :key="entry[0]" :value="entry[0]">{{ entry[1] }}</option>
+        </select>
+      </label>
+      <label class="field"><input type="checkbox" v-model="recordAudio" :disabled="recording" /> Save WAV</label>
+      <button class="btn btn-ghost" :disabled="recording" @click="connect()">Apply speech settings</button>
+      <button class="btn btn-ghost" :disabled="recording" @click="loadRecordings()">Load recordings</button>
       <label class="field" title="Trigger recognition when this audio duration is buffered.">
         Processing Window (s)
         <input
@@ -552,6 +627,15 @@ onBeforeUnmount(() => stopInternal())
     </div>
 
     <p v-if="error" class="error-banner">{{ error }}</p>
+    <p v-if="audioAnalysis" class="meeting-sub">Audio analysis: {{ audioAnalysis }}</p>
+    <section v-if="partialText" class="meeting-controls" aria-live="polite">
+      <strong>Live preview ({{ partialLanguage }})</strong>
+      <span>{{ partialText }}</span>
+    </section>
+    <div v-if="recordingList.length" class="meeting-controls">
+      <span>Recorded audio</span>
+      <audio v-for="name in recordingList" :key="name" controls :src="`/api/speech/meetings/${encodeURIComponent(props.id)}/recordings/${encodeURIComponent(name)}`"></audio>
+    </div>
 
     <main ref="transcriptEl" class="transcript" @scroll="onTranscriptScroll">
       <div v-if="segments.length === 0" class="empty-state">
@@ -572,6 +656,8 @@ onBeforeUnmount(() => stopInternal())
             <span class="para-time">{{ formatTime(seg.start_ms) }} – {{ formatTime(seg.end_ms) }}</span>
           </div>
           <p class="para-text">{{ seg.text || '(No content in this segment)' }}</p>
+      <p v-if="seg.translation" class="para-text">Translation: {{ seg.translation }}</p>
+      <button class="btn btn-ghost btn-sm" :disabled="recording" @click="correctTranscript(seg)">Edit text</button>
         </article>
       </template>
 

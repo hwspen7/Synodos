@@ -1,0 +1,4 @@
+# Optional features. Install independently only when required.
+argostranslate>=1.9
+noisereduce>=3.0
+# sherpa-onnx and pyannote.audio require compatible model assets and runtimes.

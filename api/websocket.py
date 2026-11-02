@@ -10,6 +10,10 @@ import numpy as np
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from core.runtime import settings, sessions, meeting_sessions, meeting_store, speaker_store, hotword_store
 from sessions.session import Session
+from speech.config import load_settings
+from speech.recording import RecordingWriter, RecordingQuotaExceeded
+from speech.streaming import NativeOnlineRecognizer, PreviewTracker
+import os
 from api.session_lifecycle import meeting_connection_lock, stop_and_join
 from api.socket_transport import decode_pcm_frame
 from audio.buffer import AudioBackpressureError
@@ -41,6 +45,9 @@ async def ws_audio(
     participants: Optional[str] = Query(default=None),
     hotwords: Optional[str] = Query(default=None),
     spk_threshold: Optional[float] = Query(default=None),
+    language: str = Query(default="auto"),
+    translate_to: str = Query(default=""),
+    record_audio: Optional[bool] = Query(default=None),
 ):
     if not origin_allowed(websocket.headers.get("origin"), infra):
         metrics.increment("websocket_origin_rejected")
@@ -50,8 +57,27 @@ async def ws_audio(
         metrics.increment("websocket_capacity_rejected")
         await websocket.close(code=1013, reason="Session capacity reached")
         return
+    speech_config = load_settings()
+    if len(language) > 24 or len(translate_to) > 24:
+        await websocket.close(code=1008, reason="Invalid language")
+        return
     await websocket.accept()
     metrics.increment("websocket_accepted")
+    audio_archive = None
+    online = None
+    online_preview = PreviewTracker()
+    if speech_config.native_streaming:
+        try:
+            online = NativeOnlineRecognizer(
+                os.environ.get("MEETING_ONLINE_ENCODER", ""),
+                os.environ.get("MEETING_ONLINE_DECODER", ""),
+                os.environ.get("MEETING_ONLINE_JOINER", ""),
+                os.environ.get("MEETING_ONLINE_TOKENS", ""),
+            )
+        except Exception as exc:
+            await websocket.send_json({"type": "error", "message": f"Native streaming initialization failed: {exc}"})
+            await websocket.close(code=1011)
+            return
 
     vad_s = float(vad_threshold if vad_threshold and vad_threshold > 0 else settings.vad_threshold_s)
     rec_s = float(rec_threshold if rec_threshold and rec_threshold > 0 else settings.rec_threshold_s)
@@ -133,6 +159,8 @@ async def ws_audio(
         if meeting_id:
             meeting_sessions[meeting_id] = session
         try:
+            session.processor.speech_language = language if language != "auto" else speech_config.language
+            session.processor.translate_target = translate_to or speech_config.translate_to
             session.start(loop, state=loaded_state)
         except Exception:
             if sessions.get(sid) is session:
@@ -164,9 +192,18 @@ async def ws_audio(
             "hotwords": hotword_store.get_summaries(session.processor.hotword_ids),
             "spk_threshold": session.processor.spk_threshold,
             "min_speaker_audio_s": settings.min_speaker_audio_s,
+            "asr_engine": speech_config.engine,
+            "asr_language": language,
+            "translation_target": translate_to or speech_config.translate_to,
         }
     )
 
+    if meeting_id and (record_audio if record_audio is not None else speech_config.record_audio):
+        try:
+            audio_archive = RecordingWriter(speech_config.recording_root, meeting_id,
+                                            speech_config.max_recording_bytes)
+        except Exception as exc:
+            await websocket.send_json({"type": "feature_warning", "feature": "recording", "message": str(exc)})
     forwarder = asyncio.create_task(_outbox_forwarder(session))
     stop_requested = False
     try:
@@ -177,9 +214,21 @@ async def ws_audio(
                 data = message.get("bytes")
                 if data:
                     try:
-                        session.buffer.append(decode_pcm_frame(data))
+                        frame = decode_pcm_frame(data)
+                        session.buffer.append(frame)
+                        if audio_archive is not None:
+                            audio_archive.append(data)
+                        if online is not None:
+                            live_text = await asyncio.to_thread(online.accept, frame)
+                            preview = online_preview.update(live_text, language, 0,
+                                                            session.buffer.total_samples() * 1000 // settings.sample_rate)
+                            if preview is not None:
+                                await session.outbox.put({"type": "partial", **vars(preview), "native": True})
                     except ValueError as exc:
                         await websocket.send_json({"type": "error", "message": str(exc)})
+                    except RecordingQuotaExceeded as exc:
+                        await websocket.send_json({"type": "error", "message": str(exc)})
+                        break
                     except AudioBackpressureError:
                         metrics.increment("websocket_backpressure_stops")
                         await websocket.send_json({"type": "error", "message": "Audio buffer limit reached; recording is stopping"})
@@ -199,6 +248,13 @@ async def ws_audio(
     except WebSocketDisconnect:
         pass
     finally:
+        if audio_archive is not None:
+            audio_archive.close()
+        if online is not None:
+            try:
+                await asyncio.to_thread(online.finish)
+            except Exception:
+                pass
         # Trigger final transcription and saving, then wait for outgoing messages.
         session.stop()
         # Join in an executor to avoid blocking WebSocket heartbeats.

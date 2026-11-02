@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import numpy as np
 
@@ -38,13 +38,19 @@ class TranscriptionFallbackTests(unittest.TestCase):
         settings = Settings()
         buffer = AudioBuffer(settings.sample_rate)
         buffer.append(np.ones(settings.sample_rate, dtype=np.float32) * 0.1)
-        return SessionProcessor(
-            session_id="test-segment-fallback",
-            buffer=buffer,
-            settings=settings,
-            models=models,
-            outbox=asyncio.Queue(),
-        )
+        # This suite targets the legacy ASR / speaker fallback contract,
+        # independent of any multilingual engine enabled in the developer shell.
+        with patch.dict("os.environ", {
+            "MEETING_ASR_ENGINE": "legacy",
+            "MEETING_NATIVE_STREAMING": "false",
+        }):
+            return SessionProcessor(
+                session_id="test-segment-fallback",
+                buffer=buffer,
+                settings=settings,
+                models=models,
+                outbox=asyncio.Queue(),
+            )
 
     def test_missing_embedding_keeps_recognized_words_and_can_resume(self):
         processor = self.make_processor(ModelsWithMissingEmbeddings())

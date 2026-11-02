@@ -1,0 +1,2 @@
+# Optional native second VAD for Whisper on Windows, Linux, or macOS.
+webrtcvad-wheels==2.0.14.post1

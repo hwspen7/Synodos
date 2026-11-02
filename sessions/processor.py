@@ -30,6 +30,8 @@ from typing import Optional
 import numpy as np
 
 from audio.buffer import AudioBuffer
+from speech.config import load_settings
+from speech.streaming import PreviewTracker
 from core.config import Settings
 from storage.hotwords import HotwordStore
 from inference.models import ModelManager
@@ -84,6 +86,21 @@ class SessionProcessor(threading.Thread):
         self._trusted_threshold_s = settings.rec_threshold_s
         # Handle transcripts and speaker assignments.
         self._final_discard_s = settings.final_discard_s
+        self._speech_settings = load_settings()
+        self.speech_language = self._speech_settings.language
+        self.translate_target = self._speech_settings.translate_to
+        self._preview_tracker = PreviewTracker()
+        if self._speech_settings.engine != "legacy":
+            import os
+            # Avoid repeatedly committing fragments from tiny ASR windows.
+            self._process_threshold_s = max(4.0, min(self._process_threshold_s,
+                                                     self._speech_settings.preview_interval_s))
+            self._trusted_threshold_s = max(settings.rec_threshold_s,
+                                            self._speech_settings.confirmation_delay_s)
+            commit_s = float(os.getenv("MEETING_MIN_COMMIT_CONTEXT_S", "7.0"))
+            if not 4.0 <= commit_s <= 30.0:
+                raise ValueError("MEETING_MIN_COMMIT_CONTEXT_S must be in [4, 30]")
+            self._min_commit_context_s = max(self._process_threshold_s, commit_s)
 
         # Handle transcripts and speaker assignments.
         self.segments: list[dict] = []
@@ -243,6 +260,12 @@ class SessionProcessor(threading.Thread):
                     ),
                     "speaker_name": s.get("speaker_name", ""),
                     "emb": s["emb"],  # Preserve behavior.
+                    "language": s.get("language", "und"),
+                    "timestamp_quality": s.get("timestamp_quality", "segment"),
+                    "words": s.get("words", []),
+                    "translation": s.get("translation", ""),
+                    "revision": s.get("revision", 0),
+                    "corrections": s.get("corrections", []),
                 }
                 for s in self.segments
             ],
@@ -264,6 +287,12 @@ class SessionProcessor(threading.Thread):
                     "speaker_id": int(item.get("speaker_id", item.get("cluster", -1))),
                     "speaker_name": item.get("speaker_name", ""),
                     "text": item.get("text", "") or "",
+                    "language": item.get("language", "und"),
+                    "timestamp_quality": item.get("timestamp_quality", "segment"),
+                    "words": item.get("words", []),
+                    "translation": item.get("translation", ""),
+                    "revision": int(item.get("revision", 0)),
+                    "corrections": item.get("corrections", []),
                 }
             )
         if self.segments:
@@ -340,15 +369,33 @@ class SessionProcessor(threading.Thread):
             return False
 
         # Handle transcripts and speaker assignments.
-        sentences = self.models.transcribe_sentences(audio, hotword=self._hotword_str or None)
+        if self._speech_settings.engine == "legacy":
+            sentences = self.models.transcribe_sentences(audio, hotword=self._hotword_str or None)
+        else:
+            recognition = self.models.recognize_multilingual(
+                audio,
+                language=self.speech_language,
+                terms=self._hotword_str,
+                config=self._speech_settings,
+            )
+            sentences = [piece.as_legacy() for piece in recognition.utterances]
+        unconfirmed = []
         local_end = 0
         for sentence in sentences:
             start_ms = int(sentence["start"])
             end_ms = int(sentence["end"])
             text = sentence["text"]
             # Handle transcripts and speaker assignments.
-            if not final and buffer_s - end_ms / 1000.0 < self._trusted_threshold_s:
-                break
+            should_hold = not final and (
+                buffer_s - end_ms / 1000.0 < self._trusted_threshold_s
+                or (
+                    self._speech_settings.engine != "legacy"
+                    and buffer_s < self._min_commit_context_s
+                )
+            )
+            if should_hold:
+                unconfirmed.append(sentence)
+                continue
 
             s_g = start_offset + int(start_ms * sr / 1000)
             e_g = start_offset + int(end_ms * sr / 1000)
@@ -357,11 +404,14 @@ class SessionProcessor(threading.Thread):
 
             # Handle transcripts and speaker assignments.
             seg_audio = audio[s_g - start_offset : e_g - start_offset]
-            try:
-                emb = normalized_embedding(self.models.embed(seg_audio))
-            except Exception:
-                logger.exception("speaker embedding failed; preserving ASR text")
-                emb = None
+            # Speaker embeddings of extremely short utterances are unstable.
+            # Keep their text, but do not create a new speaker from such audio.
+            emb = None
+            if len(seg_audio) >= int(sr * 1.2):
+                try:
+                    emb = normalized_embedding(self.models.embed(seg_audio))
+                except Exception:
+                    logger.exception("speaker embedding failed; preserving ASR text")
 
             self.segments.append(
                 {
@@ -369,11 +419,21 @@ class SessionProcessor(threading.Thread):
                     "start_sample": s_g,
                     "end_sample": e_g,
                     "text": text,
+                    "language": sentence.get("language", "und"),
+                    "timestamp_quality": sentence.get("timestamp_quality", "segment"),
+                    "words": sentence.get("words", []),
                     "emb": emb,
                     "cluster": -1,
                 }
             )
             self._next_segment_id += 1
+            if self.translate_target:
+                try:
+                    from speech.translation import translate
+                    detected = str(sentence.get("language", self.speech_language)).lower()
+                    self.segments[-1]["translation"] = translate(text, detected, self.translate_target)
+                except Exception as exc:
+                    self._put({"type": "feature_warning", "feature": "translation", "message": str(exc)})
             local_end = max(local_end, e_g - start_offset)
             logger.info(
                 "[%s] confirmed segment %d (%.2f ~ %.2f seconds)",
@@ -381,6 +441,25 @@ class SessionProcessor(threading.Thread):
             )
             metrics.increment("asr_segments_confirmed")
 
+        if self._speech_settings.engine != "legacy" and not self._speech_settings.native_streaming and not final:
+            preview_text = " ".join(str(s.get("text", "")) for s in unconfirmed).strip()
+            if preview_text:
+                from speech.streaming import PreviewTracker
+                latest = unconfirmed[-1]
+                event = self._preview_tracker.update(preview_text, latest.get("language", "und"),
+                                                       start_offset * 1000 // sr,
+                                                       (start_offset + len(audio)) * 1000 // sr)
+                if event is not None:
+                    self._put({"type": "partial", **vars(event)})
+            elif local_end > 0:
+                self._preview_tracker.clear()
+                self._put({"type": "partial", "text": "", "language": "und", "revision": 0})
+        if final and (self._speech_settings.enable_events or self._speech_settings.enable_overlap):
+            try:
+                from speech.analysis import analyze
+                self._put({"type": "audio_analysis", "result": analyze(audio, self._speech_settings)})
+            except Exception as exc:
+                self._put({"type": "feature_warning", "feature": "audio_analysis", "message": str(exc)})
         # Handle transcripts and speaker assignments.
         if local_end > 0:
             self.buffer.drop_before(local_end)
@@ -400,6 +479,40 @@ class SessionProcessor(threading.Thread):
 
     # --------------------------------------------------------------- cluster
     def _recluster(self) -> None:
+        import os
+        # Explicit single-speaker mode is intended for one-person test meetings.
+        if os.getenv("MEETING_DIARIZATION_MODE", "cluster") == "single":
+            for record in self.segments:
+                record["cluster"] = 1
+                record["speaker_id"] = 1
+                record["speaker_name"] = "Speaker 1"
+            return
+        if os.getenv("MEETING_DIARIZATION_MODE", "cluster") == "centroid":
+            from speech.diarization import SpeakerCentroidTracker
+            tracker = SpeakerCentroidTracker(threshold=float(os.getenv("MEETING_SPEAKER_SIMILARITY", "0.72")))
+            for record in self.segments:
+                stable = record.get("speaker_id")
+                if isinstance(stable, int) and stable > 0 and record.get("emb") is not None:
+                    tracker.seed(stable, record["emb"])
+            for record in self.segments:
+                emb = record.get("emb")
+                if emb is None:
+                    record.setdefault("speaker_id", -1)
+                    record.setdefault("speaker_name", "Unidentified Speaker")
+                    continue
+                pid, similarity = self._match_participant(emb)
+                if pid is not None and similarity >= self.spk_threshold:
+                    if pid not in self._participant_label_map:
+                        self._participant_label_map[pid] = self._next_free_speaker_id()
+                    record["cluster"] = -1
+                    record["speaker_id"] = self._participant_label_map[pid]
+                    record["speaker_name"] = next((p["name"] for p in self._participants if p["id"] == pid), "Participant")
+                elif not isinstance(record.get("speaker_id"), int) or record["speaker_id"] <= 0:
+                    stable_id = tracker.assign(emb)
+                    record["cluster"] = -2
+                    record["speaker_id"] = stable_id if stable_id is not None else -1
+                    record["speaker_name"] = f"Speaker {stable_id}" if stable_id else "Unidentified Speaker"
+            return
         """Recompute speaker assignments for all confirmed segments.
 
         Match segments to participants when cosine similarity is high enough.
@@ -536,6 +649,10 @@ class SessionProcessor(threading.Thread):
                 "start_ms": round(s["start_sample"] * 1000 / self.settings.sample_rate),
                 "end_ms": round(s["end_sample"] * 1000 / self.settings.sample_rate),
                 "text": s["text"],
+                "language": s.get("language", "und"),
+                "timestamp_quality": s.get("timestamp_quality", "segment"),
+                "translation": s.get("translation", ""),
+                "revision": s.get("revision", 0),
             }
             for s in ordered
         ]
