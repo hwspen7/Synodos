@@ -1,0 +1,47 @@
+name: Project validation
+
+on:
+  push:
+    branches:
+      - main
+      - refactor/flatten-project-root
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend syntax and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install minimal test dependencies
+        run: python -m pip install "fastapi>=0.141.1" "numpy>=1.26"
+      - name: Compile Python source
+        run: python -m compileall -q main.py api audio core inference sessions storage example tests
+      - name: Run backend and English-only tests
+        run: python -m unittest discover -s tests -v
+
+  frontend:
+    name: Frontend type-check and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Type-check Vue and TypeScript
+        run: pnpm type-check
+      - name: Build frontend
+        run: pnpm build-only
