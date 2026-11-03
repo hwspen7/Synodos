@@ -1,4 +1,4 @@
-"""Node tests for fractional-phase resampling in the browser AudioWorklet."""
+// Node tests for fractional-phase resampling in the browser AudioWorklet.
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
