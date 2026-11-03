@@ -29,7 +29,10 @@ from tools.fixed150_system_audit import summarize as summarize_system_ablation
 from tools.fixed150_system_triage import inspect as inspect_system_triage
 from tools.fixed150_stage_audit import select_impacted, measure as measure_stage
 from tools.fixed150_guard_audit import assess_one as assess_guard_one, summarize as summarize_guard
-from tools.fixed150_language_anchor import infer_anchor, needs_redecode, params as lid_params
+from tools.fixed150_language_anchor import (
+    infer_anchor, needs_redecode, params as lid_params,
+    choose_ids as choose_anchor_ids, summarize_results as summarize_anchor_results,
+)
 from speech.audio_windows import speech_windows
 from speech.text_format import join_transcript_text
 from speech.quality_guard import verify_utterances
@@ -280,6 +283,54 @@ class Fixed150Contracts(unittest.TestCase):
         self.assertEqual(preserved[0].text, piece.text)
         self.assertEqual(preserved[0].timestamp_quality, "segment")
         self.assertEqual(preserved[0].words, ())
+
+    def test_language_anchor_all_source_scope_covers_every_original(self):
+        singles = [
+            {"id": f"fixed150-{i:03d}", "kind": "single",
+             "language": ("ko" if i == 36 else "pt" if i == 48 else "en")}
+            for i in range(1, 101)
+        ]
+        lock = {"cases": singles}
+        self.assertEqual(len(choose_anchor_ids(lock, "all", None)), 100)
+        self.assertEqual(
+            choose_anchor_ids(lock, "all", ["fixed150-048", "fixed150-036"]),
+            ["fixed150-048", "fixed150-036"],
+        )
+        with self.assertRaises(ValueError):
+            choose_anchor_ids(lock, "all", ["fixed150-048", "fixed150-048"])
+        with self.assertRaises(ValueError):
+            choose_anchor_ids(lock, "all", ["unknown"])
+
+    def test_language_anchor_summary_accounts_for_harm_and_retry_cost(self):
+        def case(cid, lang, baseline, candidate, retry):
+            return {
+                "id": cid, "language": lang,
+                "baseline": {"edits": baseline, "reference_chars": 100},
+                "candidate": {"edits": candidate, "reference_chars": 100},
+                "delta_pp": candidate - baseline,
+                "anchor_from_model_only": lang,
+                "retry_count": 1 if retry else 0,
+                "auto_decode_ms": 200.0,
+                "retry_decode_ms": 50.0 if retry else 0.0,
+                "reference_review_flags": [],
+            }
+        summary = summarize_anchor_results([
+            case("a", "pt", 35, 20, True),
+            case("b", "en", 0, 10, False),
+            case("c", "pt", 6, 6, True),
+        ])
+        overall = summary["overall"]
+        self.assertEqual(overall["samples"], 3)
+        self.assertEqual(overall["improved"], 1)
+        self.assertEqual(overall["worsened"], 1)
+        self.assertEqual(overall["unchanged"], 1)
+        self.assertEqual(overall["retried_windows"], 2)
+        self.assertEqual(overall["additional_retry_decode_ms"], 100.0)
+        self.assertAlmostEqual(overall["retry_compute_overhead_percent"], 100/600*100)
+        self.assertAlmostEqual(overall["baseline_cer"], 41/300)
+        self.assertAlmostEqual(overall["candidate_cer"], 36/300)
+        self.assertEqual(summary["per_language"]["en"]["worsened"], 1)
+        self.assertEqual(summary["priority_15"]["samples"], 3)
 
     def test_language_anchor_requires_independent_confident_votes(self):
         pt = [
