@@ -65,10 +65,15 @@ def summarize_singles(lock: dict, report: dict | None) -> dict:
         for code, values in sorted(group.items()):
             chars = sum(x["reference_characters"] for x in values)
             tokens = sum(x["reference_tokens"] for x in values)
+            # The baseline scoring regex is not a Thai word segmenter. Show
+            # Thai CER but mark its token error as unavailable, not a 350% WER.
+            token_ok = code not in ("th",)
             per_language.append({
                 "language": code, "samples": len(values),
                 "cer": sum(x["character_edits"] for x in values) / chars,
-                "mixed_token_er": sum(x["token_edits"] for x in values) / max(1, tokens),
+                "mixed_token_er": (sum(x["token_edits"] for x in values) / tokens
+                                   if token_ok and tokens else None),
+                "token_metric_supported": token_ok,
                 "lid": sum(x["expected_language"] == x["predicted_language"]
                            for x in values) / len(values),
             })
@@ -82,8 +87,12 @@ def summarize_singles(lock: dict, report: dict | None) -> dict:
             "status": "MEASURED", "valid": 100, "expected": 100,
             "cer": sum(x["character_edits"] for _, x in valid) /
                    sum(x["reference_characters"] for _, x in valid),
-            "mixed_token_er": sum(x["token_edits"] for _, x in valid) /
-                              max(1, sum(x["reference_tokens"] for _, x in valid)),
+            "mixed_token_er": (
+                sum(x["token_edits"] for case, x in valid if case["language"] != "th") /
+                max(1, sum(x["reference_tokens"] for case, x in valid if case["language"] != "th"))
+            ),
+            "mixed_token_metric_excludes": ["th"],
+            "mixed_token_note": "Thai requires a language-aware word tokenizer; only CER is reported",
             "language_accuracy": sum(x["expected_language"] == x["predicted_language"]
                                      for _, x in valid) / 100,
             "latency_p50_ms": statistics.median(time_ms),
@@ -294,11 +303,12 @@ def render(score: dict) -> str:
         for key, color in (("cer", colors[0]), ("mixed_token_er", colors[1])):
             fig.add_trace(go.Bar(
                 name=key, x=[r["language"] for r in languages],
-                y=[r[key] * 100 for r in languages], marker_color=color))
+                y=[None if r[key] is None else r[key] * 100 for r in languages],
+                marker_color=color))
         fig.update_layout(template="plotly_white", barmode="group", height=350,
                           yaxis_title="Error (%)", margin=dict(t=25, b=50))
         panels.append(_panel("CER vs mixed-token error", fig,
-                             "Scripts are normalized; different measures are not interchangeable"))
+                             "Mixed-token error is unavailable for Thai until proper word segmentation is implemented"))
         fig = go.Figure(go.Bar(
             x=list(main["per_scenario"]),
             y=[v["cer"] * 100 for v in main["per_scenario"].values()],
