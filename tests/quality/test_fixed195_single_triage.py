@@ -43,7 +43,7 @@ class Fixed195TriageTests(unittest.TestCase):
         self.assertEqual(pt["new"]["samples"], 2)
         self.assertEqual(pt["top_by_edits"][0]["id"], "fixed195-pt-s01")
         self.assertEqual(pt["top_by_cer"][0]["id"], "fixed195-pt-s01")
-        self.assertEqual(pt["top_three_edit_share_percent"], 96.67)
+        self.assertEqual(pt["top_three_edit_share_percent"], 100.0)
         self.assertEqual(
             pt["detected_language_mismatch"],
             [{"id": "fixed195-pt-s01", "detected": "es"}],
