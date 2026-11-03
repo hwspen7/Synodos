@@ -10,7 +10,9 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import wave
+import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.fixed150_prepare import verify_lock, checksum, write_wav, atomic_json
 
 SOURCE_NUMBERS = (1, 13, 25, 37, 49, 57, 61, 65)
