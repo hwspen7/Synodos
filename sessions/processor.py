@@ -471,54 +471,44 @@ class SessionProcessor(threading.Thread):
                 continue
 
             seg_audio = audio[s_g - start_offset : e_g - start_offset]
-            from speech.turn_split import split_by_acoustic_turns
-            pieces = split_by_acoustic_turns(
-                sentence, seg_audio, self.models.embed, sample_rate=sr,
-            ) if self._speech_settings.engine != "legacy" else [
-                {"start": start_ms, "end": end_ms, "text": text,
-                 "emb": None, "ambiguous": False}
-            ]
-            for piece in pieces:
-                a = start_offset + int(piece["start"] * sr / 1000)
-                b = start_offset + int(piece["end"] * sr / 1000)
-                if b <= a or is_temporal_duplicate(a, b, piece["text"], self.segments):
-                    continue
-                emb = normalized_embedding(piece.get("emb"))
-                if emb is None and not piece.get("ambiguous") and b - a >= int(sr * 1.2):
+            speaker_task = None
+            emb = None
+            if self._speech_settings.engine == "legacy":
+                if len(seg_audio) >= int(sr * 1.2):
                     try:
-                        emb = normalized_embedding(self.models.embed(audio[a-start_offset:b-start_offset]))
+                        emb = normalized_embedding(self.models.embed(seg_audio))
                     except Exception:
-                        logger.exception("speaker embedding failed; retaining transcript")
-                self.segments.append({
-                    "id": self._next_segment_id,
-                    "start_sample": a,
-                    "end_sample": b,
-                    "text": piece["text"],
-                    "language": sentence.get("language", "und"),
-                    "language_confidence": sentence.get("language_confidence"),
-                    "timestamp_quality": sentence.get("timestamp_quality", "segment"),
-                    "words": sentence.get("words", []),
-                    "emb": emb,
-                    "cluster": -1,
-                    "speaker_uncertain": bool(piece.get("ambiguous")),
-                })
-                self._next_segment_id += 1
-                if self.translate_target:
-                    detected = str(sentence.get("language", self.speech_language)).lower()
-                    if detected == self.translate_target:
-                        self.segments[-1]["translation"] = piece["text"]
-                    else:
-                        task = submit_translation(piece["text"], detected, self.translate_target)
-                        if task is None:
-                            self._put({"type": "feature_warning", "feature": "translation",
-                                       "message": "Translation backlog limit reached; source text preserved"})
-                        else:
-                            self._translation_tasks[self._next_segment_id - 1] = task
-                logger.info(
-                    "[%s] confirmed segment %d (%.2f ~ %.2f seconds)",
-                    self.session_id[:8], self._next_segment_id - 1, a / sr, b / sr,
+                        logger.exception("Speaker embedding failed; preserving ASR text")
+            elif len(seg_audio) >= int(sr * 1.2):
+                speaker_task = submit_speaker_analysis(
+                    sentence, seg_audio, self.models.embed, sr,
                 )
-                metrics.increment("asr_segments_confirmed")
+                if speaker_task is None:
+                    self._put({"type": "feature_warning", "feature": "diarization",
+                               "message": "Speaker analysis backlog full; speaker remains unidentified"})
+            record = {
+                "id": self._next_segment_id,
+                "start_sample": s_g,
+                "end_sample": e_g,
+                "text": text,
+                "language": sentence.get("language", "und"),
+                "language_confidence": sentence.get("language_confidence"),
+                "timestamp_quality": sentence.get("timestamp_quality", "segment"),
+                "words": sentence.get("words", []),
+                "emb": emb,
+                "cluster": -1,
+                "speaker_uncertain": speaker_task is not None,
+            }
+            self.segments.append(record)
+            self._next_segment_id += 1
+            if speaker_task is not None:
+                self._speaker_tasks[record["id"]] = speaker_task
+                speaker_task.add_done_callback(self._notify_async_ready)
+            else:
+                self._enqueue_translation(record)
+            logger.info("[%s] confirmed segment %d (%.2f ~ %.2f seconds)",
+                        self.session_id[:8], record["id"], s_g / sr, e_g / sr)
+            metrics.increment("asr_segments_confirmed")
             local_end = max(local_end, e_g - start_offset)
 
         if self._speech_settings.engine != "legacy" and not self._speech_settings.native_streaming and not final:
