@@ -14,6 +14,7 @@ import wave
 from tools.fixed150_prepare import (
     AMI_ROWS, FLEURS_LOCALES, FLEURS_ROWS, LAION_ROWS,
     MIND_LOCALES, MIND_ROWS, ami_spans, checksum, verify_case, verify_lock,
+    choose_source_file,
 )
 from tools.fixed150_dashboard import (
     summarize_multis, summarize_singles, token_recall, token_bag,
@@ -21,6 +22,32 @@ from tools.fixed150_dashboard import (
 
 
 class Fixed150Contracts(unittest.TestCase):
+    def test_fleurs_pinned_revision_parquet_data_layout(self):
+        # The current google/fleurs revision 70bb2e8 stores files under
+        # parquet-data/<locale>/, not at the dataset root.
+        available = {
+            "parquet-data/ar_eg/validation-00000-of-00001.parquet",
+            "parquet-data/hi_in/validation-00000-of-00001.parquet",
+            "data/ar_eg/metadata.tsv",
+        }
+        self.assertEqual(
+            choose_source_file(available, "ar_eg/validation-00000-of-00001.parquet",
+                               repo="google/fleurs", revision="70bb2e8"),
+            "parquet-data/ar_eg/validation-00000-of-00001.parquet",
+        )
+
+    def test_missing_or_ambiguous_repo_file_fails_closed(self):
+        target = "data/train-00000-of-00001.parquet"
+        self.assertEqual(
+            choose_source_file({"train-00000-of-00001.parquet"}, target),
+            "train-00000-of-00001.parquet",
+        )
+        with self.assertRaises(FileNotFoundError):
+            choose_source_file({
+                "a/train-00000-of-00001.parquet",
+                "b/train-00000-of-00001.parquet",
+            }, target)
+
     def test_exact_diverse_allocations(self):
         self.assertEqual(len(MIND_LOCALES) * len(MIND_ROWS), 56)
         self.assertEqual(len(FLEURS_LOCALES) * len(FLEURS_ROWS), 44)
