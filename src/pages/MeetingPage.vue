@@ -573,7 +573,8 @@ onBeforeUnmount(() => stopInternal())
     </div>
 
     <Phase07Status :segments="segments" :buffered-ms="bufferedMs"
-      :recording="recording" :asr-engine="serverInfo?.asr_engine ?? 'unknown'" />
+      :recording="recording" :asr-engine="serverInfo?.asr_engine ?? 'unknown'"
+      :asr-model="serverInfo?.asr_model" :diarization-mode="serverInfo?.diarization_mode" />
 
     <div class="meeting-controls">
       <label class="field">Spoken language
