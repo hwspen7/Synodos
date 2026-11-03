@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import Future, wait
 import logging
+import os
 import threading
 import time
 from typing import Optional
@@ -50,6 +51,9 @@ from sessions.speaker_tasks import submit_speaker_analysis, submit_acoustic_wind
 from speech.acoustic_timeline import AcousticTimeline
 from sessions.speaker_fallback import (
     UNIDENTIFIED_CLUSTER, fallback_speaker_id, normalized_embedding,
+)
+from sessions.speaker_stability import (
+    collect_mature_labels, restore_mature_labels, stabilized_cluster_ids,
 )
 
 logger = logging.getLogger(__name__)
@@ -119,6 +123,12 @@ class SessionProcessor(threading.Thread):
         # Handle transcripts and speaker assignments.
         self._speaker_map: dict[int, int] = {}
         self._speaker_seg_ids: dict[int, set[int]] = {}
+        # Limit retroactive diarization relabeling in long live meetings.
+        # Set to 0 to retain unlimited historical reclustering for A/B tests.
+        self._speaker_relabel_horizon_s = float(
+            os.getenv("MEETING_SPEAKER_LABEL_REVISABLE_S", "120"))
+        if not 0 <= self._speaker_relabel_horizon_s <= 3600:
+            raise ValueError("MEETING_SPEAKER_LABEL_REVISABLE_S must be 0..3600")
 
         self._last_fingerprint: Optional[tuple] = None
         self._transcript_version = 0
@@ -827,6 +837,10 @@ class SessionProcessor(threading.Thread):
         """
         if not self.segments:
             return
+        mature_labels = collect_mature_labels(
+            self.segments, self.settings.sample_rate,
+            self._speaker_relabel_horizon_s,
+        )
         matched: dict[int, str] = {}
         pool: list[int] = []
         for i, seg in enumerate(self.segments):
@@ -850,6 +864,14 @@ class SessionProcessor(threading.Thread):
 
         self._remap_speakers()
         self._assign_labels(matched)
+        # Do not rewrite a user's already displayed historical transcript
+        # on every later global clustering pass. Recent and uncertain
+        # segments still receive new evidence and revisions.
+        changed_historical = restore_mature_labels(
+            self.segments, mature_labels)
+        if changed_historical:
+            metrics.increment("speaker_historical_relabels_prevented",
+                              changed_historical)
 
     def _fallback_labels(self) -> None:
         """Publish all confirmed text even if clustering fails."""
@@ -879,43 +901,36 @@ class SessionProcessor(threading.Thread):
 
     def _next_free_speaker_id(self, used: Optional[set[int]] = None) -> int:
         if used is None:
-            used = set(self._participant_label_map.values()) | set(self._speaker_map.values())
+            used = (
+                set(self._participant_label_map.values())
+                | set(self._speaker_map.values())
+                | {
+                    int(s["speaker_id"]) for s in self.segments
+                    if type(s.get("speaker_id")) is int and s["speaker_id"] > 0
+                }
+            )
         free_id = 1
         while free_id in used:
             free_id += 1
         return free_id
 
     def _remap_speakers(self) -> None:
-        """Audio transcription and speaker data handling."""
-        clustered = [s for s in self.segments if s["cluster"] >= 0]
-        raw_labels = sorted({s["cluster"] for s in clustered})
-        old_map = self._speaker_map
-        old_seg_ids = self._speaker_seg_ids
-        used: set[int] = set(self._participant_label_map.values())
-        new_map: dict[int, int] = {}
-        new_seg_ids: dict[int, set[int]] = {}
-        for raw in raw_labels:
-            seg_ids = {s["id"] for s in clustered if s["cluster"] == raw}
-            new_seg_ids[raw] = seg_ids
-            best_stable: Optional[int] = None
-            best_n = 0
-            for old_raw, stable in old_map.items():
-                if stable in used:
-                    continue
-                n = len(seg_ids & old_seg_ids.get(old_raw, set()))
-                if n > best_n:
-                    best_n = n
-                    best_stable = stable
-            if best_stable is not None and best_n >= 1:
-                new_map[raw] = best_stable
-                used.add(best_stable)
-            else:
-                # Handle transcripts and speaker assignments.
-                free_id = self._next_free_speaker_id(used)
-                new_map[raw] = free_id
-                used.add(free_id)
-        self._speaker_map = new_map
-        self._speaker_seg_ids = new_seg_ids
+        """Anchor raw cluster IDs to previously displayed speaker labels.
+
+        Historical identities are votes, so the source cluster's numeric
+        label can change without stealing a stable ID from a larger group.
+        """
+        self._speaker_map = stabilized_cluster_ids(
+            self.segments, self._participant_label_map.values(),
+            self._speaker_map,
+        )
+        self._speaker_seg_ids = {
+            raw: {
+                int(s["id"]) for s in self.segments
+                if s["cluster"] == raw
+            }
+            for raw in self._speaker_map
+        }
 
     def _assign_labels(self, matched: dict[int, str]) -> None:
         """Audio transcription and speaker data handling."""
