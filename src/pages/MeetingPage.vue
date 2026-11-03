@@ -401,8 +401,12 @@ async function startMic(): Promise<void> {
   try {
     recorder = await startMicRecording(
       (pcm) => {
-        if (!client?.connected) return
-        client.sendPcm(pcm)
+        if (!client?.connected || !client.sendPcm(pcm)) {
+          realtimeError = true
+          error.value = 'Microphone audio could not be delivered. Recording has stopped.'
+          if (recording.value) void stop()
+          return
+        }
         capturedSamples += pcm.length
         if (capturedSamples - capturePaintSample >= 8000) {
           capturePaintSample = capturedSamples

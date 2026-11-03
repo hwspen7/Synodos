@@ -19,6 +19,8 @@ export class RealtimeClient {
   private ws: WebSocket | null = null
   private settled = false
   private sentSamples = 0
+  private frameSequence = 0
+  private acknowledgedSamples = 0
   private audioCongested = false
   private readonly options: RealtimeClientOptions
 
@@ -36,6 +38,8 @@ export class RealtimeClient {
     this.ws = ws
     this.settled = false
     this.sentSamples = 0
+    this.frameSequence = 0
+    this.acknowledgedSamples = 0
     this.audioCongested = false
     ws.binaryType = 'arraybuffer'
 
@@ -66,6 +70,12 @@ export class RealtimeClient {
           this.options.onState?.(msg.buffered_ms)
           break
         case 'audio_progress':
+          if (msg.samples > this.sentSamples || msg.samples < this.acknowledgedSamples) {
+            this.options.onError?.('Server audio acknowledgement is inconsistent.')
+            ws.close(1011, 'Invalid audio acknowledgement')
+            break
+          }
+          this.acknowledgedSamples = msg.samples
           this.options.onAudioProgress?.(msg.samples)
           break
         case 'audio_received':
@@ -93,22 +103,38 @@ export class RealtimeClient {
     }
   }
 
-  sendPcm(chunk: Int16Array): void {
+  sendPcm(chunk: Int16Array): boolean {
     const ws = this.ws
-    if (ws?.readyState === WebSocket.OPEN) {
-      // Stop and report congestion rather than silently dropping microphone audio.
-      if (ws.bufferedAmount + chunk.byteLength > 1024 * 1024) {
-        this.audioCongested = true
-        this.options.onError?.('Audio transport congested. Recording stopped to prevent silent data loss.')
-        ws.close(1011, 'Audio transport backpressure')
-        return
-      }
-      // Send only the bytes in the provided view, not its entire backing buffer.
-      const copy = new Uint8Array(chunk.byteLength)
-      copy.set(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength))
-      ws.send(copy.buffer)
-      this.sentSamples += chunk.length
+    if (ws?.readyState !== WebSocket.OPEN || this.audioCongested) return false
+    // Fail closed rather than silently pretending a chunk has reached the server.
+    if (ws.bufferedAmount + chunk.byteLength + 16 > 1024 * 1024) {
+      this.audioCongested = true
+      this.options.onError?.('Audio transport congested. Recording stopped to prevent silent data loss.')
+      ws.close(1011, 'Audio transport backpressure')
+      return false
     }
+    const packet = new ArrayBuffer(chunk.byteLength + 16)
+    const view = new DataView(packet)
+    view.setUint8(0, 0x4d)
+    view.setUint8(1, 0x4f)
+    view.setUint8(2, 0x50)
+    view.setUint8(3, 0x41)
+    view.setUint32(4, this.frameSequence, false)
+    view.setBigUint64(8, BigInt(this.sentSamples), false)
+    new Uint8Array(packet, 16).set(
+      new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength),
+    )
+    try {
+      ws.send(packet)
+    } catch {
+      this.audioCongested = true
+      this.options.onError?.('Audio transport failed while sending microphone samples.')
+      ws.close(1011, 'Audio send failure')
+      return false
+    }
+    this.frameSequence += 1
+    this.sentSamples += chunk.length
+    return true
   }
 
   sendStop(): void {

@@ -57,11 +57,13 @@ export interface ServerState {
 export interface ServerAudioProgress {
   type: 'audio_progress'
   samples: number
+  last_sequence?: number | null
 }
 
 export interface ServerAudioReceived {
   type: 'audio_received'
   samples: number
+  last_sequence?: number | null
   matched: boolean
 }
 

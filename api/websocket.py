@@ -15,7 +15,7 @@ from speech.recording import RecordingWriter, RecordingQuotaExceeded
 from speech.streaming import NativeOnlineRecognizer, PreviewTracker
 import os
 from api.session_lifecycle import meeting_connection_lock, stop_and_join
-from api.socket_transport import decode_pcm_frame
+from api.socket_transport import decode_pcm_frame, AudioFrameSequence, AudioSequenceError
 from audio.buffer import AudioBackpressureError
 from core.runtime import infra
 from foundation.security import origin_allowed
@@ -240,6 +240,7 @@ async def ws_audio(
     forwarder = asyncio.create_task(_outbox_forwarder(session))
     stop_requested = False
     received_samples = 0
+    frame_sequence = AudioFrameSequence()
     last_progress_samples = 0
     try:
         while True:
@@ -249,11 +250,23 @@ async def ws_audio(
                 data = message.get("bytes")
                 if data:
                     try:
-                        frame = decode_pcm_frame(data)
+                        frame, duplicate = frame_sequence.accept(data)
+                        if duplicate:
+                            await session.outbox.put({
+                                "type": "audio_progress",
+                                "samples": received_samples,
+                                "last_sequence": frame_sequence.next_sequence - 1,
+                            })
+                            continue
+                        assert frame is not None
                         session.buffer.append(frame)
                         received_samples += len(frame)
                         if audio_archive is not None:
-                            audio_archive.append(data)
+                            # Keep the WAV archive in raw PCM even when the
+                            # transport uses the versioned frame header.
+                            audio_archive.append(
+                                data[16:] if frame_sequence.versioned else data
+                            )
                         # A running microphone UI must be backed by confirmed
                         # server-side PCM, not just by browser permissions.
                         if received_samples - last_progress_samples >= settings.sample_rate // 2:
@@ -261,6 +274,7 @@ async def ws_audio(
                             await session.outbox.put({
                                 "type": "audio_progress",
                                 "samples": received_samples,
+                                "last_sequence": frame_sequence.next_sequence - 1 if frame_sequence.versioned else None,
                             })
                         if online is not None:
                             live_text = await asyncio.to_thread(online.accept, frame)
@@ -268,8 +282,13 @@ async def ws_audio(
                                                             session.buffer.absolute_end_samples() * 1000 // settings.sample_rate)
                             if preview is not None:
                                 await session.outbox.put({"type": "partial", **vars(preview), "native": True})
+                    except AudioSequenceError as exc:
+                        metrics.increment("audio_sequence_errors")
+                        await websocket.send_json({"type": "error", "message": str(exc)})
+                        break
                     except ValueError as exc:
                         await websocket.send_json({"type": "error", "message": str(exc)})
+                        break
                     except RecordingQuotaExceeded as exc:
                         await websocket.send_json({"type": "error", "message": str(exc)})
                         break
@@ -305,6 +324,7 @@ async def ws_audio(
                             "matched": expected is None or (
                                 type(expected) is int and expected == received_samples
                             ),
+                            "last_sequence": frame_sequence.next_sequence - 1 if frame_sequence.versioned else None,
                         })
                         stop_requested = True
                         break
