@@ -280,8 +280,18 @@ class LiveCaptionWsReplayTests(unittest.TestCase):
         capture_event(state, {"type": "audio_received",
                               "samples": 16000, "matched": True}, 1200)
         self.assertTrue(state["audio_delivery_matched"])
-        self.assertTrue(capture_event(state, {"type": "closed", "saved": True}, 2000))
+        self.assertTrue(capture_event(state, {
+            "type": "closed", "saved": True,
+            "diarization_diagnostics": {
+                "raw_cluster_count": 2,
+                "published_positive_speaker_count": 10,
+            },
+        }, 2000))
         self.assertTrue(state["server_closed"])
+        self.assertEqual(state["final_cluster_diagnostics"], {
+            "raw_cluster_count": 2,
+            "published_positive_speaker_count": 10,
+        })
 
 
 if __name__ == "__main__":
