@@ -119,8 +119,12 @@ async def add_speaker_from_meeting(speaker_id: str, payload: Optional[dict] = No
         if seg is None:
             missing.append(sid)
             continue
-        emb = np.asarray(seg.get("emb"))
-        if emb is None or emb.size == 0:
+        raw_embedding = seg.get("emb")
+        if raw_embedding is None:
+            missing.append(sid)
+            continue
+        emb = np.asarray(raw_embedding, dtype=np.float32).reshape(-1)
+        if emb.size == 0 or not np.all(np.isfinite(emb)):
             missing.append(sid)
             continue
         duration_s = (int(seg["end_sample"]) - int(seg["start_sample"])) / sr
