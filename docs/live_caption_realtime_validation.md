@@ -203,3 +203,46 @@ model, language, segment counts and source conditions across runs.
 
 Long-run user-facing diarization quality, sentence completeness and
 overlapped speech still require independent annotations and listening.
+
+
+## Experimental speaker-fragmentation root-cause diagnosis
+
+The 301.5-second four-loop A/B on the same two-person conversation
+found that `cluster_sticky` produced 10 distinct published speaker labels,
+down from 20 for the seeded `centroid` option, but still more than the
+two actual source speakers. There were zero positive-label-to-positive-label
+reassignments and no transport errors. These results do not establish
+diarization accuracy.
+
+Do not promote the freeze-on-first-label behavior or blindly reduce
+the centroid similarity threshold. Both can hide a mistaken identity.
+
+The final raw-cluster count was previously absent from the replay report.
+That prevented distinguishing a genuine acoustic-clustering split from
+historical ID aliases created by label freezes. Run a diagnostic replay
+with the existing opt-in `cluster_sticky` mode and:
+
+    $env:MEETING_DIARIZATION_DIAGNOSTICS = "1"
+
+Start the backend with this environment variable set. On the final
+WebSocket `closed` event, the server includes a bounded, anonymous
+`diarization_diagnostics` object. The replay tool records it under
+`final_cluster_diagnostics`.
+
+Interpretation:
+
+- `raw_cluster_count` close to the known number of voices but
+  `published_positive_speaker_count` substantially higher means
+  identity mapping or historical label freezing has fragmented the UI.
+- Both counts substantially higher than the source voice count means
+  the acoustic clustering itself is likely over-splitting.
+- `raw_clusters_with_multiple_published_labels` and
+  `max_published_labels_per_raw_cluster` quantify how many stored
+  labels correspond to the same raw cluster, without automatically
+  conflating those labels or making an accuracy claim.
+
+The diagnostic contains only aggregate counts and raw ephemeral cluster
+indexes, no recognized text, audio, speaker embeddings or participant
+names. It is intentionally opt-in, and changes neither diarization mode
+nor the spoken-content processing pipeline. A future merging algorithm
+must still be evaluated with known speaker turns and overlap cases.
