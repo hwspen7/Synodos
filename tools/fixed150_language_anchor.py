@@ -26,7 +26,7 @@ from speech.quality_guard import verify_utterances
 from speech.utterance_units import split_utterances
 from speech.contracts import Utterance, Word
 from tools.fixed150_prepare import atomic_json, verify_lock
-from tools.fixed150_reference_audit import source_flags
+from tools.fixed150_reference_audit import source_flags, FOCUS_15
 from tools.phase07_benchmark import load_wav
 
 VERSION = "meeting-fixed150-lid-anchor-v1"
@@ -241,6 +241,72 @@ def fingerprint(lock: dict, model_id: str, chosen: list[dict]) -> str:
     return h.hexdigest()
 
 
+def choose_ids(lock: dict, scope: str, requested_ids: list[str] | None) -> list[str]:
+    """Return exactly the intended frozen cases, not a reference-picked subset."""
+    singles = [x for x in lock["cases"] if x["kind"] == "single"]
+    if len(singles) != 100:
+        raise ValueError("Require 100 frozen single-speaker recordings")
+    if requested_ids is not None:
+        if not requested_ids or len(set(requested_ids)) != len(requested_ids):
+            raise ValueError("Case IDs must be unique and nonempty")
+        known = {x["id"] for x in singles}
+        if set(requested_ids) - known:
+            raise ValueError("Unknown case IDs")
+        return requested_ids
+    if scope == "all":
+        return [x["id"] for x in singles]
+    if scope == "focus":
+        codes = set(FOCUS_15)
+        chosen = [x["id"] for x in singles if x["language"] in codes]
+        if len(chosen) != 68:
+            raise ValueError("Unexpected 15-language allocation")
+        return chosen
+    raise ValueError(f"Unknown evaluation scope {scope}")
+
+
+def summarize_results(items: list[dict]) -> dict:
+    """Aggregate paired edit counts, not averages of per-clip CER."""
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for item in items:
+        groups[item["language"]].append(item)
+
+    def rates(rows: list[dict]) -> dict:
+        den = sum(x["baseline"]["reference_chars"] for x in rows)
+        auto_ms = sum(x["auto_decode_ms"] for x in rows)
+        retry_ms = sum(x["retry_decode_ms"] for x in rows)
+        return {
+            "samples": len(rows),
+            "anchor_cases": sum(x["anchor_from_model_only"] is not None for x in rows),
+            "retried_windows": sum(x["retry_count"] for x in rows),
+            "baseline_cer": (sum(x["baseline"]["edits"] for x in rows) / den if den else None),
+            "candidate_cer": (sum(x["candidate"]["edits"] for x in rows) / den if den else None),
+            "improved": sum(x["candidate"]["edits"] < x["baseline"]["edits"] for x in rows),
+            "worsened": sum(x["candidate"]["edits"] > x["baseline"]["edits"] for x in rows),
+            "unchanged": sum(x["candidate"]["edits"] == x["baseline"]["edits"] for x in rows),
+            "baseline_decode_ms": round(auto_ms, 2),
+            "additional_retry_decode_ms": round(retry_ms, 2),
+            "retry_compute_overhead_percent": (
+                round(100 * retry_ms / auto_ms, 2) if auto_ms else None),
+            "reference_review_flags": sum(bool(x["reference_review_flags"]) for x in rows),
+        }
+
+    focus = set(FOCUS_15)
+    return {
+        "overall": rates(items),
+        "priority_15": rates([x for x in items if x["language"] in focus]),
+        "per_language": {lang: rates(rows) for lang, rows in sorted(groups.items())},
+        "top_worsened": [
+            {"id": x["id"], "language": x["language"], "delta_pp": x["delta_pp"]}
+            for x in sorted(items, key=lambda x: x["delta_pp"], reverse=True)[:10]
+        ],
+        "top_improved": [
+            {"id": x["id"], "language": x["language"], "delta_pp": x["delta_pp"]}
+            for x in sorted(items, key=lambda x: x["delta_pp"])[:10]
+        ],
+    }
+
+
 def run(root: Path, model_id: str, ids: list[str], output: Path) -> dict:
     from speech.whisper import WhisperEngine
 
@@ -280,23 +346,31 @@ def run(root: Path, model_id: str, ids: list[str], output: Path) -> dict:
                 flush=True,
             )
     items = [state["cases"][x] for x in ids]
-    den = sum(x["baseline"]["reference_chars"] for x in items)
+    statistics = summarize_results(items)
+    overall = statistics["overall"]
     summary = {
         "schema": VERSION + "-summary",
         "total": len(items),
-        "anchor_cases": sum(x["anchor_from_model_only"] is not None
-                            for x in items),
-        "retried_windows": sum(x["retry_count"] for x in items),
-        "baseline_cer": (sum(x["baseline"]["edits"] for x in items) / den
-                         if den else None),
-        "candidate_cer": (sum(x["candidate"]["edits"] for x in items) / den
-                          if den else None),
-        "improved_cases": sum(x["delta_pp"] < -.0005 for x in items),
-        "worsened_cases": sum(x["delta_pp"] > .0005 for x in items),
-        "unchanged_cases": sum(abs(x["delta_pp"]) <= .0005 for x in items),
+        "anchor_cases": overall["anchor_cases"],
+        "retried_windows": overall["retried_windows"],
+        "baseline_cer": overall["baseline_cer"],
+        "candidate_cer": overall["candidate_cer"],
+        "improved_cases": overall["improved"],
+        "worsened_cases": overall["worsened"],
+        "unchanged_cases": overall["unchanged"],
+        **statistics,
         "no_reference_oracle": True,
         "retrospective_noncausal_anchor": True,
         "release_certified": False,
+        "notes": [
+            "The anchor may use language detections from future windows, "
+            "and is not suitable for immediate real-time captions.",
+            "Model-only selection never reads the ground truth; it is used "
+            "solely to compute paired evaluation metrics.",
+            "All reference-review flagged samples remain in official aggregates.",
+            "Retry compute overhead is a ratio of model inference times, "
+            "not measured streaming endpoint latency.",
+        ],
     }
     target = output.with_name(output.stem + "_summary.json")
     atomic_json(target, summary)
@@ -311,17 +385,25 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path("benchmark/fixed150"))
     parser.add_argument("--model", default="large-v3")
-    parser.add_argument("--case-ids", nargs="+", default=[
+    parser.add_argument("--scope", choices=("pilot", "focus", "all"), default="pilot")
+    parser.add_argument("--case-ids", nargs="+",
+                        help="Explicit original case IDs, overriding --scope (not selected by CER)")
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
+    lock = verify_lock(args.root)
+    pilot = [
         "fixed150-048", "fixed150-047", "fixed150-045",
         "fixed150-097", "fixed150-043", "fixed150-071",
         "fixed150-069", "fixed150-072",
-    ])
-    parser.add_argument("--output", type=Path,
-                        default=Path("benchmark/fixed150/language_anchor_audit.json"))
-    args = parser.parse_args()
-    if not args.case_ids or len(set(args.case_ids)) != len(args.case_ids):
-        parser.error("Case IDs must be unique and nonempty")
-    run(args.root, args.model, args.case_ids, args.output)
+    ]
+    selected = choose_ids(lock, "all" if args.scope == "pilot" else args.scope,
+                          args.case_ids if args.case_ids is not None else (
+                              pilot if args.scope == "pilot" else None))
+    destination = args.output or (
+        args.root / ("language_anchor_audit.json" if args.scope == "pilot"
+                     and args.case_ids is None
+                     else f"language_anchor_{args.scope}.json"))
+    run(args.root, args.model, selected, destination)
     return 0
 
 
