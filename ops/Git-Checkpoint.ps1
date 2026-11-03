@@ -28,7 +28,7 @@ try {
         Write-Host 'Review the status, then rerun with -Commit to create a local checkpoint.'
         return
     }
-    $allowlist = @('.github','api','audio','core','foundation','inference','observability','sessions','storage','src','tests','docs','deploy','ops','main.py','pyproject.toml','uv.lock','package.json','pnpm-lock.yaml','README.md','PROJECT_CONTEXT.md','.gitignore')
+    $allowlist = @('.github','api','audio','core','foundation','inference','intelligence','observability','sessions','speech','storage','src','tests','tools','docs','deploy','ops','config/phase06c.env.example','main.py','pyproject.toml','uv.lock','package.json','pnpm-lock.yaml','README.md','PROJECT_CONTEXT.md','.gitignore','requirements-intelligence.txt','requirements-speech-addons.txt','requirements-speech-dual-vad.txt','requirements-speech-whisper.txt')
     $included = @($allowlist | Where-Object { Test-Path -LiteralPath $_ })
     if ($included.Count -eq 0) { throw 'No recognized source paths.' }
     # Do not stage arbitrary files at repository root or under model/data paths.
