@@ -48,8 +48,11 @@ def select_impacted(lock: dict, system_report: dict, *, threshold_pp: float = 5.
         window = row["production_windowed"]["cer"]
         direct = row["direct_whisper"]["cer"]
         if (window - direct) * 100 >= threshold_pp:
-            impacted.append(singles[cid])
-    return sorted(impacted, key=lambda x: x["id"])
+            impacted.append((100 * (window - direct), singles[cid]))
+    # Triage the most severe measured regressions before less costly ones.
+    return [case for _, case in sorted(
+        impacted, key=lambda item: (-item[0], item[1]["id"])
+    )]
 
 
 def fingerprint(lock: dict, model: str, scope: str, threshold_pp: float) -> str:
