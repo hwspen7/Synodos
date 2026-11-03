@@ -41,7 +41,7 @@ CODE_PATHS = (
 )
 LANGUAGE_ORDER = [language for language, _ in LANGUAGES]
 # These are REVIEW FLAGS, not independent quality scores.
-REPEAT_PATTERN = re.compile(r"(?iu)(?:\b(\w{2,})\b[\s,，。.!?]*)\1(?:\b|$)")
+REPEAT_PATTERN = re.compile(r"(?iu)(?:\b(\w{2,})\b[\s,\uFF0C\u3002.!?]*)\1(?:\b|$)")
 MAX_RECENT_UTTERANCES = 160
 
 
