@@ -21,8 +21,8 @@ class SpeechSettings:
     compute_type: str = "default"
     preview_interval_s: float = 2.5
     confirmation_delay_s: float = 1.0
-    language: str = "auto"
-    translate_to: str = ""
+    language: str = "en"
+    translate_to: str = "en"
     record_audio: bool = False
     enable_events: bool = False
     enable_overlap: bool = False
@@ -53,8 +53,8 @@ def load_settings() -> SpeechSettings:
         compute_type=os.getenv("MEETING_ASR_COMPUTE", "default"),
         preview_interval_s=float(os.getenv("MEETING_PREVIEW_INTERVAL_S", "2.5")),
         confirmation_delay_s=float(os.getenv("MEETING_CONFIRMATION_DELAY_S", "1")),
-        language=os.getenv("MEETING_ASR_LANGUAGE", "auto"),
-        translate_to=os.getenv("MEETING_TRANSLATE_TO", ""),
+        language=os.getenv("MEETING_ASR_LANGUAGE", "en"),
+        translate_to=os.getenv("MEETING_TRANSLATE_TO", "en"),
         record_audio=_flag("MEETING_RECORD_AUDIO"),
         enable_events=_flag("MEETING_AUDIO_EVENTS"),
         enable_overlap=_flag("MEETING_OVERLAP_DETECTION"),
