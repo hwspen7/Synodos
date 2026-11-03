@@ -45,8 +45,8 @@ async def ws_audio(
     participants: Optional[str] = Query(default=None),
     hotwords: Optional[str] = Query(default=None),
     spk_threshold: Optional[float] = Query(default=None),
-    language: str = Query(default="auto"),
-    translate_to: str = Query(default=""),
+    language: str = Query(default="en"),
+    translate_to: Optional[str] = Query(default=None),
     record_audio: Optional[bool] = Query(default=None),
 ):
     if not origin_allowed(websocket.headers.get("origin"), infra):
@@ -58,7 +58,7 @@ async def ws_audio(
         await websocket.close(code=1013, reason="Session capacity reached")
         return
     speech_config = load_settings()
-    if len(language) > 24 or len(translate_to) > 24:
+    if len(language) > 24 or len(translate_to or "") > 24:
         await websocket.close(code=1008, reason="Invalid language")
         return
     await websocket.accept()
@@ -159,8 +159,8 @@ async def ws_audio(
         if meeting_id:
             meeting_sessions[meeting_id] = session
         try:
-            session.processor.speech_language = language if language != "auto" else speech_config.language
-            session.processor.translate_target = translate_to or speech_config.translate_to
+            session.processor.speech_language = language
+            session.processor.translate_target = speech_config.translate_to if translate_to is None else translate_to
             session.start(loop, state=loaded_state)
         except Exception:
             if sessions.get(sid) is session:
@@ -194,7 +194,7 @@ async def ws_audio(
             "min_speaker_audio_s": settings.min_speaker_audio_s,
             "asr_engine": speech_config.engine,
             "asr_language": language,
-            "translation_target": translate_to or speech_config.translate_to,
+            "translation_target": session.processor.translate_target,
         }
     )
 
