@@ -74,9 +74,12 @@ def aggregate(rows: list[dict]) -> dict:
             language_evaluable += 1
             language_correct += item["expected_language"] == item["predicted_language"]
     result = {
-        "samples": len(rows), "failed": failures,
-        "cer": total["character_edits"] / max(total["reference_characters"], 1),
-        "mixed_token_error_rate": total["token_edits"] / max(total["reference_tokens"], 1),
+        "samples": len(rows), "failed": failures, "evaluated": len(rows) - failures,
+        # Do not report zero errors when every model invocation failed.
+        "cer": (total["character_edits"] / total["reference_characters"]
+                if total["reference_characters"] else None),
+        "mixed_token_error_rate": (total["token_edits"] / total["reference_tokens"]
+                                  if total["reference_tokens"] else None),
         "glossary_recall": (total["glossary_hits"] / total["glossary_terms"]
                             if total["glossary_terms"] else None),
         "language_accuracy": (language_correct / language_evaluable if language_evaluable else None),
