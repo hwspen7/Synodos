@@ -6,6 +6,7 @@ import datetime
 import json
 import logging
 import re
+import traceback
 import uuid
 
 
@@ -30,6 +31,10 @@ class JsonFormatter(logging.Formatter):
             value["session_id"] = record.session_id
         if record.exc_info:
             value["exception_type"] = record.exc_info[0].__name__
+            value["exception_message"] = sanitize(str(record.exc_info[1]))[:2000]
+            value["exception_traceback"] = sanitize("".join(
+                traceback.format_exception(*record.exc_info)
+            ))[-7000:]
         return json.dumps(value, ensure_ascii=True)
 
 

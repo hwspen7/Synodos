@@ -199,13 +199,16 @@ class SessionProcessor(threading.Thread):
                     continue
                 try:
                     changed = self._cycle(final=False)
-                except Exception:
+                except Exception as exc:
                     logger.exception("session %s cycle failed", self.session_id)
                     if not self._asr_failure_reported:
                         self._asr_failure_reported = True
                         self._put({
                             "type": "error",
-                            "message": "Speech recognition failed. Check the backend ASR and GPU logs.",
+                            "message": (
+                                f"Speech recognition failed ({type(exc).__name__}). "
+                                "Inspect backend exception_message and exception_traceback."
+                            ),
                         })
                     changed = False
                 if self._drain_save_requests():
