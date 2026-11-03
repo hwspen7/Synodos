@@ -41,9 +41,13 @@ class AcousticTimelineTests(unittest.TestCase):
         settings = Settings()
         buffer = AudioBuffer(16000, max_seconds=30)
         buffer.append(np.ones(16000 * 6, dtype=np.float32) * 0.05)
+        class SpeakerModel:
+            def embed(self, audio):
+                return np.asarray([1., 0.], dtype=np.float32)
+
         with patch.dict("os.environ", {"MEETING_ASR_ENGINE": "whisper"}):
             processor = SessionProcessor(
-                "independent-windows", buffer, settings, object(), asyncio.Queue(),
+                "independent-windows", buffer, settings, SpeakerModel(), asyncio.Queue(),
             )
         def finished(start, data, _embed, _sr):
             future = Future()
