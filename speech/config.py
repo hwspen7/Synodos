@@ -48,7 +48,7 @@ class SpeechSettings:
 def load_settings() -> SpeechSettings:
     return SpeechSettings(
         engine=os.getenv("MEETING_ASR_ENGINE", "whisper").lower(),
-        model=os.getenv("MEETING_ASR_MODEL", "small"),
+        model=os.getenv("MEETING_ASR_MODEL", "large-v3"),
         device=os.getenv("MEETING_ASR_DEVICE", "auto"),
         compute_type=os.getenv("MEETING_ASR_COMPUTE", "default"),
         preview_interval_s=float(os.getenv("MEETING_PREVIEW_INTERVAL_S", "2.5")),
