@@ -24,17 +24,25 @@ const route = useRoute()
 const router = useRouter()
 
 const WS_BASE = (import.meta.env.VITE_WS_URL as string | undefined) ?? ''
-const language = ref('en')
-const translationTarget = ref('en')
+const language = ref('auto')
+const translationTarget = ref('')
 const recordAudio = ref(true)
 const partialText = ref('')
 const partialLanguage = ref('')
 const audioAnalysis = ref('')
 const recordingList = ref<Array<{ name: string, bytes: number, duration_s: number | null, modified_at: string }>>([])
 const supportedLanguages = [
-  ['auto', 'Auto detect'], ['zh', 'Chinese'], ['en', 'English'],
-  ['ja', 'Japanese'], ['ko', 'Korean'], ['es', 'Spanish'],
-  ['fr', 'French'], ['de', 'German'], ['pt', 'Portuguese'], ['ru', 'Russian'],
+  ['auto', 'Detect automatically'], ['ar', 'Arabic'], ['bn', 'Bengali'],
+  ['bg', 'Bulgarian'], ['ca', 'Catalan'], ['zh', 'Chinese'], ['hr', 'Croatian'],
+  ['cs', 'Czech'], ['da', 'Danish'], ['nl', 'Dutch'], ['en', 'English'],
+  ['fi', 'Finnish'], ['fr', 'French'], ['de', 'German'], ['el', 'Greek'],
+  ['he', 'Hebrew'], ['hi', 'Hindi'], ['hu', 'Hungarian'], ['id', 'Indonesian'],
+  ['it', 'Italian'], ['ja', 'Japanese'], ['ko', 'Korean'], ['ms', 'Malay'],
+  ['mr', 'Marathi'], ['no', 'Norwegian'], ['fa', 'Persian'], ['pl', 'Polish'],
+  ['pt', 'Portuguese'], ['ro', 'Romanian'], ['ru', 'Russian'], ['sr', 'Serbian'],
+  ['sk', 'Slovak'], ['es', 'Spanish'], ['sv', 'Swedish'], ['ta', 'Tamil'],
+  ['te', 'Telugu'], ['th', 'Thai'], ['tr', 'Turkish'], ['uk', 'Ukrainian'],
+  ['ur', 'Urdu'], ['vi', 'Vietnamese'],
 ]
 
 type Status = 'idle' | 'connecting' | 'recording' | 'stopping' | 'disconnected'
@@ -56,6 +64,8 @@ const saving = ref(false)
 const speakers = ref<Speaker[]>([])
 const hotwords = ref<HotwordLibrary[]>([])
 const showParticipants = ref(false)
+const showAdvancedControls = ref(false)
+const showReviewPanel = ref(false)
 const selectedParticipantIds = ref<string[]>([])
 const showHotwords = ref(false)
 const selectedHotwordIds = ref<string[]>([])
@@ -203,6 +213,17 @@ function splitDisplaySentences(text: string): string[] {
   // Do not split within known abbreviations, initials or decimal values.
   const abbreviations = new Set(['mr.', 'mrs.', 'ms.', 'dr.', 'prof.', 'sr.',
     'jr.', 'st.', 'vs.', 'etc.', 'e.g.', 'i.e.', 'u.s.', 'u.k.'])
+  // Browser-native Unicode sentence segmentation supports punctuation across
+  // languages instead of using English/CJK-specific rules as the primary path.
+  const segmenterType = (Intl as unknown as {
+    Segmenter?: new (locale: string | undefined, options: { granularity: 'sentence' }) =>
+      { segment: (value: string) => Iterable<{ segment: string }> }
+  }).Segmenter
+  if (segmenterType) {
+    const parts = [...new segmenterType(undefined, { granularity: 'sentence' }).segment(original)]
+      .map((item) => item.segment.trim()).filter(Boolean)
+    if (parts.length > 1) return parts
+  }
   const sentences: string[] = []
   let current = ''
   for (let i = 0; i < original.length; i++) {
@@ -238,7 +259,7 @@ function endsFinishedThought(text: string): boolean {
 
 function mergeGapMs(): number {
   // A short gap alone is insufficient justification to merge entire turns.
-  return Math.min(Math.round((mergeGapS.value || 2) * 1000), 850)
+  return Math.min(Math.round((mergeGapS.value || 2) * 1000), 180)
 }
 
 /** Join text without breaking CJK scripts or concatenating Latin words. */
@@ -265,7 +286,10 @@ function buildParagraphs(segs: Segment[]): Paragraph[] {
     if (
       last &&
       seg.speaker_id === last.speaker_id &&
+      seg.start_ms >= last.end_ms &&
       seg.start_ms - last.end_ms < gap &&
+      (seg.end_ms - last.start_ms) <= 6500 &&
+      (last.text.length + visibleText.length) <= 150 &&
       !endsFinishedThought(last.text) &&
       // A label such as "Unidentified Speaker" is not evidence of same voice.
       seg.speaker_id > 0
@@ -324,8 +348,8 @@ async function loadMeetingConfig(): Promise<void> {
     selectedParticipantIds.value = meeting.ui_settings?.participant_ids ?? meeting.participant_ids ?? []
     selectedHotwordIds.value = meeting.ui_settings?.hotword_ids ?? meeting.hotword_ids ?? []
     spkThreshold.value = meeting.ui_settings?.spk_threshold ?? meeting.spk_threshold ?? 0.3
-    language.value = meeting.ui_settings?.language ?? 'en'
-    translationTarget.value = meeting.ui_settings?.translate_to ?? 'en'
+    language.value = meeting.ui_settings?.language ?? 'auto'
+    translationTarget.value = meeting.ui_settings?.translate_to ?? ''
     recordAudio.value = meeting.ui_settings?.record_audio ?? true
     vadThreshold.value = meeting.ui_settings?.vad_threshold ?? 4
     recThreshold.value = meeting.ui_settings?.rec_threshold ?? 1.5
@@ -779,61 +803,58 @@ onBeforeUnmount(() => stopInternal())
 
 <template>
   <div class="meeting-page">
-    <div class="meeting-head">
-      <div class="meeting-head-left">
-        <button class="btn btn-ghost btn-sm" @click="router.push('/')">
-          <AppIcon name="arrow-left" :size="16" />
-          Back to Home
+    <header class="compact-meeting-header">
+      <div class="compact-meeting-heading">
+        <button class="meeting-back" aria-label="Back to home" title="Back to home" @click="router.push('/')">
+          <AppIcon name="arrow-left" :size="18" />
         </button>
-        <div>
-          <h1 class="meeting-title">{{ meetingTitle || 'Untitled Meeting' }}</h1>
-          <p class="meeting-sub">
-            <span class="status-chip" :class="statusClass">
-              <span class="status-dot" aria-hidden="true"></span>{{ statusText }}
-            </span>
-            <span v-if="recording" class="mic-level" :title="`Microphone level ${(micLevel * 100).toFixed(1)}%`">
-              <span class="mic-level-bar" :style="{ width: Math.min(100, micLevel * 300) + '%' }"></span>
-            </span>
-            <span v-if="recording">Mic {{ capturedSeconds.toFixed(1) }}s sent / {{ deliveredSeconds.toFixed(1) }}s received</span>
-            <span v-if="serverInfo">Buffered {{ (bufferedMs / 1000).toFixed(1) }}s</span>
-            <span v-if="serverInfo">WAV {{ wavRecordingEnabled ? 'on' : 'off' }}{{ durableSeconds !== null ? ` · ${durableSeconds.toFixed(1)}s on disk` : '' }}</span>
-            <span>Segments {{ transcriptMeta.segments }} \u00b7 Paragraphs {{ transcriptMeta.paragraphs }}</span>
-            <span v-if="participantNames.length > 0" class="participant-chip">
-              <AppIcon name="users" :size="13" />
-              Participants: {{ participantNames.join(', ') }}
-            </span>
-            <span v-if="hotwordNames.length > 0" class="hotword-chip">
-              <AppIcon name="flame" :size="13" />
-              Hotword Libraries: {{ hotwordNames.join(', ') }}
-            </span>
-          </p>
+        <div class="compact-meeting-titles">
+          <h1>{{ meetingTitle || 'Untitled Meeting' }}</h1>
+          <div class="meeting-running-status">
+            <span class="status-chip" :class="statusClass"><span class="status-dot" aria-hidden="true"></span>{{ statusText }}</span>
+            <span v-if="recording" class="compact-mic-meter" :style="{ '--mic-fill': Math.min(100, micLevel * 300) + '%' }" aria-label="Microphone input level"></span>
+            <span v-if="recording">Captured {{ capturedSeconds.toFixed(1) }}s · Received {{ deliveredSeconds.toFixed(1) }}s</span>
+            <span v-else>{{ transcriptMeta.segments }} transcript segments</span>
+          </div>
         </div>
       </div>
-      <div class="meeting-actions">
+      <div class="compact-meeting-toolbar">
+        <button class="btn btn-ghost" :class="{ active: showAdvancedControls }" :aria-pressed="showAdvancedControls" @click="showAdvancedControls = !showAdvancedControls">
+          <AppIcon name="settings" :size="16" /> Settings
+        </button>
+        <button class="btn btn-ghost" :class="{ active: showReviewPanel }" :aria-pressed="showReviewPanel" @click="showReviewPanel = !showReviewPanel">
+          <AppIcon name="file-text" :size="16" /> Review
+        </button>
+        <button class="btn btn-ghost" :disabled="paragraphs.length === 0" @click="copyTranscript">
+          <AppIcon name="copy" :size="16" /> Copy
+        </button>
         <button class="btn btn-ghost" :disabled="saving" @click="saveMeeting()">
-          <AppIcon name="save" :size="16" />
-          {{ saving ? 'Saving...' : 'Save Meeting' }}
+          <AppIcon name="save" :size="16" /> {{ saving ? 'Saving...' : 'Save' }}
         </button>
-        <button class="btn btn-ghost" @click="exportMeeting('md')">
-          <AppIcon name="download" :size="16" />
-          Export MD
-        </button>
-        <button class="btn btn-ghost" @click="exportMeeting('json')">
-          <AppIcon name="file-text" :size="16" />
-          Export JSON
-        </button>
-        <button class="btn btn-primary" :class="{ danger: recording }" @click="recording ? stop() : start()">
+        <button class="btn btn-primary compact-record-action" :class="{ danger: recording }" :disabled="status === 'connecting' || status === 'stopping'" @click="recording ? stop() : start()">
           <AppIcon :name="recording ? 'stop' : 'mic'" :size="16" />
-          {{ recording ? 'Stop Recording' : 'Start Recording' }}
+          {{ recording ? 'Stop recording' : 'Start recording' }}
         </button>
       </div>
-    </div>
-
-    <Phase07Status :segments="segments" :buffered-ms="bufferedMs"
+    </header>
+    <section class="meeting-workspace-summary">
+      <div class="workspace-summary-label"><span class="summary-live-dot" :class="{ active: recording }"></span> Live transcription</div>
+      <div class="workspace-summary-detail">
+        <span>Language {{ language === 'auto' ? 'Auto' : language.toUpperCase() }}</span>
+        <span>Translation {{ translationTarget || 'Off' }}</span>
+        <span v-if="serverInfo">ASR {{ serverInfo.asr_engine }}</span>
+        <span v-if="durableSeconds !== null">Saved audio {{ durableSeconds.toFixed(1) }}s</span>
+      </div>
+      <div class="workspace-export-tools">
+        <button class="btn btn-ghost btn-sm" @click="exportMeeting('md')">Export text</button>
+        <button class="btn btn-ghost btn-sm" @click="exportMeeting('json')">Export data</button>
+      </div>
+    </section>
+    <Phase07Status v-show="showAdvancedControls" :segments="segments" :buffered-ms="bufferedMs"
       :recording="recording" :asr-engine="serverInfo?.asr_engine ?? 'unknown'"
       :asr-model="serverInfo?.asr_model" :diarization-mode="serverInfo?.diarization_mode" />
 
-    <div class="meeting-controls">
+    <div v-show="showAdvancedControls" class="meeting-controls meeting-advanced-controls">
       <label class="field">Spoken language
         <select v-model="language" :disabled="recording || status === 'connecting' || status === 'stopping'">
           <option v-for="entry in supportedLanguages" :key="entry[0]" :value="entry[0]">{{ entry[1] }}</option>
@@ -899,12 +920,12 @@ onBeforeUnmount(() => stopInternal())
       {{ selectedWithoutVoiceprints.length }} selected participant(s) have no voiceprints. Automatic identification is not available for these people.
       <RouterLink to="/speakers">Manage voiceprints</RouterLink>
     </p>
-    <p v-if="serverInfo" class="hint-text">
+    <p v-if="serverInfo && showAdvancedControls" class="hint-text">
       Active ASR {{ serverInfo.asr_model }} · Recognition window {{ serverInfo.processing_window_s }}s ·
       Confirmation {{ serverInfo.confirmation_delay_s }}s · Active hotwords {{ serverInfo.active_hotword_count ?? 0 }}
     </p>
     <p v-if="error" class="error-banner" role="alert">{{ error }}</p>
-    <p v-if="audioAnalysis" class="meeting-sub">Audio analysis: {{ audioAnalysis }}</p>
+    <p v-if="audioAnalysis && showAdvancedControls" class="meeting-sub">Audio analysis: {{ audioAnalysis }}</p>
     <p v-if="untranslatedCount > 0" class="hint-text warn-text" role="status">
       {{ untranslatedCount }} segment(s) have no available translation; original text is shown.
     </p>
@@ -912,7 +933,7 @@ onBeforeUnmount(() => stopInternal())
       <strong>Live preview ({{ partialLanguage }})</strong>
       <span>{{ partialText }}</span>
     </section>
-    <div v-if="recordingList.length" class="meeting-controls">
+    <div v-if="recordingList.length && showAdvancedControls" class="meeting-controls">
       <strong>Saved WAV recordings ({{ recordingList.length }})</strong>
       <div v-for="(item, index) in recordingList" :key="item.name" class="recorded-audio-item">
         <span>Recording {{ index + 1 }} · {{ item.duration_s === null ? 'Duration unavailable' : formatTime(item.duration_s * 1000) }} · {{ (item.bytes / 1048576).toFixed(1) }} MB</span>
@@ -921,13 +942,12 @@ onBeforeUnmount(() => stopInternal())
       </div>
     </div>
 
-    <!-- PHASE05_INTELLIGENCE_PATCH -->
-    <IntelligencePanel :meeting-id="props.id" :segments="segments" />
-    <ContextCorrectionPanel :meeting-id="props.id" :segments="segments"
-      :recording="recording || status === 'connecting' || status === 'stopping'"
-      @applied="loadSavedTranscript" />
-    <OfflineSpeakerPanel :meeting-id="props.id"
-      :recording="recording || status === 'connecting' || status === 'stopping'" />
+    <div class="meeting-workspace">
+      <div class="meeting-primary">
+        <div class="transcript-panel-heading">
+          <div><h2>Transcript</h2><span>Speech is shown as separate time-linked turns</span></div>
+          <span class="transcript-count">{{ paragraphs.length }} turns</span>
+        </div>
     <main ref="transcriptEl" class="transcript" @scroll="onTranscriptScroll">
       <div v-if="segments.length === 0" class="empty-state">
         <div class="empty-icon"><AppIcon name="mic" :size="26" /></div>
@@ -968,10 +988,26 @@ onBeforeUnmount(() => stopInternal())
               <button class="btn btn-primary btn-sm" :disabled="speakerSaving" @click="saveSpeakerLabel(editingSpeakerId!)">Save speaker</button>
               <button class="btn btn-ghost btn-sm" @click="editingSpeakerId = null">Cancel</button>
             </div>
-          </div>
+            </div>
+          </details>
         </article>
       </template>
     </main>
+      </div>
+      <aside v-if="showReviewPanel" class="meeting-review-panel" aria-label="Review and analysis">
+        <div class="review-panel-head">
+          <div><h2>Review</h2><p>Analysis, corrections and speaker refinement</p></div>
+          <button class="meeting-back" aria-label="Close review" @click="showReviewPanel = false"><AppIcon name="x" :size="17" /></button>
+        </div>
+    <IntelligencePanel :meeting-id="props.id" :segments="segments" />
+    <ContextCorrectionPanel :meeting-id="props.id" :segments="segments"
+      :recording="recording || status === 'connecting' || status === 'stopping'"
+      @applied="loadSavedTranscript" />
+    <OfflineSpeakerPanel :meeting-id="props.id"
+      :recording="recording || status === 'connecting' || status === 'stopping'" />
+
+      </aside>
+    </div>
 
     <div v-if="showParticipants" class="dialog-backdrop" @click.self="showParticipants = false">
       <div class="dialog dialog-wide">
@@ -1132,3 +1168,5 @@ onBeforeUnmount(() => stopInternal())
   max-width: 240px;
 }
 </style>
+
+<style src="../assets/meeting-refresh.css"></style>
