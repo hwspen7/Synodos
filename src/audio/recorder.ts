@@ -1,7 +1,7 @@
 import { PCM_PROCESSOR_NAME, pcmProcessorCode } from './pcm-processor'
 
 export interface MicRecorder {
-  stop: () => void
+  stop: () => Promise<void>
 }
 
 /**
@@ -41,8 +41,13 @@ export async function startMicRecording(
       numberOfOutputs: 0,
       processorOptions: { sampleRate: ctx.sampleRate, targetRate },
     })
+    let resolveFlushed: (() => void) | null = null
     node.port.onmessage = (event: MessageEvent) => {
       const data = event.data
+      if (data && typeof data === 'object' && data.type === 'flushed') {
+        resolveFlushed?.()
+        return
+      }
       // Process audio and meeting metadata.
       if (data && typeof data === 'object' && data.type === 'dbg') {
         console.debug(`[mic-input] max=${(data.max as number).toFixed(5)}`)
@@ -75,14 +80,27 @@ export async function startMicRecording(
 
     let stopped = false
     return {
-      stop() {
+      async stop() {
         if (stopped) return
         stopped = true
-        node.port.onmessage = null
-        node.disconnect()
-        source.disconnect()
-        stream.getTracks().forEach((track) => track.stop())
-        void ctx?.close()
+        // Flush the worklet before closing the browser audio graph.
+        try {
+          await Promise.race([
+            new Promise<void>((resolve) => {
+              resolveFlushed = resolve
+              node.port.postMessage({ type: 'flush' })
+            }),
+            new Promise<void>((_, reject) => {
+              window.setTimeout(() => reject(new Error('Microphone drain was not acknowledged')), 3000)
+            }),
+          ])
+        } finally {
+          node.port.onmessage = null
+          node.disconnect()
+          source.disconnect()
+          stream.getTracks().forEach((track) => track.stop())
+          await ctx?.close()
+        }
       },
     }
   } catch (err) {
