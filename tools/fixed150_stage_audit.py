@@ -24,7 +24,7 @@ from speech.quality_guard import verify_utterances
 from speech.utterance_units import split_utterances
 
 
-SCHEMA = "meeting-fixed150-stage-audit-v1"
+SCHEMA = "meeting-fixed150-stage-audit-v2"
 SOURCES = (
     "speech/whisper.py", "speech/multilingual_windows.py",
     "speech/audio_windows.py", "speech/quality_guard.py",
@@ -107,7 +107,9 @@ def run_one(model, case: dict, root: Path) -> dict:
         "temperature": 0,
     }
     outputs = {"window_raw_second_vad": [], "window_verified_second_vad": [],
-               "window_raw_no_second_vad": [], "window_verified_no_second_vad": []}
+               "window_preserved_second_vad": [],
+               "window_raw_no_second_vad": [], "window_verified_no_second_vad": [],
+               "window_preserved_no_second_vad": []}
     window_details = []
     start_test = time.perf_counter()
     for start, end in windows:
@@ -125,13 +127,20 @@ def run_one(model, case: dict, root: Path) -> dict:
             accepted = verify_utterances(
                 parts, local, round((end - start) / 16), detected
             )
+            preserved = verify_utterances(
+                parts, local, round((end - start) / 16), detected,
+                preserve_disputed_text=True,
+            )
             accepted = split_utterances(tuple(accepted))
+            preserved = split_utterances(tuple(preserved))
             suffix = "second_vad" if second_vad else "no_second_vad"
             raw_text = " ".join(str(getattr(p, "text", "") or "").strip()
                                 for p in parts if str(getattr(p, "text", "") or "").strip())
             accepted_text = " ".join(p.text for p in accepted)
+            preserved_text = " ".join(p.text for p in preserved)
             outputs["window_raw_" + suffix].append(raw_text)
             outputs["window_verified_" + suffix].append(accepted_text)
+            outputs["window_preserved_" + suffix].append(preserved_text)
             record[suffix] = {
                 "language": detected,
                 "language_probability": probability,
@@ -139,6 +148,10 @@ def run_one(model, case: dict, root: Path) -> dict:
                 "accepted_utterances": len(accepted),
                 "raw_characters": len(raw_text),
                 "accepted_characters": len(accepted_text),
+                "preserved_characters": len(preserved_text),
+                "preserved_without_word_timing": sum(
+                    item.timestamp_quality == "segment" for item in preserved
+                ),
                 "raw_words_with_timestamps": sum(len(getattr(p, "words", None) or [])
                                                  for p in parts),
                 "accepted_words": sum(len(p.words) for p in accepted),
@@ -196,7 +209,9 @@ def run(root: Path, source_path: Path, output: Path,
             state["cases"][case["id"]] = row
             atomic_json(output, state)
             for name in ("window_raw_second_vad", "window_verified_second_vad",
-                         "window_raw_no_second_vad", "window_verified_no_second_vad"):
+                         "window_preserved_second_vad",
+                         "window_raw_no_second_vad", "window_verified_no_second_vad",
+                         "window_preserved_no_second_vad"):
                 print(f"  {name:30} CER={row[name]['cer']:.2%}", flush=True)
     done = len(state["cases"])
     print(f"Stage-audit status: {done}/{len(candidates)}")
@@ -211,7 +226,7 @@ def main() -> int:
     parser.add_argument("--source", type=Path,
                         default=Path("benchmark/fixed150/system_ablation_all.json"))
     parser.add_argument("--output", type=Path,
-                        default=Path("benchmark/fixed150/stage_audit.json"))
+                        default=Path("benchmark/fixed150/stage_guard_ablation.json"))
     parser.add_argument("--scope", choices=("focus", "all"), default="all")
     parser.add_argument("--threshold-pp", type=float, default=5.0)
     parser.add_argument("--limit", type=int)
