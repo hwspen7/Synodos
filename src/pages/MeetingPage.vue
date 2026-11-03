@@ -352,21 +352,31 @@ function start(): void {
   connect(true)
 }
 
-function stop(): void {
-  // Wait for final processing and automatic saving before closing.
+async function stop(): Promise<void> {
+  // Do not request final ASR until the browser worklet has drained.
+  if (!recording.value) return
   recording.value = false
   stopRequested = true
-  recorder?.stop()
+  status.value = 'stopping'
+  const activeRecorder = recorder
   recorder = null
   micLevel.value = 0
   micSilent.value = false
-  status.value = 'stopping'
-  client?.sendStop()
+  try {
+    await activeRecorder?.stop()
+    if (client?.connected) client.sendStop()
+    else throw new Error('Audio connection closed before recording finalization')
+  } catch (err) {
+    realtimeError = true
+    error.value = err instanceof Error ? err.message : String(err)
+    client?.close()
+    status.value = 'disconnected'
+  }
 }
 
 function stopInternal(): void {
   recording.value = false
-  recorder?.stop()
+  void recorder?.stop()
   recorder = null
   micLevel.value = 0
   micSilent.value = false
@@ -379,6 +389,8 @@ function connect(autostart = false): void {
   // Dispose the previous socket before attempting a new connection.
   const previous = client
   client = null
+  void recorder?.stop()
+  recorder = null
   previous?.close()
   error.value = ''
   clearTranscript()
@@ -437,7 +449,7 @@ function connect(autostart = false): void {
       if (clientSeq !== mySeq) return
       client = null
       recording.value = false
-      recorder?.stop()
+      void recorder?.stop()
       recorder = null
       if (reason === 'closed') {
         status.value = 'idle'
