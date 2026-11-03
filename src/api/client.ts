@@ -47,6 +47,13 @@ export const meetingsApi = {
     request<{ ok: boolean; meeting: MeetingSummary }>(`/meetings/${id}/save`, {
       method: 'POST',
     }),
+  settings: (id: string, payload: {
+    language: string; translate_to: string; record_audio: boolean
+    vad_threshold: number; rec_threshold: number
+    participant_ids: string[]; hotword_ids: string[]; spk_threshold: number
+  }) => request<{ ok: boolean }>(`/meetings/${id}/settings`, {
+    method: 'PATCH', body: JSON.stringify(payload),
+  }),
   remove: (id: string) =>
     request<{ ok: boolean }>(`/meetings/${id}`, { method: 'DELETE' }),
   exportUrl: (id: string, format: 'md' | 'json') =>

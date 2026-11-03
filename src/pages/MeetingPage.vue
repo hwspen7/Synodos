@@ -28,7 +28,7 @@ const recordAudio = ref(true)
 const partialText = ref('')
 const partialLanguage = ref('')
 const audioAnalysis = ref('')
-const recordingList = ref<string[]>([])
+const recordingList = ref<Array<{ name: string, bytes: number, duration_s: number | null, modified_at: string }>>([])
 const supportedLanguages = [
   ['auto', 'Auto detect'], ['zh', 'Chinese'], ['en', 'English'],
   ['ja', 'Japanese'], ['ko', 'Korean'], ['es', 'Spanish'],
@@ -41,8 +41,8 @@ const recording = ref(false)
 const status = ref<Status>('idle')
 const error = ref('')
 const toast = ref('')
-const vadThreshold = ref(10)
-const recThreshold = ref(2)
+const vadThreshold = ref(4)
+const recThreshold = ref(1.5)
 const serverInfo = ref<ServerReady | null>(null)
 const meetingTitle = ref('')
 const bufferedMs = ref(0)
@@ -64,6 +64,15 @@ const micSilent = ref(false)
 const capturedSeconds = ref(0)
 const deliveredSeconds = ref(0)
 const wavRecordingEnabled = ref(false)
+const settingsSaving = ref(false)
+const appliedSettings = ref('')
+const editingSpeakerId = ref<number | null>(null)
+const speakerChoice = ref('')
+const speakerSaving = ref(false)
+const selectedWithoutVoiceprints = computed(() => selectedParticipantIds.value
+  .map((id) => speakers.value.find((s) => s.id === id))
+  .filter((s): s is Speaker => Boolean(s && !s.vector_count)))
+const settingsPending = computed(() => appliedSettings.value !== settingsSignature())
 
 let client: RealtimeClient | null = null
 let recorder: Awaited<ReturnType<typeof startMicRecording>> | null = null
@@ -122,6 +131,38 @@ const hotwordNames = computed(() => {
     .map((id) => byId.get(id))
     .filter((n): n is string => Boolean(n))
 })
+
+function settingsPayload() {
+  return {
+    language: language.value, translate_to: translationTarget.value,
+    record_audio: recordAudio.value, vad_threshold: vadThreshold.value,
+    rec_threshold: recThreshold.value,
+    participant_ids: [...selectedParticipantIds.value].sort(),
+    hotword_ids: [...selectedHotwordIds.value].sort(),
+    spk_threshold: spkThreshold.value,
+  }
+}
+
+function settingsSignature(): string {
+  return JSON.stringify(settingsPayload())
+}
+
+async function applySpeechSettings(quiet = false): Promise<boolean> {
+  if (recording.value || status.value === 'stopping' || status.value === 'connecting' || settingsSaving.value) return false
+  settingsSaving.value = true
+  error.value = ''
+  try {
+    await meetingsApi.settings(props.id, settingsPayload())
+    appliedSettings.value = settingsSignature()
+    if (!quiet) showToast('Speech settings saved for the next recording')
+    return true
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+    return false
+  } finally {
+    settingsSaving.value = false
+  }
+}
 
 function wsUrl(): string {
   const params = new URLSearchParams({
@@ -231,9 +272,14 @@ async function saveMeeting(quiet = false): Promise<boolean> {
 async function loadMeetingConfig(): Promise<void> {
   try {
     const { meeting } = await meetingsApi.get(props.id)
-    selectedParticipantIds.value = meeting.participant_ids ?? []
-    selectedHotwordIds.value = meeting.hotword_ids ?? []
-    spkThreshold.value = meeting.spk_threshold ?? 0.3
+    selectedParticipantIds.value = meeting.ui_settings?.participant_ids ?? meeting.participant_ids ?? []
+    selectedHotwordIds.value = meeting.ui_settings?.hotword_ids ?? meeting.hotword_ids ?? []
+    spkThreshold.value = meeting.ui_settings?.spk_threshold ?? meeting.spk_threshold ?? 0.3
+    language.value = meeting.ui_settings?.language ?? 'en'
+    translationTarget.value = meeting.ui_settings?.translate_to ?? 'en'
+    recordAudio.value = meeting.ui_settings?.record_audio ?? true
+    vadThreshold.value = meeting.ui_settings?.vad_threshold ?? 4
+    recThreshold.value = meeting.ui_settings?.rec_threshold ?? 1.5
   } catch {
     // Use default threshold 0.3 and empty participant/hotword selections.
     selectedParticipantIds.value = []
@@ -243,6 +289,24 @@ async function loadMeetingConfig(): Promise<void> {
   try {
     speakers.value = (await speakersApi.list()).speakers
     hotwords.value = (await hotwordsApi.list()).hotwords
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  }
+  appliedSettings.value = settingsSignature()
+}
+
+async function loadSavedTranscript(): Promise<void> {
+  try {
+    const { segments: saved } = await meetingsApi.segments(props.id)
+    applyTranscript({
+      type: 'transcript', version: 0,
+      segments: saved.map((s) => ({
+        id: s.id, text: s.text, start_ms: s.start_ms, end_ms: s.end_ms,
+        speaker_id: s.speaker_id ?? -1, speaker_name: s.speaker_name ?? 'Unidentified Speaker',
+        language: s.language ?? 'und', translation: s.translation ?? '',
+        revision: s.revision ?? 0,
+      })),
+    })
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   }
@@ -269,9 +333,8 @@ async function applyParticipants(): Promise<void> {
   error.value = ''
   try {
     showParticipants.value = false
-    if (!(await saveMeeting(true))) return
-    connect()
-    showToast('Participant settings applied')
+    if (!(await applySpeechSettings(true))) return
+    showToast('Participant selection saved')
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -286,9 +349,8 @@ async function applyHotwords(): Promise<void> {
   error.value = ''
   try {
     showHotwords.value = false
-    if (!(await saveMeeting(true))) return
-    connect()
-    showToast('Hotword settings applied')
+    if (!(await applySpeechSettings(true))) return
+    showToast('Hotword selection saved')
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -436,7 +498,6 @@ function connect(autostart = false): void {
   recorder = null
   previous?.close()
   error.value = ''
-  clearTranscript()
   bufferedMs.value = 0
   partialText.value = ''
   serverInfo.value = null
@@ -456,6 +517,7 @@ function connect(autostart = false): void {
     onReady: (msg) => {
       if (clientSeq !== mySeq) return
       serverInfo.value = msg
+      appliedSettings.value = settingsSignature()
       wavRecordingEnabled.value = msg.wav_recording_enabled === true
       if (recordAudio.value && !wavRecordingEnabled.value) {
         error.value = 'WAV recording was requested but the server could not enable it.'
@@ -572,10 +634,48 @@ async function loadRecordings(): Promise<void> {
   try {
     const response = await fetch(`/api/speech/meetings/${encodeURIComponent(props.id)}/recordings`)
     if (!response.ok) throw new Error('Unable to load recordings')
-    const payload = await response.json() as { recordings: Array<{ name: string }> }
-    recordingList.value = payload.recordings.map((r) => r.name)
+    const payload = await response.json() as { recordings: Array<{ name: string, bytes: number, duration_s: number | null, modified_at: string }> }
+    recordingList.value = payload.recordings
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
+  }
+}
+
+function recordingUrl(name: string): string {
+  return `/api/speech/meetings/${encodeURIComponent(props.id)}/recordings/${encodeURIComponent(name)}`
+}
+
+function editSpeakerById(id: number): void {
+  if (recording.value || status.value === 'stopping') return
+  editingSpeakerId.value = id
+  speakerChoice.value = ''
+}
+
+async function saveSpeakerLabel(id: number): Promise<void> {
+  const segment = segments.value.find((item) => item.id === id)
+  if (!segment || speakerSaving.value) return
+  speakerSaving.value = true
+  error.value = ''
+  try {
+    const response = await fetch(`/api/speech/meetings/${encodeURIComponent(props.id)}/segments/${id}/speaker`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ participant_id: speakerChoice.value || null, revision: segment.revision ?? 0 }),
+    })
+    if (!response.ok) {
+      const detail = await response.json() as { detail?: string }
+      throw new Error(detail.detail || 'Speaker assignment failed')
+    }
+    const result = await response.json() as { speaker_id: number, speaker_name: string, revision: number }
+    segments.value = segments.value.map((item) => item.id === id
+      ? { ...item, speaker_id: result.speaker_id, speaker_name: result.speaker_name, revision: result.revision }
+      : item)
+    editingSpeakerId.value = null
+    showToast('Speaker assignment saved')
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    speakerSaving.value = false
   }
 }
 
@@ -604,7 +704,9 @@ async function correctTranscript(seg: Segment): Promise<void> {
 
 onMounted(async () => {
   await loadMeetingConfig()
-  connect()
+  await loadSavedTranscript()
+  await loadRecordings()
+  if (route.query.autostart === '1') connect(true)
 })
 
 onBeforeUnmount(() => stopInternal())
@@ -679,7 +781,7 @@ onBeforeUnmount(() => stopInternal())
         </select>
       </label>
       <label class="field"><input type="checkbox" v-model="recordAudio" :disabled="recording" /> Save WAV</label>
-      <button class="btn btn-ghost" :disabled="recording" @click="connect()">Apply speech settings</button>
+      <button class="btn btn-ghost" :disabled="recording || status === 'connecting' || status === 'stopping' || settingsSaving" @click="applySpeechSettings()">{{ settingsSaving ? 'Saving...' : 'Apply speech settings' }}</button>
       <button class="btn btn-ghost" :disabled="recording" @click="loadRecordings()">Load recordings</button>
       <label class="field" title="Trigger recognition when this audio duration is buffered.">
         Processing Window (s)
@@ -727,6 +829,15 @@ onBeforeUnmount(() => stopInternal())
       </button>
     </div>
 
+    <p v-if="settingsPending && !recording" class="hint-text warn-text" role="status">Settings changed. Apply to save them, or start recording to use these values.</p>
+    <p v-if="selectedWithoutVoiceprints.length" class="hint-text warn-text" role="status">
+      {{ selectedWithoutVoiceprints.length }} selected participant(s) have no voiceprints. Automatic identification is not available for these people.
+      <RouterLink to="/speakers">Manage voiceprints</RouterLink>
+    </p>
+    <p v-if="serverInfo" class="hint-text">
+      Active ASR {{ serverInfo.asr_model }} · Recognition window {{ serverInfo.processing_window_s }}s ·
+      Confirmation {{ serverInfo.confirmation_delay_s }}s · Active hotwords {{ serverInfo.active_hotword_count ?? 0 }}
+    </p>
     <p v-if="error" class="error-banner">{{ error }}</p>
     <p v-if="audioAnalysis" class="meeting-sub">Audio analysis: {{ audioAnalysis }}</p>
     <p v-if="untranslatedCount > 0" class="hint-text warn-text" role="status">
@@ -737,8 +848,12 @@ onBeforeUnmount(() => stopInternal())
       <span>{{ partialText }}</span>
     </section>
     <div v-if="recordingList.length" class="meeting-controls">
-      <span>Recorded audio</span>
-      <audio v-for="name in recordingList" :key="name" controls :src="`/api/speech/meetings/${encodeURIComponent(props.id)}/recordings/${encodeURIComponent(name)}`"></audio>
+      <strong>Saved WAV recordings ({{ recordingList.length }})</strong>
+      <div v-for="(item, index) in recordingList" :key="item.name" class="recorded-audio-item">
+        <span>Recording {{ index + 1 }} · {{ item.duration_s === null ? 'Duration unavailable' : formatTime(item.duration_s * 1000) }} · {{ (item.bytes / 1048576).toFixed(1) }} MB</span>
+        <audio controls preload="metadata" :src="recordingUrl(item.name)"></audio>
+        <a :href="recordingUrl(item.name)" :download="item.name" class="btn btn-ghost btn-sm">Download WAV</a>
+      </div>
     </div>
 
     <!-- PHASE05_INTELLIGENCE_PATCH -->
@@ -769,6 +884,17 @@ onBeforeUnmount(() => stopInternal())
             <button v-for="segmentId in para.segmentIds" :key="segmentId"
               class="btn btn-ghost btn-sm" :disabled="status === 'stopping'"
               @click="editSegmentById(segmentId)">Edit #{{ segmentId }}</button>
+            <button v-for="segmentId in para.segmentIds" :key="`speaker-${segmentId}`"
+              class="btn btn-ghost btn-sm" :disabled="status === 'stopping'"
+              @click="editSpeakerById(segmentId)">Speaker #{{ segmentId }}</button>
+            <div v-if="editingSpeakerId !== null && para.segmentIds.includes(editingSpeakerId)" class="speaker-edit-controls">
+              <select v-model="speakerChoice" aria-label="Correct speaker">
+                <option value="">Unidentified speaker</option>
+                <option v-for="spk in speakers" :key="spk.id" :value="spk.id">{{ spk.name }}</option>
+              </select>
+              <button class="btn btn-primary btn-sm" :disabled="speakerSaving" @click="saveSpeakerLabel(editingSpeakerId!)">Save speaker</button>
+              <button class="btn btn-ghost btn-sm" @click="editingSpeakerId = null">Cancel</button>
+            </div>
           </div>
         </article>
       </template>

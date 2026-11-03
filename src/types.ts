@@ -186,6 +186,11 @@ export interface MeetingSegment {
   start_ms: number
   end_ms: number
   duration_s: number
+  speaker_id?: number
+  speaker_name?: string
+  language?: string
+  translation?: string
+  revision?: number
 }
 
 export interface HealthInfo {
