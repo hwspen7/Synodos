@@ -115,6 +115,17 @@ def process(job, gateway):
         if not sources:
             return {'answer':'No attributable evidence was returned.','sources':[]}
         return {'answer':str(raw.get('answer') or '')[:12000], 'sources':sources}
+    if kind == 'context_correction':
+        from intelligence.context_correction import review
+        revision, segments = _context(job)
+        data = job.get('payload') or {}
+        mode = data.get('mode', 'conservative')
+        offset = data.get('offset', 0)
+        limit = data.get('limit', 32)
+        output = review(segments, gateway, mode=mode, offset=offset, limit=limit)
+        output['source_revision'] = revision
+        output['model'] = gateway.model_for('meeting')
+        return output
     if kind=='live_translate':
         target=str(job['payload'].get('target') or '').lower()
         if not re.fullmatch(r'[a-z]{2,3}(-[a-z]{2,4})?',target):

@@ -75,6 +75,19 @@ async def submit_job(payload:JobRequest):
     mid=_meeting_id(payload.meeting_id) if payload.meeting_id else None
     if len(str(payload.payload))>15000:
         raise HTTPException(413,'Task payload too large')
+    if payload.kind == 'context_correction':
+        # Context review must never run concurrently with a live transcript.
+        from core.runtime import meeting_sessions
+        if mid in meeting_sessions:
+            raise HTTPException(409, 'Stop recording before reviewing transcript')
+        from intelligence.context_correction import selection, ALLOWED_MODES
+        mode = payload.payload.get('mode', 'conservative')
+        offset = payload.payload.get('offset', 0)
+        limit = payload.payload.get('limit', 32)
+        if mode not in ALLOWED_MODES or type(offset) is not int or type(limit) is not int:
+            raise HTTPException(400, 'Invalid contextual correction options')
+        if offset < 0 or not 1 <= limit <= 48:
+            raise HTTPException(400, 'Review offset or limit out of bounds')
     try:
         if mid:
             await asyncio.to_thread(store.meeting_segments,mid)
