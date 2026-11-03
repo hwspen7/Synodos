@@ -477,12 +477,16 @@ class SessionProcessor(threading.Thread):
                 })
                 self._next_segment_id += 1
                 if self.translate_target:
-                    try:
-                        from speech.translation import translate
-                        detected = str(sentence.get("language", self.speech_language)).lower()
-                        self.segments[-1]["translation"] = translate(piece["text"], detected, self.translate_target)
-                    except Exception as exc:
-                        self._put({"type": "feature_warning", "feature": "translation", "message": str(exc)})
+                    detected = str(sentence.get("language", self.speech_language)).lower()
+                    if detected == self.translate_target:
+                        self.segments[-1]["translation"] = piece["text"]
+                    else:
+                        task = submit_translation(piece["text"], detected, self.translate_target)
+                        if task is None:
+                            self._put({"type": "feature_warning", "feature": "translation",
+                                       "message": "Translation backlog limit reached; source text preserved"})
+                        else:
+                            self._translation_tasks[self._next_segment_id - 1] = task
                 logger.info(
                     "[%s] confirmed segment %d (%.2f ~ %.2f seconds)",
                     self.session_id[:8], self._next_segment_id - 1, a / sr, b / sr,
