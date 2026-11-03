@@ -21,6 +21,8 @@ from speech.qwen import qwen_language_name, LANGUAGES
 from speech.language import normalize_language
 from tools.fixed150_ablation import choose_cases, likely_failure
 from tools.fixed150_reference_audit import source_flags, evaluate as audit_references, FOCUS_15
+from tools.fixed150_system_audit import summarize as summarize_system_ablation
+from speech.audio_windows import speech_windows
 from tools.fixed150_dashboard import (
     summarize_multis, summarize_singles, token_recall, token_bag,
 )
@@ -162,6 +164,54 @@ class Fixed150Contracts(unittest.TestCase):
     def test_reference_audit_default_scope_is_15(self):
         self.assertEqual(len(FOCUS_15), 15)
         self.assertEqual(len(set(FOCUS_15)), 15)
+
+    def test_continuous_speech_is_hard_cut_at_18_seconds(self):
+        samples = 40000 * 16
+        windows = speech_windows(
+            [{"start": 0, "end": samples}],
+            samples, sample_rate=16000, max_window_s=18,
+            pad_ms=0,
+        )
+        self.assertEqual(windows, [
+            (0, 18 * 16000), (18 * 16000, 36 * 16000),
+            (36 * 16000, samples),
+        ])
+        # 18s and 36s are not validated pauses; they bisect one VAD region.
+
+    def test_system_ablation_paired_scores_keep_improvements_and_harm(self):
+        def row(cid, lang, window, whole, raw, flagged=False):
+            return {
+                "id": cid, "language": lang, "reference_review_flags":
+                    ["LOW_REFERENCE_CHARACTER_DENSITY"] if flagged else [],
+                "production_windowed": {
+                    "reference_characters": 100, "character_edits": window,
+                },
+                "production_whole_clip": {
+                    "reference_characters": 100, "character_edits": whole,
+                },
+                "direct_whisper": {
+                    "reference_characters": 100, "character_edits": raw,
+                },
+                "acoustic_geometry": {
+                    "window_boundary_inside_detected_speech": 1 if flagged else 0,
+                },
+                "delta": {
+                    "window_minus_global_pp": window - whole,
+                    "window_minus_raw_pp": window - raw,
+                },
+            }
+        result = summarize_system_ablation([
+            row("one", "pt", 80, 35, 28, flagged=True),
+            row("two", "en", 0, 12, 8),
+        ], 2)
+        self.assertTrue(result["complete"])
+        self.assertEqual(result["cases_window_worse_than_raw_5pp"], 1)
+        self.assertEqual(result["cases_window_better_than_raw_5pp"], 1)
+        self.assertEqual(result["cases_window_worse_than_whole_5pp"], 1)
+        self.assertEqual(result["cases_with_speech_boundary_cuts"], 1)
+        self.assertEqual(result["cases_requiring_reference_review"], 1)
+        self.assertAlmostEqual(result["overall_cer"]["production_windowed"], .40)
+        self.assertEqual(result["per_language"]["pt"]["window_worse_than_raw_5pp"], 1)
 
     def test_exact_diverse_allocations(self):
         self.assertEqual(len(MIND_LOCALES) * len(MIND_ROWS), 56)
