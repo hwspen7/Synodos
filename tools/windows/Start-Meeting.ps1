@@ -158,6 +158,25 @@ function Test-BackendReady {
         $health.infrastructure.database_backend -eq 'postgres')
 }
 
+function Test-BackendSourceUpdated([int]$ProcessId) {
+    $processInfo = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if ($null -eq $processInfo) { return $false }
+    try {
+        $started = $processInfo.StartTime.ToUniversalTime()
+    } catch {
+        return $false
+    }
+    foreach ($relativePath in @('main.py', 'api\websocket.py', 'sessions\processor.py',
+                                  'speech\whisper.py', 'core\runtime.py')) {
+        $path = Join-Path $RepoRoot $relativePath
+        if ((Test-Path -LiteralPath $path) -and
+            (Get-Item -LiteralPath $path).LastWriteTimeUtc -gt $started.AddSeconds(1)) {
+            return $true
+        }
+    }
+    return $false
+}
+
 function Test-OllamaReady {
     $data = Invoke-RestMethod -Uri "$OllamaApi/api/tags" -TimeoutSec 3
     foreach ($item in @($data.models)) {
@@ -249,6 +268,12 @@ function Start-Launcher {
     $backendReady = $false
     if ($null -ne $backendPid) {
         try { $backendReady = Test-BackendReady } catch { $backendReady = $false }
+        $sourceUpdated = Test-BackendSourceUpdated $backendPid
+        $forceRestart = $env:MEETING_FORCE_BACKEND_RESTART -eq '1'
+        if ($backendReady -and ($sourceUpdated -or $forceRestart)) {
+            Write-Host 'Backend source code changed since startup; applying the updated version.'
+            $backendReady = $false
+        }
         if (-not $backendReady) {
             Assert-ProjectProcess $backendPid 'uvicorn' 8000
             Assert-ProjectProcess $backendPid 'main:app' 8000
