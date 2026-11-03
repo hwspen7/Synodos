@@ -25,6 +25,16 @@ tr, id, uk, bn, fa, sw. Original locales also distinguish English accents.
 Multi-language overlaps add speaker combinations from de, fr, es, it, nl and pt.
 This is **not** proof of quality for all 102 FLEURS languages.
 
+**Dataset revision caveat (verified for google/fleurs@70bb2e8):**
+FLEURS validation Parquet shards are under
+`parquet-data/<locale>/validation-00000-of-00001.parquet`, **not**
+`<locale>/validation-00000-of-00001.parquet`.
+The preparation program now resolves the real path from the pinned Hugging
+Face repository tree before starting the large download. A known-path failure
+blocks preparation without discarding already-verified WAVs and the
+`progress.json` checkpoints. Do not delete `benchmark/fixed150` to fix a
+404.
+
 The 150-case manifest is source-pinned and SHA-256 verified. Case selection is
 deterministic: MInDS row indices 19/43/77/101 from 14 locales, FLEURS validation
 indices 19/43/77/101 from 11 locales, AMI source indices 0/2/.../48, and
