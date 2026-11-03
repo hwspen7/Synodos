@@ -273,12 +273,14 @@ class SessionProcessor(threading.Thread):
                         self._speaker_map.get(s["cluster"], s["cluster"]),
                     ),
                     "speaker_name": s.get("speaker_name", ""),
+                    "speaker_uncertain": bool(s.get("speaker_uncertain", False)),
                     "emb": s["emb"],  # Preserve behavior.
                     "language": s.get("language", "und"),
                     "language_confidence": s.get("language_confidence"),
                     "timestamp_quality": s.get("timestamp_quality", "segment"),
                     "words": s.get("words", []),
                     "translation": s.get("translation", ""),
+                "speaker_uncertain": bool(s.get("speaker_uncertain", False)),
                     "revision": s.get("revision", 0),
                     "corrections": s.get("corrections", []),
                 }
@@ -301,6 +303,7 @@ class SessionProcessor(threading.Thread):
                     "cluster": int(item.get("cluster", -1)),
                     "speaker_id": int(item.get("speaker_id", item.get("cluster", -1))),
                     "speaker_name": item.get("speaker_name", ""),
+                    "speaker_uncertain": bool(item.get("speaker_uncertain", False)),
                     "text": item.get("text", "") or "",
                     "language": item.get("language", "und"),
                     "language_confidence": item.get("language_confidence"),
@@ -431,45 +434,52 @@ class SessionProcessor(threading.Thread):
                 local_end = max(local_end, e_g - start_offset)
                 continue
 
-            # Handle transcripts and speaker assignments.
             seg_audio = audio[s_g - start_offset : e_g - start_offset]
-            # Speaker embeddings of extremely short utterances are unstable.
-            # Keep their text, but do not create a new speaker from such audio.
-            emb = None
-            if len(seg_audio) >= int(sr * 1.2):
-                try:
-                    emb = normalized_embedding(self.models.embed(seg_audio))
-                except Exception:
-                    logger.exception("speaker embedding failed; preserving ASR text")
-
-            self.segments.append(
-                {
+            from speech.turn_split import split_by_acoustic_turns
+            pieces = split_by_acoustic_turns(
+                sentence, seg_audio, self.models.embed, sample_rate=sr,
+            ) if self._speech_settings.engine != "legacy" else [
+                {"start": start_ms, "end": end_ms, "text": text,
+                 "emb": None, "ambiguous": False}
+            ]
+            for piece in pieces:
+                a = start_offset + int(piece["start"] * sr / 1000)
+                b = start_offset + int(piece["end"] * sr / 1000)
+                if b <= a or is_temporal_duplicate(a, b, piece["text"], self.segments):
+                    continue
+                emb = normalized_embedding(piece.get("emb"))
+                if emb is None and not piece.get("ambiguous") and b - a >= int(sr * 1.2):
+                    try:
+                        emb = normalized_embedding(self.models.embed(audio[a-start_offset:b-start_offset]))
+                    except Exception:
+                        logger.exception("speaker embedding failed; retaining transcript")
+                self.segments.append({
                     "id": self._next_segment_id,
-                    "start_sample": s_g,
-                    "end_sample": e_g,
-                    "text": text,
+                    "start_sample": a,
+                    "end_sample": b,
+                    "text": piece["text"],
                     "language": sentence.get("language", "und"),
                     "language_confidence": sentence.get("language_confidence"),
                     "timestamp_quality": sentence.get("timestamp_quality", "segment"),
                     "words": sentence.get("words", []),
                     "emb": emb,
                     "cluster": -1,
-                }
-            )
-            self._next_segment_id += 1
-            if self.translate_target:
-                try:
-                    from speech.translation import translate
-                    detected = str(sentence.get("language", self.speech_language)).lower()
-                    self.segments[-1]["translation"] = translate(text, detected, self.translate_target)
-                except Exception as exc:
-                    self._put({"type": "feature_warning", "feature": "translation", "message": str(exc)})
+                    "speaker_uncertain": bool(piece.get("ambiguous")),
+                })
+                self._next_segment_id += 1
+                if self.translate_target:
+                    try:
+                        from speech.translation import translate
+                        detected = str(sentence.get("language", self.speech_language)).lower()
+                        self.segments[-1]["translation"] = translate(piece["text"], detected, self.translate_target)
+                    except Exception as exc:
+                        self._put({"type": "feature_warning", "feature": "translation", "message": str(exc)})
+                logger.info(
+                    "[%s] confirmed segment %d (%.2f ~ %.2f seconds)",
+                    self.session_id[:8], self._next_segment_id - 1, a / sr, b / sr,
+                )
+                metrics.increment("asr_segments_confirmed")
             local_end = max(local_end, e_g - start_offset)
-            logger.info(
-                "[%s] confirmed segment %d (%.2f ~ %.2f seconds)",
-                self.session_id[:8], self._next_segment_id - 1, s_g / sr, e_g / sr,
-            )
-            metrics.increment("asr_segments_confirmed")
 
         if self._speech_settings.engine != "legacy" and not self._speech_settings.native_streaming and not final:
             preview_text = " ".join(str(s.get("text", "")) for s in unconfirmed).strip()
