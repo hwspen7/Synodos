@@ -68,6 +68,7 @@ let clientSeq = 0
 let stickToBottom = true
 let stopRequested = false
 let realtimeError = false
+let audioStopAcknowledged = false
 
 const statusText = computed(() => {
   switch (status.value) {
@@ -357,6 +358,7 @@ async function stop(): Promise<void> {
   if (!recording.value) return
   recording.value = false
   stopRequested = true
+  audioStopAcknowledged = false
   status.value = 'stopping'
   const activeRecorder = recorder
   recorder = null
@@ -400,6 +402,7 @@ function connect(autostart = false): void {
   stickToBottom = true
   stopRequested = false
   realtimeError = false
+  audioStopAcknowledged = false
 
   const mySeq = ++clientSeq
   client = new RealtimeClient({
@@ -440,6 +443,14 @@ function connect(autostart = false): void {
       if (clientSeq !== mySeq) return
       bufferedMs.value = ms
     },
+    onAudioReceived: (_samples, matched) => {
+      if (clientSeq !== mySeq) return
+      audioStopAcknowledged = matched
+      if (!matched) {
+        realtimeError = true
+        error.value = 'Audio sample mismatch: the server did not receive every sent sample.'
+      }
+    },
     onError: (message) => {
       if (clientSeq !== mySeq) return
       realtimeError = true
@@ -455,6 +466,9 @@ function connect(autostart = false): void {
         status.value = 'idle'
         if (saved === false) {
           error.value = 'Final meeting save failed. Please check the server log.'
+        } else if (stopRequested && !audioStopAcknowledged) {
+          realtimeError = true
+          error.value = 'Audio stop acknowledgement missing. Verify the recording before relying on it.'
         } else if (stopRequested && !realtimeError) {
           showToast('Stopped and automatically saved')
         }
