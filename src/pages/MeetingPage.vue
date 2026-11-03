@@ -193,8 +193,51 @@ function showToast(message: string): void {
   }, 2600)
 }
 
+// Presentation-only boundaries for legacy transcripts without word timestamps.
+// Keep the original record, timestamp, segment ID and editable text intact.
+function splitDisplaySentences(text: string): string[] {
+  const original = String(text || '').trim()
+  if (!original) return []
+  // English sentence punctuation followed by whitespace, or explicit CJK stops.
+  // Do not split within known abbreviations, initials or decimal values.
+  const abbreviations = new Set(['mr.', 'mrs.', 'ms.', 'dr.', 'prof.', 'sr.',
+    'jr.', 'st.', 'vs.', 'etc.', 'e.g.', 'i.e.', 'u.s.', 'u.k.'])
+  const sentences: string[] = []
+  let current = ''
+  for (let i = 0; i < original.length; i++) {
+    const char = original[i]
+    current += char
+    if (!'.!?。！？'.includes(char)) continue
+    const cjkEnd = '。！？'.includes(char)
+    const next = original[i + 1] || ''
+    const boundaries = cjkEnd || !next || /\s/.test(next)
+    if (!boundaries) continue
+    const token = (current.match(/(?:^|\s)(\S+)$/)?.[1] || '').toLowerCase()
+    if (!cjkEnd && abbreviations.has(token)) continue
+    // Periods in acronyms and numerals do not form independent turns.
+    if (char === '.' && /\d$/.test(current.slice(0, -1)) && /^\d/.test(next)) continue
+    let j = i + 1
+    while (j < original.length && /["'”’）\])}]/.test(original[j])) {
+      current += original[j]
+      i = j
+      j++
+    }
+    const sentence = current.trim()
+    if (sentence) sentences.push(sentence)
+    current = ''
+    while (i + 1 < original.length && /\s/.test(original[i + 1])) i++
+  }
+  if (current.trim()) sentences.push(current.trim())
+  return sentences.length ? sentences : [original]
+}
+
+function endsFinishedThought(text: string): boolean {
+  return /[.!?。！？]["'”’）\])}]*\s*$/.test(text.trimEnd())
+}
+
 function mergeGapMs(): number {
-  return Math.round((mergeGapS.value || 2) * 1000)
+  // A short gap alone is insufficient justification to merge entire turns.
+  return Math.min(Math.round((mergeGapS.value || 2) * 1000), 850)
 }
 
 /** Join text without breaking CJK scripts or concatenating Latin words. */
@@ -221,7 +264,10 @@ function buildParagraphs(segs: Segment[]): Paragraph[] {
     if (
       last &&
       seg.speaker_id === last.speaker_id &&
-      seg.start_ms - last.end_ms < gap
+      seg.start_ms - last.end_ms < gap &&
+      !endsFinishedThought(last.text) &&
+      // A label such as "Unidentified Speaker" is not evidence of same voice.
+      seg.speaker_id > 0
     ) {
       last.end_ms = seg.end_ms
       last.segmentIds.push(seg.id)
@@ -900,7 +946,10 @@ onBeforeUnmount(() => stopInternal())
             </span>
             <span class="para-time">{{ formatTime(para.start_ms) }} \u2013 {{ formatTime(para.end_ms) }}</span>
           </div>
-          <p class="para-text">{{ para.text || '(No content in this paragraph)' }}</p>
+          <div class="transcript-utterance-lines">
+            <p v-for="(sentence, sentenceIndex) in splitDisplaySentences(para.text)"
+              :key="sentenceIndex" class="para-text transcript-sentence">{{ sentence }}</p>
+          </div>
           <div class="meeting-sub" v-if="!recording">
             <button v-for="segmentId in para.segmentIds" :key="segmentId"
               class="btn btn-ghost btn-sm" :disabled="status === 'stopping'"

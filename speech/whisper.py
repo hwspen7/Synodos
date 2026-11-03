@@ -6,6 +6,7 @@ import numpy as np
 from speech.dual_vad import crosscheck_speech_regions
 from speech.contracts import Recognition
 from speech.quality_guard import verify_utterances
+from speech.utterance_units import split_utterances
 
 
 class WhisperEngine:
@@ -67,10 +68,15 @@ class WhisperEngine:
             ).strip().lower() in ("1", "true", "yes"):
                 from speech.multilingual_windows import recognize_windows
                 window_kwargs = dict(kwargs, multilingual=True)
-                return recognize_windows(
+                from dataclasses import replace as dataclass_replace
+                recognized = recognize_windows(
                     samples, speech_regions,
                     lambda chunk, **kw: self._get_model().transcribe(chunk, **kw),
                     window_kwargs,
+                )
+                return dataclass_replace(
+                    recognized,
+                    utterances=split_utterances(recognized.utterances),
                 )
             segments, info = self._get_model().transcribe(samples, **kwargs)
             # Faster Whisper infers lazily; consume under the inference lock.
@@ -80,6 +86,6 @@ class WhisperEngine:
         utterances = verify_utterances(
             pieces, speech_regions, round(len(samples) * 1000 / 16000), detected
         )
-        return Recognition(utterances, detected,
+        return Recognition(split_utterances(utterances), detected,
                            getattr(info, "language_probability", None), "whisper",
                            speech_detected=True)
