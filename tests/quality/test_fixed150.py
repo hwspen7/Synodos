@@ -22,6 +22,7 @@ from speech.language import normalize_language
 from tools.fixed150_ablation import choose_cases, likely_failure
 from tools.fixed150_reference_audit import source_flags, evaluate as audit_references, FOCUS_15
 from tools.fixed150_system_audit import summarize as summarize_system_ablation
+from tools.fixed150_system_triage import inspect as inspect_system_triage
 from speech.audio_windows import speech_windows
 from speech.text_format import join_transcript_text
 from tools.fixed150_dashboard import (
@@ -174,6 +175,45 @@ class Fixed150Contracts(unittest.TestCase):
         self.assertEqual(join_transcript_text("\u4f60\u597d", "\u4e16\u754c"), "\u4f60\u597d\u4e16\u754c")
         self.assertEqual(join_transcript_text("Hello", " world"), "Hello world")
         self.assertEqual(join_transcript_text("Hello", " !"), "Hello!")
+
+    def test_systemwide_triage_marks_candidate_stages_without_guessing_cause(self):
+        sample = {
+            "schema": "meeting-fixed150-system-ablation-v1",
+            "cases": {
+                "fixed150-048": {
+                    "id": "fixed150-048", "language": "pt",
+                    "duration_s": 61.1,
+                    "acoustic_geometry": {
+                        "asr_windows": 4,
+                        "window_boundary_inside_detected_speech": 2,
+                    },
+                    "reference_review_flags": [],
+                    "production_windowed": {"cer": .798},
+                    "production_whole_clip": {"cer": .40},
+                    "direct_whisper": {"cer": .284},
+                },
+                "fixed150-011": {
+                    "id": "fixed150-011", "language": "en",
+                    "duration_s": 4.5,
+                    "acoustic_geometry": {"asr_windows": 1},
+                    "reference_review_flags": [],
+                    "production_windowed": {"cer": 0},
+                    "production_whole_clip": {"cer": 0},
+                    "direct_whisper": {"cer": 0},
+                },
+            },
+        }
+        triage = inspect_system_triage(sample)
+        self.assertEqual(triage["cases"], 2)
+        self.assertEqual(triage["cases_harmed_by_windowed_vs_direct"], 1)
+        self.assertEqual(triage["per_language_affected"], {"pt": 1})
+        top = triage["ranked"][0]
+        self.assertEqual(top["id"], "fixed150-048")
+        self.assertIn("WINDOW_ROUTING_CANDIDATE", top["flags"])
+        self.assertIn("POSTPROCESS_OR_DECODING_DIFFERENCE_CANDIDATE", top["flags"])
+        self.assertIn("WINDOW_SEAM_WITHIN_DETECTED_SPEECH", top["flags"])
+        with self.assertRaises(ValueError):
+            inspect_system_triage({"schema": "bad", "cases": {}})
 
     def test_continuous_speech_is_hard_cut_at_18_seconds(self):
         samples = 40000 * 16
