@@ -16,6 +16,7 @@ from tools.fixed150_prepare import (
     MIND_LOCALES, MIND_ROWS, ami_spans, checksum, verify_case, verify_lock,
     choose_source_file,
 )
+from phase07.quality import score_pair, aggregate
 from tools.fixed150_dashboard import (
     summarize_multis, summarize_singles, token_recall, token_bag,
 )
@@ -47,6 +48,43 @@ class Fixed150Contracts(unittest.TestCase):
                 "a/train-00000-of-00001.parquet",
                 "b/train-00000-of-00001.parquet",
             }, target)
+
+    def test_thai_token_metric_is_not_fabricated(self):
+        row = score_pair("ภาษาไทยทดสอบ", "ภาษาไทย", language="th")
+        self.assertIsNone(row["mixed_token_error_rate"])
+        self.assertFalse(row["token_metric_supported"])
+        self.assertGreater(row["reference_characters"], 0)
+        row2 = score_pair("hello world", "hello", language="en")
+        self.assertTrue(row2["token_metric_supported"])
+        self.assertGreater(row2["mixed_token_error_rate"], 0)
+        summary = aggregate([row])
+        self.assertIsNone(summary["mixed_token_error_rate"])
+        self.assertIsNotNone(summary["cer"])
+
+    def test_existing_historical_thai_report_can_render_without_reinference(self):
+        fake = {"cases": [
+            {"id": f"fixed150-{i:03d}", "kind": "single",
+             "language": ("th" if i in (97, 98, 99, 100) else "en"),
+             "scenario": "read_speech"} for i in range(1, 101)
+        ]}
+        rows = []
+        for i in range(100):
+            rows.append({
+                "index": i, "reference_characters": 10, "character_edits": 2,
+                "reference_tokens": 1, "token_edits": 3 if i >= 96 else 0,
+                "cer": 0.2, "mixed_token_error_rate": 3.0 if i >= 96 else 0,
+                "expected_language": "th" if i >= 96 else "en",
+                "predicted_language": "th" if i >= 96 else "en",
+                "latency_ms": 100,
+            })
+        fake_report = {"infer": True, "samples": 100,
+                       "engines": {"whisper": {"samples": rows}}}
+        scored = summarize_singles(fake, fake_report)
+        data = scored["engines"]["whisper"]
+        self.assertEqual(scored["status"], "MEASURED")
+        self.assertEqual(data["mixed_token_er"], 0)
+        self.assertIsNone(next(x["mixed_token_er"] for x in data["per_language"]
+                               if x["language"] == "th"))
 
     def test_exact_diverse_allocations(self):
         self.assertEqual(len(MIND_LOCALES) * len(MIND_ROWS), 56)
