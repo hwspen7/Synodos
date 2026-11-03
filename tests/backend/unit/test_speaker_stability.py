@@ -10,6 +10,7 @@ import numpy as np
 
 from audio.buffer import AudioBuffer
 from core.config import Settings
+from speech.diarization import SpeakerCentroidTracker
 from sessions.processor import SessionProcessor
 from sessions.speaker_stability import (
     collect_mature_labels, restore_mature_labels, stabilized_cluster_ids,
@@ -63,6 +64,27 @@ class StabilityUnitContracts(unittest.TestCase):
             {"id": 3, "cluster": 7, "speaker_id": -3},
         ], (1, 2), {0: 3, 2: 4})
         self.assertGreater(new[7], 4)
+
+    def test_centroid_seed_uses_all_existing_voice_examples(self):
+        tracker = SpeakerCentroidTracker(threshold=0.72)
+        tracker.seed(1, np.array([0.6, 0.8], dtype=np.float32))
+        for _ in range(10):
+            tracker.seed(1, np.array([1.0, 0.0], dtype=np.float32))
+        tracker.seed(2, np.array([-1.0, 0.0], dtype=np.float32))
+        self.assertEqual(tracker.counts[1], 11)
+        self.assertGreater(tracker.centroids[1][0], 0.98)
+        self.assertEqual(tracker.assign(np.array([1.0, 0.0])), 1)
+        self.assertEqual(tracker.assign(np.array([-1.0, 0.0])), 2)
+        self.assertEqual(len(tracker.centroids), 2)
+
+    def test_centroid_seed_rejects_bad_or_incompatible_vectors(self):
+        tracker = SpeakerCentroidTracker(threshold=0.72)
+        tracker.seed(1, np.array([1.0, 0.0]))
+        tracker.seed(1, np.array([float("nan"), 1.0]))
+        tracker.seed(1, np.array([1.0, 0.0, 0.0]))
+        tracker.seed(-1, np.array([1.0, 0.0]))
+        self.assertEqual(tracker.counts, {1: 1})
+        self.assertEqual(len(tracker.centroids), 1)
 
     def test_mature_anchors_preserve_only_confident_unedited_labels(self):
         rate = 16000
@@ -133,6 +155,41 @@ class IntegrationSpeakerStabilityContracts(unittest.TestCase):
         proc._speaker_relabel_horizon_s = 0
         proc._recluster()
         self.assertEqual(proc.segments[0]["speaker_id"], 2)
+
+    def test_centroid_mode_reuses_historical_speaker_prototypes(self):
+        proc = self.make_processor()
+        sr = proc.settings.sample_rate
+        vectors = [
+            (1, np.array([0.6, 0.8], dtype=np.float32))
+        ] + [
+            (1, np.array([1.0, 0.0], dtype=np.float32))
+            for _ in range(10)
+        ] + [
+            (2, np.array([-1.0, 0.0], dtype=np.float32)),
+            (-1, np.array([1.0, 0.0], dtype=np.float32)),
+            (-1, np.array([-1.0, 0.0], dtype=np.float32)),
+        ]
+        proc.segments = [
+            {
+                "id": i + 1,
+                "start_sample": sr * i,
+                "end_sample": sr * (i + 1),
+                "speaker_id": sid,
+                "speaker_name": (
+                    f"Speaker {sid}" if sid > 0 else "Unidentified Speaker"
+                ),
+                "cluster": -2, "emb": vector,
+            }
+            for i, (sid, vector) in enumerate(vectors)
+        ]
+        with patch.dict(os.environ, {"MEETING_DIARIZATION_MODE": "centroid"}):
+            proc._recluster()
+        self.assertEqual(proc.segments[-2]["speaker_id"], 1)
+        self.assertEqual(proc.segments[-1]["speaker_id"], 2)
+        self.assertEqual({
+            s["speaker_id"] for s in proc.segments
+            if s["speaker_id"] > 0
+        }, {1, 2})
 
     def test_invalid_env_horizon_rejected(self):
         with patch.dict(os.environ, {"MEETING_SPEAKER_LABEL_REVISABLE_S": "4000"}):
