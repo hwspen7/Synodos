@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import unicodedata
 
-NO_SPACE_BEFORE = frozenset(",.!?;:%)]}，。！？；：、）》」』”’")
-NO_SPACE_AFTER = frozenset("([{（《「『“‘")
+NO_SPACE_BEFORE = frozenset(",.!?;:%)]}\uff0c\u3002\uff01\uff1f\uff1b\uff1a\u3001\uff09\u300b\u300d\u300f\u201d\u2019")
+NO_SPACE_AFTER = frozenset("([{\uff08\u300a\u300c\u300e\u201c\u2018")
 
 
 def _cjk(char: str) -> bool:
