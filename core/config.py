@@ -65,8 +65,8 @@ class Settings:
     rec_threshold_s: float = field(default_factory=lambda: _env_float("REC_THRESHOLD_S", 2.0))
     #: Merge adjacent segments of one speaker when the gap is below this threshold.
     merge_gap_s: float = field(default_factory=lambda: _env_float("MERGE_GAP_S", 2.0))
-    #: Discard the final buffer if its remaining duration is below this threshold.
-    final_discard_s: float = field(default_factory=lambda: _env_float("FINAL_DISCARD_S", 1.0))
+    #: Legacy compatibility only. Final audio is always submitted to ASR.
+    final_discard_s: float = field(default_factory=lambda: _env_float("FINAL_DISCARD_S", 0.0))
     #: Directory for meeting records.
     meetings_dir: Path = field(
         default_factory=lambda: Path(os.environ.get("MEETINGS_DIR", "meetings"))
