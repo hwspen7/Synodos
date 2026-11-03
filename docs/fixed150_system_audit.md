@@ -129,3 +129,42 @@ Do not enable the experimental production mode based on preselected bad
 examples or a favorable aggregate alone. Verify held-out normal speech,
 silence/noise, bilingual code switching, speaker overlap and live captions.
 Do not globally disable secondary VAD: Thai 069 clearly regressed.
+
+## Window-language drift and retrospective acoustic anchor test
+
+Observed user-run window diagnostics in Portuguese fixed150-048:
+8 acoustic windows had initial language LID results pl (.396), en (.579),
+pt (.961), de (.274), pt (.942), pl (.490), en (.610), es (.418).
+Only the two Portuguese windows had confidence above .9. The app's
+50% threshold changes output labels to 'und' but DOES NOT revise
+previously decoded text. This is distinct from Thai 071/069, where
+strong Thai LID coexists with opposite effects from secondary VAD.
+
+Offline-only source-blind anchor experiment:
+
+    .\.venv\Scripts\python.exe tools\fixed150_language_anchor.py
+
+Default selection includes the 8 formerly impacted recordings, with
+Portuguese 048 and Thai 071/069 as key positive/negative controls.
+Checkpoints are benchmark/fixed150/language_anchor_audit.json.
+
+To form a retrospective anchor, require at least two independent speech
+windows with the same detected language at >=.90 probability, no other
+high-confidence language, and >=3 seconds combined supported speech.
+Retry only nonmatching text-bearing windows with initial LID <.70.
+The original auto text is retained for every unselected window.
+Retry decoding sets language=anchor and multilingual=False, so the
+internal model cannot immediately override the candidate language.
+Audio SHA/lock and code fingerprinting protect checkpoint reuse.
+
+Ground-truth references are used ONLY to score complete candidates and
+NEVER to select an anchor, choose retry windows, or pick the best
+transcript. The candidate is intentionally evaluated even when worse.
+
+IMPORTANT: this model-derived anchor uses future high-confidence windows
+and is NOT a causal real-time implementation. Before considering a
+streaming version, introduce bounded-time provisional hypotheses, an
+explicit maximum latency budget, strong evidence before finalization,
+and safeguards against real code switching. A high-confidence competing
+language must veto monolingual stabilization. Do not enable this as a
+production heuristic based on a single short Portuguese recording.
