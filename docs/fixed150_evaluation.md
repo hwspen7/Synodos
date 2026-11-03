@@ -178,6 +178,39 @@ AMI source annotations contain timestamped utterance segments. LAION
 overlap timing reflects utterance placement, not fine phonetic boundaries.
 Their DERs should be reported separately.
 
+## Auditing reference-coverage defects and the 15-language priority set
+
+A real Korean sample `fixed150-036` is **45 seconds long**, but its MInDS
+reference text is only 58 Unicode characters including whitespace (43
+normalized characters). The Whisper transcript contains substantially more
+plausible banking-related speech, and raw versus auto-language versus
+language-forced recognition yield nearly identical results. This **suggests**
+that the reference may describe only part of the recording. It is NOT proof
+until a Korean listener confirms the actual audio.
+
+The original script copied the exact `transcription` value from the pinned
+PolyAI dataset. It did not impose a substring or duration cutoff on the
+annotation. Do not blindly fill missing source references with model output.
+
+Audit all original 100 records and select the agreed 15 product languages:
+
+    .\.venv\Scripts\python.exe tools\fixed150_reference_audit.py
+
+The generated `benchmark/fixed150/reference_audit.json` reports:
+- Original CER with all focused-language cases retained
+- Source-only suspicious-reference flags using duration and normalized text
+- A separately named *sensitivity-only* CER excluding flagged cases
+- Candidate IDs for independent human listening and annotation review
+
+This never changes the frozen source lock, initial inference JSON or original
+benchmark manifests. Suspect cases must not be removed from published
+quality statistics based only on a heuristic or desired score.
+
+Priority product languages: English, Mandarin Chinese, Spanish, French,
+German, Japanese, Portuguese, Russian, Korean, Hindi, Arabic, Italian,
+Indonesian, Turkish and Vietnamese (15). Other source languages remain in the
+original 100-case dataset, without being discarded or relabeled.
+
 ## Coverage and limitations
 
 This is considerably more comprehensive than Fixed10, but cannot alone
