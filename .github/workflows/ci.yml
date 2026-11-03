@@ -23,7 +23,7 @@ jobs:
       - name: Compile Python source
         run: python -m compileall -q main.py api audio core foundation inference observability sessions storage example tests
       - name: Run backend and English-only tests
-        run: python -m unittest discover -s tests -v
+        run: python -m unittest discover -s tests -t . -v
 
   frontend:
     name: Frontend type-check and build
