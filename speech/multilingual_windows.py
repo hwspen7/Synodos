@@ -29,6 +29,7 @@ def recognize_windows(
     sample_rate: int = 16000,
     unknown_threshold: float = 0.50,
     max_windows: int = 100,
+    preserve_disputed_text: bool = False,
 ) -> Recognition:
     """Call transcribe(chunk, **kwargs) separately for each VAD speech window.
 
@@ -53,7 +54,10 @@ def recognize_windows(
             language = "und"
         if language not in ("auto", "", "und"):
             confirmed_languages.add(language)
-        verified = verify_utterances(output, local_regions, round((end - start) * 1000 / sample_rate), language)
+        verified = verify_utterances(
+            output, local_regions, round((end - start) * 1000 / sample_rate),
+            language, preserve_disputed_text=preserve_disputed_text,
+        )
         shift_ms = round(start * 1000 / sample_rate)
         for item in verified:
             words = tuple(Word(w.text, w.start_ms + shift_ms, w.end_ms + shift_ms) for w in item.words)
