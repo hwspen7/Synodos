@@ -198,7 +198,7 @@ def summarize(items: list[dict], variants: tuple[str, ...] = VARIANTS) -> dict:
         "overall": group(items),
         "per_language": {k: group(groups[k]) for k in sorted(groups)},
         "oracle_warning": (
-            "Forced branches use the known manifest language. This is valid "
+            "ORACLE-CONDITIONED: forced branches use the known manifest language. "
             "only if the language is explicitly selected before decoding, "
             "not as automatic language identification."
         ),
