@@ -225,18 +225,29 @@ function Start-Launcher {
             $_.CommandLine -and $_.CommandLine.IndexOf($RepoRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
             $_.CommandLine.IndexOf('intelligence.worker', [StringComparison]::OrdinalIgnoreCase) -ge 0
         })
-    foreach ($existing in $workers) {
-        Write-Host "Restarting existing project AI worker (PID $($existing.ProcessId))..."
-        Stop-Process -Id $existing.ProcessId -Force -ErrorAction SilentlyContinue
+    $workerReusable = $false
+    if ($workers.Count -eq 1) {
+        $parentInfo = Get-ProcessInfo ([int]$workers[0].ParentProcessId)
+        $parentCommand = if ($null -eq $parentInfo) { '' } else { [string]$parentInfo.CommandLine }
+        $workerReusable = ($parentCommand.IndexOf('Start-Meeting.ps1', [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+            $parentCommand.IndexOf('-Role worker', [StringComparison]::OrdinalIgnoreCase) -ge 0)
     }
-    Start-RoleWindow 'worker'
-    if (-not (Wait-For {
-        @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object {
-            $_.CommandLine -and $_.CommandLine.IndexOf($RepoRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
-            $_.CommandLine.IndexOf('intelligence.worker', [StringComparison]::OrdinalIgnoreCase) -ge 0
-        }).Count -gt 0
-    } 20 'AI worker')) {
-        throw 'AI worker did not start. Inspect the worker window.'
+    if ($workerReusable) {
+        Write-Host 'Reusing the AI worker started by this launcher.'
+    } else {
+        foreach ($existing in $workers) {
+            Write-Host "Restarting existing project AI worker (PID $($existing.ProcessId))..."
+            Stop-Process -Id $existing.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+        Start-RoleWindow 'worker'
+        if (-not (Wait-For {
+            @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object {
+                $_.CommandLine -and $_.CommandLine.IndexOf($RepoRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+                $_.CommandLine.IndexOf('intelligence.worker', [StringComparison]::OrdinalIgnoreCase) -ge 0
+            }).Count -gt 0
+        } 20 'AI worker')) {
+            throw 'AI worker did not start. Inspect the worker window.'
+        }
     }
     Write-Host 'AI worker process detected.' -ForegroundColor Green
 
