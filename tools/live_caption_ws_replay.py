@@ -328,6 +328,14 @@ async def replay(args) -> dict:
                         sent_sequence += 1
                         sent_samples += len(pcm)
                         await asyncio.sleep(len(pcm) / SAMPLE_RATE / args.speed)
+                if args.loops > 1:
+                    print(
+                        f"[{loop_index + 1}/{args.loops}] "
+                        f"{sent_samples / SAMPLE_RATE:.1f}s PCM sent "
+                        f"confirmed={counters['final_segment_count']} "
+                        f"warnings={sum(counters['feature_warning_counts'].values())}",
+                        flush=True,
+                    )
             await ws.send(json.dumps({
                 "type": "stop", "expected_samples": sent_samples
             }))
