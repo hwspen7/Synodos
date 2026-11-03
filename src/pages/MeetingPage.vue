@@ -838,7 +838,7 @@ onBeforeUnmount(() => stopInternal())
       Active ASR {{ serverInfo.asr_model }} · Recognition window {{ serverInfo.processing_window_s }}s ·
       Confirmation {{ serverInfo.confirmation_delay_s }}s · Active hotwords {{ serverInfo.active_hotword_count ?? 0 }}
     </p>
-    <p v-if="error" class="error-banner">{{ error }}</p>
+    <p v-if="error" class="error-banner" role="alert">{{ error }}</p>
     <p v-if="audioAnalysis" class="meeting-sub">Audio analysis: {{ audioAnalysis }}</p>
     <p v-if="untranslatedCount > 0" class="hint-text warn-text" role="status">
       {{ untranslatedCount }} segment(s) have no available translation; original text is shown.
@@ -921,7 +921,7 @@ onBeforeUnmount(() => stopInternal())
             />
             <span class="speaker-avatar">{{ spk.name.slice(0, 1) }}</span>
             <span class="participant-name">{{ spk.name }}</span>
-            <span class="muted-text">{{ spk.vector_count }} voiceprints</span>
+            <span class="muted-text" :class="{ 'warn-text': spk.vector_count === 0 }">{{ spk.vector_count }} voiceprints {{ spk.vector_count === 0 ? '(enrollment required)' : '' }}</span>
           </label>
           <div v-if="speakers.length === 0" class="empty-state small">
             <p>No enrolled voiceprints. Add a speaker first.</p>
@@ -952,7 +952,7 @@ onBeforeUnmount(() => stopInternal())
             :disabled="recording || applying"
             @click="applyParticipants"
           >
-            {{ applying ? 'Applying...' : 'Apply and Reconnect' }}
+            {{ applying ? 'Saving...' : 'Save participants' }}
           </button>
         </div>
       </div>
@@ -1011,7 +1011,7 @@ onBeforeUnmount(() => stopInternal())
             :disabled="recording || applying"
             @click="applyHotwords"
           >
-            {{ applying ? 'Applying...' : 'Apply and Reconnect' }}
+            {{ applying ? 'Saving...' : 'Save hotwords' }}
           </button>
         </div>
       </div>
@@ -1025,3 +1025,37 @@ onBeforeUnmount(() => stopInternal())
     </Transition>
   </div>
 </template>
+
+
+<style scoped>
+.recorded-audio-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 10px;
+  min-width: 280px;
+}
+.recorded-audio-item > span {
+  min-width: 180px;
+  font-size: 0.8rem;
+}
+.recorded-audio-item audio {
+  min-width: 190px;
+  max-width: 340px;
+  flex: 1 1 200px;
+}
+.speaker-edit-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+.speaker-edit-controls select {
+  min-height: 2.1rem;
+  max-width: 240px;
+}
+</style>
