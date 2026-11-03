@@ -14,13 +14,22 @@ def _cjk(char: str) -> bool:
 
 def join_transcript_text(left: str, right: str) -> str:
     """Preserve CJK adjacency but separate independent Latin-script utterances."""
-    left, right = str(left or "").rstrip(), str(right or "").lstrip()
+    original_right = str(right or "")
+    # Whisper word timestamps can contain a meaningful leading word boundary.
+    # Preserve that boundary, especially for Korean Hangul words, before CJK
+    # adjacency rules that would otherwise concatenate independent words.
+    has_word_separator = bool(original_right[:1].isspace())
+    left, right = str(left or "").rstrip(), original_right.lstrip()
     if not left:
         return right
     if not right:
         return left
     a, b = left[-1], right[0]
-    if a in NO_SPACE_AFTER or b in NO_SPACE_BEFORE or _cjk(a) or _cjk(b):
+    if a in NO_SPACE_AFTER or b in NO_SPACE_BEFORE:
+        return left + right
+    if has_word_separator:
+        return left + " " + right
+    if _cjk(a) or _cjk(b):
         return left + right
     return left + " " + right
 
