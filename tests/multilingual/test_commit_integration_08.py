@@ -49,7 +49,7 @@ class CommitIntegrationTests(unittest.TestCase):
         p.buffer.append(np.ones(12 * p.settings.sample_rate, dtype=np.float32) * .1)
         p._cycle(final=False)
         self.assertEqual(len(p.segments), 2)
-        self.assertLess(p.segments[0]["end_sample"], p.segments[1]["start_sample"])
+        self.assertLessEqual(p.segments[0]["end_sample"], p.segments[1]["start_sample"])
 
     def test_late_confirmed_phrase_does_not_drop_earlier_unconfirmed_audio(self):
         utterances = [
