@@ -10,7 +10,7 @@ Meeting of Pioneers is a local-first meeting transcription application built wit
 - Reusable ASR hotword libraries for specialized terminology.
 - Meeting creation, saving, resuming, deleting, and Markdown/JSON export.
 
-This application does not currently implement automatic meeting summaries, task extraction, manual transcript editing, raw audio playback, cloud sync, accounts, or production authentication.
+Optional AI worker features include meeting notes, action extraction, evidence-linked answers, and translation when the local model service and PostgreSQL are configured. Transcript correction and opt-in WAV recording are available. Cloud sync, multiuser accounts, production authentication, robust overlapping-speaker recognition, and complete crash recovery are not implemented.
 
 ## Repository structure
 
@@ -59,6 +59,7 @@ Open two terminals in the repository root.
 
 ```powershell
 uv sync
+uv pip install -r requirements-speech-whisper.txt
 uv run uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
@@ -74,7 +75,7 @@ Open the address printed by Vite and grant microphone access. The development pr
 Useful validation commands:
 
 ```powershell
-uv run python -m unittest discover -s tests
+uv run python -m unittest discover -s tests -t .
 pnpm type-check
 pnpm build
 ```
@@ -82,7 +83,7 @@ pnpm build
 To verify that all tracked source and documentation text remains free of CJK characters, run:
 
 ```powershell
-python -m unittest tests.test_english_only
+python -m unittest tests.quality.test_english_only
 ```
 
 The Python test suite checks basic routes and persistence, not live FunASR inference or concurrent streaming. Initial startup may require downloading models. Override model identifiers or local paths using `ASR_MODEL`, `FSMN_VAD_MODEL`, `PUNC_MODEL`, and `SPK_MODEL`.
@@ -93,7 +94,7 @@ The application creates `meetings/`, `speakers/`, and `hotwords/` relative to th
 
 If you previously used `backend/backend/`, stop the old server before moving your ignored local `meetings/`, `speakers/`, and `hotwords/` directories into the repository root. Inspect `MODELSCOPE_CACHE` before moving model caches. Do not overwrite saved data. Git changes only tracked files and does not automatically relocate these local directories.
 
-Existing transcript text, speaker names, and hotwords may legitimately contain Chinese or other languages. Converting the source interface to English does not rewrite user data and does not disable Chinese speech recognition. The application does not save raw meeting recordings. JSON exports are human-readable transcripts, not full resumable session backups.
+Existing transcript text, speaker names, and hotwords may legitimately contain Chinese or other languages. Converting the source interface to English does not rewrite user data and does not disable Chinese speech recognition. Source audio is saved only when Save WAV is selected in the meeting UI or recording is explicitly enabled in backend settings. WAV checkpoints improve crash readability but do not guarantee recovery of the last buffered samples. JSON exports are human-readable transcripts, not full resumable session backups.
 
 The manual stream test requires an audio sample not tracked in this repository:
 
@@ -102,3 +103,7 @@ uv run python example/stream_test.py --wav path/to/sample.wav
 ```
 
 See [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for protocol details, settings, storage formats, architecture, limitations, and outstanding issues.
+
+## Phase 08 quality hardening
+
+See [Phase 08 repair status](docs/phase08_repair_status.md) for confirmed fixes, known limitations, and required real-audio acceptance tests. CI validates software contracts and does not establish Zoom-equivalent acoustic performance.
