@@ -124,6 +124,7 @@ def meeting_segments(meeting_id):
         segments.append({'id': int(s['id']), 'text': str(s.get('text') or ''),
                          'speaker': str(s.get('speaker_name') or ''),
                          'revision': int(s.get('revision', 0)),
+                         'manually_corrected': bool(s.get('manually_corrected', False)),
                          'language': str(s.get('language') or 'und'),
                          'start_ms': round(int(s.get('start_sample') or 0) * 1000 / sr),
                          'end_ms': round(int(s.get('end_sample') or 0) * 1000 / sr)})

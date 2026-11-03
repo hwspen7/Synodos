@@ -165,13 +165,20 @@ def review(
 ) -> dict:
     """Bound model calls, include dialogue context, and return review proposals."""
     selected_mode = _mode(mode)
-    targets, context, next_offset = selection(segments, offset=offset, limit=limit)
+    ordered = sorted(segments, key=lambda s: (int(s.get("start_ms", 0)), int(s["id"])))
+    targets, _, next_offset = selection(ordered, offset=offset, limit=limit)
+    # Never overwrite an earlier decision made by the operator.
+    reviewable = [
+        segment for segment in targets
+        if str(segment.get("text") or "").strip()
+        and not segment.get("manually_corrected", False)
+    ]
     suggestions = []
-    for start in range(0, len(targets), 12):
-        batch = targets[start:start + 12]
-        first_index = next(i for i, s in enumerate(segments) if s["id"] == batch[0]["id"])
+    for start in range(0, len(reviewable), 12):
+        batch = reviewable[start:start + 12]
+        first_index = next(i for i, s in enumerate(ordered) if s["id"] == batch[0]["id"])
         last_index = first_index + len(batch)
-        neighboring = segments[max(0, first_index - 2):min(len(segments), last_index + 2)]
+        neighboring = ordered[max(0, first_index - 2):min(len(ordered), last_index + 2)]
         raw = gateway.structured(
             SYSTEM_PROMPT, prompt(neighboring, batch, selected_mode),
             model=gateway.model_for("meeting"),
@@ -183,8 +190,8 @@ def review(
         "reviewed_segments": len(targets),
         "offset": offset,
         "next_offset": next_offset,
-        "total_segments": len(segments),
-        "complete": next_offset >= len(segments),
+        "total_segments": len(ordered),
+        "complete": next_offset >= len(ordered),
         "review_required": True,
         "source": "local_llm_context_review",
     }

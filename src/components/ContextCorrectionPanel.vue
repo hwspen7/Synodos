@@ -249,8 +249,12 @@ onBeforeUnmount(resetPoll)
           <span v-if="stale(item)" class="context-error">Transcript changed. Review again.</span>
         </div>
       </article>
-      <button v-if="!result.complete" class="btn btn-ghost btn-sm" :disabled="!canReview"
+      <button v-if="!result.complete" class="btn btn-ghost btn-sm"
+        :disabled="!canReview || suggestions.length > 0"
         @click="startReview(true)">Review next 32 segments</button>
+      <p v-if="!result.complete && suggestions.length > 0" class="context-hint">
+        Accept or dismiss the current suggestions before reviewing the next section.
+      </p>
     </div>
   </section>
 </template>
