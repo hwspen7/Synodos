@@ -341,9 +341,12 @@ async def replay(args) -> dict:
                         # Absolute-deadline pacing prevents per-frame scheduler
                         # oversleep from accumulating over long Windows runs.
                         now = time.perf_counter()
+                        # Measure lateness against the START of the frame
+                        # just sent, not the next frame's future deadline.
+                        frame_start_samples = sent_samples - len(pcm)
                         drift_ms = (
                             now - first_send
-                            - sent_samples / (SAMPLE_RATE * args.speed)
+                            - frame_start_samples / (SAMPLE_RATE * args.speed)
                         ) * 1000
                         replay_clock_ms.append(drift_ms)
                         pause_s = _clock_wait_seconds(
@@ -370,6 +373,9 @@ async def replay(args) -> dict:
                 except asyncio.CancelledError:
                     pass
     elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+    playback_ms = round(
+        (time.perf_counter() - first_send) * 1000, 1
+    ) if first_send is not None else None
     summary = {
         "schema": SCHEMA,
         "source_audio": str(source),
@@ -385,6 +391,10 @@ async def replay(args) -> dict:
         "replay_pacing_method": "absolute_monotonic_deadline",
         "expected_replay_wall_ms": round(
             sent_samples * 1000 / (SAMPLE_RATE * args.speed), 1),
+        "wall_minus_media_ms": (
+            round(playback_ms -
+                  sent_samples * 1000 / (SAMPLE_RATE * args.speed), 1)
+            if playback_ms is not None else None),
         "timing_interval_s": args.interval_seconds,
         "timing_by_elapsed_window": summarize_timing(counters, elapsed_ms),
         "timestamp_lag_note": (
