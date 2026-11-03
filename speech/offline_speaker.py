@@ -125,13 +125,65 @@ def run_offline_refinement(
     backend: Any = None,
 ) -> dict:
     path = validate_recording(root, meeting_id, filename)
-    model = backend if backend is not None else _pipeline()
-    with _RUN_LOCK:
-        output = model(str(path))
-    annotations = getattr(output, "exclusive_speaker_diarization", None)
-    if annotations is None:
-        annotations = getattr(output, "speaker_diarization", output)
-    turns = normalize_turns(annotations)
+    if backend is None:
+        # Hard dependency isolation. pyannote/NeMo must not overwrite the
+        # already-validated Whisper + CUDA environment.
+        import json
+        import subprocess
+        python = os.getenv("MEETING_SPEAKER_REFINER_PYTHON", "").strip()
+        if not python:
+            raise OfflineDiarizationUnavailable(
+                "Configure MEETING_SPEAKER_REFINER_PYTHON to point to a dedicated "
+                "pyannote Python environment. See docs/offline_speaker_refinement.md"
+            )
+        executable = Path(python).expanduser()
+        if not executable.is_file():
+            raise OfflineDiarizationUnavailable("Dedicated speaker Python executable was not found")
+        try:
+            process = subprocess.run(
+                [str(executable), "-m", "speech.offline_speaker_cli", str(path)],
+                cwd=str(Path(__file__).resolve().parents[1]),
+                capture_output=True, text=True, timeout=1800, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise OfflineDiarizationUnavailable(
+                "Dedicated speaker refinement process failed to start or timed out"
+            ) from exc
+        if process.returncode:
+            try:
+                detail = json.loads(process.stdout).get("error", "")
+            except (ValueError, TypeError, AttributeError):
+                detail = ""
+            raise OfflineDiarizationUnavailable(
+                "Dedicated speaker model failed: " + str(detail)[:240]
+            )
+        try:
+            payload = json.loads(process.stdout)
+            raw = payload["speaker_turns"]
+            if not isinstance(raw, list) or len(raw) > 10000:
+                raise ValueError("Invalid speaker output")
+            checked = []
+            for item in raw:
+                if not isinstance(item, dict):
+                    raise ValueError("Invalid speaker output")
+                a, b, speaker = item["start_ms"], item["end_ms"], item["speaker"]
+                if (type(a) is not int or type(b) is not int or
+                        a < 0 or b <= a or b > 1000 * 60 * 60 * 24 or
+                        not isinstance(speaker, str) or not speaker or len(speaker) > 90):
+                    raise ValueError("Invalid speaker interval")
+                checked.append({"start_ms": a, "end_ms": b, "speaker": speaker})
+            turns = sorted(checked, key=lambda item: item["start_ms"])
+        except (ValueError, TypeError, KeyError) as exc:
+            raise OfflineDiarizationUnavailable(
+                "Dedicated speaker process returned invalid data"
+            ) from exc
+    else:
+        with _RUN_LOCK:
+            output = backend(str(path))
+        annotations = getattr(output, "exclusive_speaker_diarization", None)
+        if annotations is None:
+            annotations = getattr(output, "speaker_diarization", output)
+        turns = normalize_turns(annotations)
     return {
         "model": _MODEL_ID if backend is None else "test_or_custom_diarizer",
         "source_filename": filename,
