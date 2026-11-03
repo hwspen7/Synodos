@@ -109,7 +109,8 @@ def main(argv: list[str] | None = None) -> int:
                     hypothesis = prediction["text"]
                     predicted_language = prediction.get("language", "")
                     latency_ms = prediction.get("latency_ms")
-                score = score_pair(item["reference"], hypothesis, terms=item.get("terms", []))
+                score = score_pair(item["reference"], hypothesis, terms=item.get("terms", []),
+                                   language=item.get("language", ""))
                 score.update({"index": index, "expected_language": item.get("language", ""),
                               "predicted_language": predicted_language, "latency_ms": latency_ms})
                 results[name].append(score)
@@ -118,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
                 results[name].append({"index": index, "error": type(exc).__name__})
                 print(f"Sample {index} / {name}: {type(exc).__name__}: {exc}", file=sys.stderr)
     report = {"schema": "meeting-phase07-benchmark-v1", "infer": args.infer,
+              "token_metric_policy": "v2: Thai token error unavailable without a word segmenter",
               "whisper_model_load_ms": cold_start_ms,
               "samples": len(manifest), "engines": {
                   name: {"summary": aggregate(rows), "samples": rows}
