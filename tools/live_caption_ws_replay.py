@@ -273,6 +273,8 @@ def capture_event(state: dict, message: dict, elapsed_ms: float,
     elif kind == "closed":
         state["server_closed"] = True
         state["server_saved"] = message.get("saved")
+        state["final_cluster_diagnostics"] = message.get(
+            "diarization_diagnostics")
         return True
     elif kind == "error":
         state["errors"].append(str(message.get("message", ""))[:500])
@@ -300,7 +302,8 @@ def new_capture(interval_seconds: int = 300) -> dict:
         "max_visible_segments": 0,
         "feature_warning_counts": Counter(), "feature_warning_samples": [],
         "final_segment_count": 0, "server_closed": False,
-        "server_saved": None, "audio_delivery_matched": None,
+        "server_saved": None, "final_cluster_diagnostics": None,
+        "audio_delivery_matched": None,
         "audio_received_samples": None,
     }
 
@@ -488,6 +491,7 @@ async def replay(args) -> dict:
         "delivery_matched": counters["audio_delivery_matched"],
         "server_closed": counters["server_closed"],
         "server_saved": counters["server_saved"],
+        "final_cluster_diagnostics": counters["final_cluster_diagnostics"],
         "flags": counters["flags"],
         "errors": counters["errors"],
         "voiceprint_accuracy": None,
