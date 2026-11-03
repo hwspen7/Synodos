@@ -8,7 +8,7 @@ import pickle
 import re
 import uuid
 from functools import reduce
-from speech.text_format import join_transcript_text
+from speech.text_format import join_transcript_text, split_display_sentences, ends_finished_thought
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -243,7 +243,8 @@ class MeetingStore:
             lines.append(f"### {i}. {name}")
             lines.append(f"{_fmt_ms(p.get('start_ms', 0))} – {_fmt_ms(p.get('end_ms', 0))}")
             lines.append("")
-            lines.append(p.get("text") or "(No content)")
+            sentences = split_display_sentences(p.get("text") or "")
+            lines.extend(sentences if sentences else ["(No content)"])
             lines.append("")
         return "\n".join(lines)
 
@@ -256,7 +257,7 @@ class MeetingStore:
     ) -> list[dict]:
         """Merge adjacent confirmed segments from the same speaker within merge_gap."""
         ordered = sorted(segments, key=lambda s: int(s.get("start_sample", 0)))
-        gap_samples = int(merge_gap_s * sr)
+        gap_samples = int(min(max(merge_gap_s, 0.0), 0.85) * sr)
         groups: list[dict] = []
         for seg in ordered:
             cluster = int(seg.get("cluster", -1))
@@ -265,7 +266,9 @@ class MeetingStore:
             last = groups[-1] if groups else None
             if (
                 last is not None
+                and speaker_id > 0
                 and speaker_id == last["speaker_id"]
+                and not ends_finished_thought(str(last["segments"][-1].get("text") or ""))
                 and (int(seg["start_sample"]) - int(last["end_sample"])) < gap_samples
             ):
                 last["end_sample"] = int(seg["end_sample"])
@@ -292,6 +295,10 @@ class MeetingStore:
                     "start_ms": round(g["start_sample"] * 1000 / sr),
                     "end_ms": round(g["end_sample"] * 1000 / sr),
                     "text": reduce(join_transcript_text, (str(s.get("text") or "") for s in g["segments"]), ""),
+                    "sentences": [
+                        line for seg in g["segments"]
+                        for line in split_display_sentences(str(seg.get("text") or ""))
+                    ],
                     "segments": [
                         {
                             "id": int(seg["id"]),
