@@ -58,7 +58,8 @@ class PCMProcessor extends AudioWorkletProcessor {
     }
 
     // Process audio and meeting metadata.
-    const keepFrom = Math.floor(this.pos)
+    // Retain the fractional resampling phase across audio worklet blocks.
+    const keepFrom = Math.min(this.pending.length, Math.floor(this.pos))
     this.pending = this.pending.slice(keepFrom)
     this.pos -= keepFrom
 
