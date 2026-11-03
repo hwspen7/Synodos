@@ -16,7 +16,7 @@ def _flag(name: str, default: bool = False) -> bool:
 @dataclass(frozen=True)
 class SpeechSettings:
     engine: str = "whisper"
-    model: str = "small"
+    model: str = "large-v3"
     device: str = "auto"
     compute_type: str = "default"
     preview_interval_s: float = 2.5
