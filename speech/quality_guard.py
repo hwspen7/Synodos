@@ -82,12 +82,19 @@ def verify_utterances(
     detected_language: str,
     *,
     sample_rate: int = 16000,
+    preserve_disputed_text: bool = False,
 ) -> tuple[Utterance, ...]:
     """Reject unsupported chunks and omit words positioned in nonspeech areas.
 
     A short chunk needs at least 160 ms of voiced evidence; a longer chunk
     needs at least 35% VAD overlap. Words lacking speech support are excluded;
     accepted words split at long gaps so silence is not represented as speech.
+
+    A guarded opt-in preserves the original segment text when word alignment
+    disagrees with already-verified segment acoustic support. It discards
+    unreliable word timestamps instead of inventing word-level precision.
+    Segment-level evidence checks and decoding diagnostic rejection remain
+    mandatory. The production default is unchanged pending real A/B testing.
     """
     if duration_ms <= 0:
         return ()
@@ -109,7 +116,13 @@ def verify_utterances(
         evidence = voice_ms(start, end, intervals)
         if evidence < 160 or evidence / duration < (0.35 if duration >= 2500 else 0.25):
             continue
+        source_words = tuple(getattr(piece, "words", None) or ())
         words = _word_items(piece, duration_ms)
+        # A partially invalid word alignment must not be advertised as a
+        # complete alignment to the model's text. Preserve only segment timing.
+        if preserve_disputed_text and len(words) != len(source_words):
+            accepted.append(Utterance(text, start, end, detected_language, (), "segment"))
+            continue
         if not words:
             accepted.append(Utterance(text, start, end, detected_language, (), "segment"))
             continue
@@ -120,6 +133,8 @@ def verify_utterances(
             if support >= max(30, min(120, round(width * 0.30))):
                 voiced.append(word)
         if not voiced:
+            if preserve_disputed_text:
+                accepted.append(Utterance(text, start, end, detected_language, (), "segment"))
             continue
         # Preserve model punctuation; reconstruct only when words were removed.
         # Split long silent gaps to prevent a single segment from spanning silence.
@@ -130,6 +145,12 @@ def verify_utterances(
             else:
                 runs[-1].append(word)
         all_accepted = len(voiced) == len(words) and len(runs) == 1
+        if preserve_disputed_text and not all_accepted:
+            # Trimming words can turn imperfect alignment into missing meeting
+            # content. Keep the model's wording while explicitly lowering
+            # timestamp provenance; never retain a partial word alignment.
+            accepted.append(Utterance(text, start, end, detected_language, (), "segment"))
+            continue
         for run in runs:
             raw = text if all_accepted else "".join(word.text for word in run).strip()
             if not raw:
