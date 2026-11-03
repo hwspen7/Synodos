@@ -25,10 +25,32 @@ class PCMProcessor extends AudioWorkletProcessor {
     this.flushed = false
     this.port.onmessage = event => {
       if (event.data?.type === 'flush') {
+        // Emit any final output sample that can be formed with a held
+        // terminal input sample before acknowledging the stop boundary.
+        const tail = []
+        while (this.pos < this.pending.length) {
+          const i0 = Math.floor(this.pos)
+          const i1 = Math.min(i0 + 1, this.pending.length - 1)
+          const frac = this.pos - i0
+          tail.push(this.pending[i0] * (1 - frac) + this.pending[i1] * frac)
+          this.pos += this.ratio
+        }
+        this._emitPcm(tail)
+        this.pending = new Float32Array(0)
         this.flushed = true
         this.port.postMessage({ type: 'flushed' })
       }
     }
+  }
+
+  _emitPcm(out) {
+    if (!out.length) return
+    const pcm = new Int16Array(out.length)
+    for (let i = 0; i < out.length; i++) {
+      const sample = Math.max(-1, Math.min(1, out[i]))
+      pcm[i] = sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7fff)
+    }
+    this.port.postMessage(pcm, [pcm.buffer])
   }
 
   process(inputs) {
@@ -71,14 +93,7 @@ class PCMProcessor extends AudioWorkletProcessor {
     this.pending = this.pending.slice(keepFrom)
     this.pos -= keepFrom
 
-    if (out.length > 0) {
-      const pcm = new Int16Array(out.length)
-      for (let i = 0; i < out.length; i++) {
-        const s = Math.max(-1, Math.min(1, out[i]))
-        pcm[i] = s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7fff)
-      }
-      this.port.postMessage(pcm, [pcm.buffer])
-    }
+    this._emitPcm(out)
     return true
   }
 }
