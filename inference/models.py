@@ -227,8 +227,12 @@ class ModelManager:
     def preload(self) -> None:
         logger.info("Preloading models ...")
         from speech.config import load_settings
-        if load_settings().engine == "legacy":
+        speech_config = load_settings()
+        if speech_config.engine == "legacy":
             self._load_asr()
+        elif os.getenv("MEETING_PREWARM_ASR", "1").strip().lower() in ("1", "true", "yes"):
+            from speech.engine import prewarm_multilingual
+            prewarm_multilingual(speech_config)
         self._load_spk()
         self._load_cluster()
         logger.info("All models preloaded.")
