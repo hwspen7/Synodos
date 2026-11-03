@@ -22,7 +22,7 @@ const route = useRoute()
 const router = useRouter()
 
 const WS_BASE = (import.meta.env.VITE_WS_URL as string | undefined) ?? ''
-const language = ref('zh')
+const language = ref('auto')
 const translationTarget = ref('zh')
 const recordAudio = ref(false)
 const partialText = ref('')
