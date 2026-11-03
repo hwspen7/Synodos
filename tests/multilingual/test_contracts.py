@@ -28,7 +28,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(normalize_language("English"), "en")
 
     def test_valid_settings_allow_disabled_optional_features(self):
-        self.assertEqual(SpeechSettings().validate().engine, "legacy")
+        self.assertEqual(SpeechSettings().validate().engine, "whisper")
 
     def test_native_streaming_needs_online_model(self):
         with self.assertRaises(ValueError):
