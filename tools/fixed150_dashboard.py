@@ -204,6 +204,45 @@ def summarize_multis(lock: dict, report: dict | None) -> dict:
             "groups": grouped, "cases": results}
 
 
+
+def summarize_stress(root: Path, original: dict | None) -> dict:
+    """Paired CER degradation, NOT 40 independent source recordings."""
+    spec, output = root / "stress_lock.json", root / "stress_asr.json"
+    if not spec.exists() and not output.exists():
+        return {"status": "NOT RUN", "expected": 40}
+    if not spec.exists() or not output.exists() or original is None:
+        return {"status": "BLOCKED", "reason": "Missing stress references or real model predictions"}
+    from tools.fixed150_prepare import verify_case
+    cases = json.loads(spec.read_text(encoding="utf-8")).get("cases", [])
+    report = json.loads(output.read_text(encoding="utf-8"))
+    if len(cases) != 40 or report.get("samples") != 40 or not report.get("infer"):
+        return {"status": "BLOCKED", "reason": "Need 40 actual synthetic-stress results"}
+    for case in cases:
+        verify_case(root, case)
+    engines = {}
+    for name, data in report.get("engines", {}).items():
+        rows = data.get("samples", [])
+        bases = original.get("engines", {}).get(name, {}).get("samples", [])
+        if len(rows) != 40 or len(bases) != 100 or any(
+            row.get("error") or row.get("index") != i for i, row in enumerate(rows)
+        ) or any(row.get("error") for row in bases):
+            engines[name] = {"status": "BLOCKED"}
+            continue
+        grouped = defaultdict(list)
+        for case, row in zip(cases, rows):
+            old = bases[int(case["base_id"].split("-")[-1]) - 1]
+            grouped[case["condition"]].append(row["cer"] - old["cer"])
+        engines[name] = {
+            "status": "MEASURED",
+            "paired_sources": 8,
+            "conditions": {k: {"count": len(v), "mean_cer_change": statistics.mean(v)}
+                           for k, v in sorted(grouped.items())},
+        }
+    return {"status": "MEASURED" if engines and all(
+        x["status"] == "MEASURED" for x in engines.values()) else "BLOCKED",
+            "expected": 40, "engines": engines}
+
+
 def build_score(root: Path) -> dict:
     lock = verify_lock(root)
     single_path = root / "single_asr.json"
@@ -217,7 +256,7 @@ def build_score(root: Path) -> dict:
         "original_language_count": len({c["language"] for c in lock["cases"] if c["kind"] == "single"}),
         "single": summarize_singles(lock, single),
         "multi": summarize_multis(lock, replay),
-        "stress": "separate correlated augmentation suite; excluded from 150",
+        "stress": summarize_stress(root, single),
         "release_certified": False,
     }
 
@@ -280,6 +319,21 @@ def render(score: dict) -> str:
         panels.extend(_panel(t) for t in (
             "Character error by language", "CER vs mixed-token error",
             "Recorded-speech source", "Processing latency"))
+    stress = score["stress"]
+    valid_stress = [d for d in stress.get("engines", {}).values() if d.get("status") == "MEASURED"]
+    if valid_stress:
+        condition_data = valid_stress[0]["conditions"]
+        fig = go.Figure(go.Bar(
+            x=list(condition_data),
+            y=[100 * d["mean_cer_change"] for d in condition_data.values()],
+            marker_color=colors[0]))
+        fig.update_layout(template="plotly_white", height=330,
+                          yaxis_title="Mean CER change (percentage points)")
+        panels.append(_panel("Acoustic degradation", fig,
+                             "Forty correlated artificial perturbations of eight originals"))
+    else:
+        panels.append(_panel("Acoustic degradation", None,
+                             "Optional paired 8-source, 5-condition stress test"))
     groups = multi["groups"]
     if any(g["measured"] for g in groups.values()):
         names = list(groups)
