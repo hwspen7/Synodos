@@ -9,6 +9,7 @@ export interface RealtimeClientOptions {
   onAudioAnalysis?: (result: { emotion?: string | null, events?: string[], overlap?: Array<{start_ms: number, end_ms: number}>, quality?: { rms: number } }) => void
   onState?: (bufferedMs: number) => void
   onAudioReceived?: (samples: number, matched: boolean) => void
+  onAudioProgress?: (samples: number) => void
   onClosed?: (reason: 'closed' | 'disconnected', saved?: boolean) => void
   onError?: (message: string) => void
 }
@@ -63,6 +64,9 @@ export class RealtimeClient {
           break
         case 'state':
           this.options.onState?.(msg.buffered_ms)
+          break
+        case 'audio_progress':
+          this.options.onAudioProgress?.(msg.samples)
           break
         case 'audio_received':
           this.options.onAudioReceived?.(msg.samples, msg.matched)
