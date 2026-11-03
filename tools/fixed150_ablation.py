@@ -13,9 +13,11 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import sys
 import time
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -110,7 +112,8 @@ def likely_failure(pipeline: float, raw_auto: float, raw_fixed: float,
 
 
 def analyze(root: Path, language_codes: set[str], max_per_language: int,
-            compare_no_vad: bool, model_id: str, output: Path) -> dict:
+            compare_no_vad: bool, model_id: str, output: Path,
+            compare_window_modes: bool = False) -> dict:
     from speech.whisper import WhisperEngine
 
     lock = verify_lock(root)
@@ -125,9 +128,19 @@ def analyze(root: Path, language_codes: set[str], max_per_language: int,
               f"{case['duration_s']:.1f}s", flush=True)
         samples = load_wav(root / case["audio"])
         start = time.perf_counter()
-        predicted = model_engine.recognize(samples, language="auto")
+        # The primary pipeline is pinned to the production default whenever
+        # this experiment compares the two routing modes. No setting persists.
+        with patch.dict(os.environ, {"MEETING_WHISPER_WINDOW_LID": "1"} if compare_window_modes else {}):
+            predicted = model_engine.recognize(samples, language="auto")
         pipeline_ms = round((time.perf_counter() - start) * 1000, 2)
         pipeline_text = " ".join(p.text for p in predicted.utterances)
+        global_prediction = None
+        global_ms = None
+        if compare_window_modes:
+            started_global = time.perf_counter()
+            with patch.dict(os.environ, {"MEETING_WHISPER_WINDOW_LID": "0"}):
+                global_prediction = model_engine.recognize(samples, language="auto")
+            global_ms = round((time.perf_counter() - started_global) * 1000, 2)
         raw = direct_transcribe(model, samples, language=None, use_vad=True)
         forced = direct_transcribe(model, samples, language=case["language"], use_vad=True)
         no_vad = (direct_transcribe(model, samples, language=None, use_vad=False)
@@ -165,6 +178,17 @@ def analyze(root: Path, language_codes: set[str], max_per_language: int,
                 case["language"],
             ),
         }
+        if global_prediction is not None:
+            global_text = " ".join(p.text for p in global_prediction.utterances)
+            row["pipeline_global_language"] = {
+                **score(case["reference"], global_text, case["language"]),
+                "language": global_prediction.language,
+                "segments": len(global_prediction.utterances),
+                "latency_ms": global_ms,
+            }
+            row["window_vs_global_cer_delta_pp"] = round(
+                100 * (base["cer"] - row["pipeline_global_language"]["cer"]), 2
+            )
         if no_vad is not None:
             row["raw_auto_without_vad"] = {
                 **score(case["reference"], no_vad["text"], case["language"]),
@@ -173,8 +197,13 @@ def analyze(root: Path, language_codes: set[str], max_per_language: int,
                 "latency_ms": no_vad["latency_ms"],
             }
         rows.append(row)
+        global_string = (
+            f" global_pipeline={row['pipeline_global_language']['cer']:.1%}"
+            if global_prediction is not None else ""
+        )
         print(
-            f"  CER pipeline={base['cer']:.1%} "
+            f"  CER pipeline={base['cer']:.1%}"
+            f"{global_string} "
             f"raw_auto={simple['cer']:.1%} "
             f"forced={fixed['cer']:.1%} "
             f"detected={raw['language']} "
@@ -188,11 +217,15 @@ def analyze(root: Path, language_codes: set[str], max_per_language: int,
         "device": "cuda",
         "compute_type": "float16",
         "model_load_ms": preload_ms,
+        "compared_window_modes": compare_window_modes,
         "cases": rows,
         "methodology": [
             "Use frozen WAVs and their licensed reference transcripts.",
             "Pipeline auto calls WhisperEngine.recognize including VAD and quality guard.",
             "Raw auto calls Whisper with VAD, but without the app's custom verification.",
+            "Optional global-language mode is the same WhisperEngine with window LID disabled.",
+            "The global-language comparison is only valid for single-language utterances.",
+            "Do not globally disable per-window language detection for code-switched meetings without real tests.",
             "Forced reference language is a diagnostic oracle and NOT a production result.",
             "Optional no-VAD result is a controlled ablation, not a recommended default.",
             "CER differences are clues; listen to audio and examine actual words before fixing models.",
@@ -210,6 +243,8 @@ def main() -> int:
     parser.add_argument("--max-per-language", type=int, default=4)
     parser.add_argument("--model", default="large-v3")
     parser.add_argument("--no-vad-control", action="store_true")
+    parser.add_argument("--compare-window-modes", action="store_true",
+                        help="Compare the same production Whisper engine with per-window LID on and off")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if not 1 <= args.max_per_language <= 50:
@@ -218,6 +253,7 @@ def main() -> int:
     result = analyze(
         args.root, set(args.languages), args.max_per_language,
         args.no_vad_control, args.model, dest,
+        compare_window_modes=args.compare_window_modes,
     )
     print("\nRecorded model comparisons:", len(result["cases"]))
     print("Local diagnostic file (includes source and model transcripts):", dest)
