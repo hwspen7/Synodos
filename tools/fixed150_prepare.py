@@ -173,6 +173,32 @@ def prepare(root: Path, *, verify_only: bool = False) -> dict:
             revisions[repo] = api.dataset_info(repo).sha
             atomic_json(progress_file, state)
 
+    # Repository layouts can change between revisions. FLEURS at 70bb2e8
+    # places its 102 language Parquet shards under parquet-data/, not root.
+    # Resolve against the PINNED commit tree before any multi-GB download.
+    remote_catalogs: dict[str, set[str]] = {}
+
+    def resolve_source(repo: str, desired: str) -> str:
+        if repo not in remote_catalogs:
+            remote_catalogs[repo] = set(api.list_repo_files(
+                repo_id=repo, repo_type="dataset", revision=revisions[repo]
+            ))
+        available = remote_catalogs[repo]
+        candidates = (desired, f"parquet-data/{desired}", f"data/{desired}")
+        for candidate in candidates:
+            if candidate in available:
+                return candidate
+        # Only allow an unambiguous pinned-file match, never guess between
+        # multiple shards or silently change the source dataset revision.
+        base = desired.rsplit("/", 1)[-1]
+        matches = sorted(path for path in available if path == base or path.endswith("/" + base))
+        if len(matches) == 1:
+            return matches[0]
+        raise FileNotFoundError(
+            f"{repo}@{revisions[repo][:12]} has no unique file for {desired!r}. "
+            f"Matches: {matches[:8]}. The source path must be corrected."
+        )
+
     def download(repo: str, filename: str) -> Path:
         return Path(hf_hub_download(repo_id=repo, repo_type="dataset",
                                     revision=revisions[repo], filename=filename))
@@ -227,7 +253,7 @@ def prepare(root: Path, *, verify_only: bool = False) -> dict:
         if all(is_done(x) for x in group_ids):
             number += 4
             continue
-        source_file = f"{locale}/validation-00000-of-00001.parquet"
+        source_file = resolve_source(FLEURS, f"{locale}/validation-00000-of-00001.parquet")
         rows = selected_parquet_rows(download(FLEURS, source_file), FLEURS_ROWS,
                                      ["audio", "transcription"])
         for row_id in FLEURS_ROWS:
@@ -256,7 +282,7 @@ def prepare(root: Path, *, verify_only: bool = False) -> dict:
         raise AssertionError("Single-speech allocation must be exactly 100")
 
     if not all(is_done(f"fixed150-{x:03d}") for x in range(101, 126)):
-        source_file = "data/train-00000-of-00001.parquet"
+        source_file = resolve_source(AMI, "data/train-00000-of-00001.parquet")
         rows = selected_parquet_rows(download(AMI, source_file), AMI_ROWS,
                                      ["audio", "speaker1_text", "speaker2_text",
                                       "speaker1_target", "speaker2_target",
