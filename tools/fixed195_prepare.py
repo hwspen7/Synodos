@@ -1,13 +1,9 @@
-"""Prepare Fixed195: twelve languages with double English coverage.
+"""Prepare 130 verified original and new single-speaker test clips.
 
-English uses 12 original Fixed150 singles + 8 new FLEURS + 10 real DAI
-conversations. Eleven other languages use 4 old + 6 new + 5 real DAI.
-Old source audio and benchmark locks are immutable, never counted twice.
-
-DAI access is gated and subject to its Data Use Agreement: evaluation only,
-no model training/optimization, no redistribution or identification. Audio,
-references and all generated files stay local; only this source code is
-suitable for GitHub. Never turn these dialogues into synthetic conversations.
+Fixed195's authentic two-speaker audio collection is delegated to the
+separate ungated public conversation collector. Audio-only clips must never
+be represented as verified speaker-attributed transcript references.
+Old Fixed150 and legacy Fixed120 benchmark data remain immutable.
 """
 from __future__ import annotations
 
@@ -26,7 +22,6 @@ from tools.fixed150_prepare import (
 )
 
 FLEURS = "google/fleurs"
-DAI = "davidai-labs/DAI-ASR-I18N"
 LANGUAGES = (
     ("en", "en_us"), ("zh", "cmn_hans_cn"), ("hi", "hi_in"),
     ("es", "es_419"), ("fr", "fr_fr"), ("ar", "ar_eg"),
@@ -272,7 +267,6 @@ def prepare(root: Path, source: str, verify_only: bool,
             old_root: Path = Path("benchmark/fixed150"),
             previous_root: Path = Path("benchmark/fixed120")) -> bool:
     from huggingface_hub import HfApi, hf_hub_download
-    import pyarrow.parquet as pq
 
     root.mkdir(parents=True, exist_ok=True)
     progress = root / "progress.json"
@@ -304,9 +298,13 @@ def prepare(root: Path, source: str, verify_only: bool,
         print("Fixed195 verified: 130 single + 65 genuine dual-speaker recordings")
         return True
 
+    if source != "singles":
+        raise ValueError(
+            "Real public conversations are audio-only; use "
+            "tools/fixed195_public_multi.py for non-scored source material."
+        )
     api = HfApi()
-    requested = ([FLEURS] if source == "singles" else
-                 [DAI] if source == "multi" else [FLEURS, DAI])
+    requested = [FLEURS]
     for repository in requested:
         if repository not in state["revisions"]:
             try:
@@ -454,59 +452,6 @@ def prepare(root: Path, source: str, verify_only: bool,
                     "sha256": checksum(root / relative),
                 })
 
-    if DAI in requested:
-        for language, _ in LANGUAGES:
-            ids = [
-                f"fixed195-{language}-m{i:02d}"
-                for i in range(1, multi_for(language) + 1)
-            ]
-            if all(cid in state["cases"] for cid in ids):
-                for cid in ids:
-                    verify_case(root, state["cases"][cid])
-                continue
-            filename = f"data/{language}/{language}.parquet"
-            table = pq.read_table(download(DAI, filename))
-            chosen = choose_dialogues(table.to_pylist(), language)
-            for index, row in enumerate(chosen, 1):
-                cid = f"fixed195-{language}-m{index:02d}"
-                if cid in state["cases"]:
-                    verify_case(root, state["cases"][cid])
-                    if state["cases"][cid]["source_sample_id"] != row["sample_id"]:
-                        raise ValueError(f"Conversation selection changed: {cid}")
-                    continue
-                sample_id = row["sample_id"]
-                ch1 = download(DAI, f"audio/{sample_id}/ch1.flac")
-                ch2 = download(DAI, f"audio/{sample_id}/ch2.flac")
-                relative = f"audio/{cid}.wav"
-                duration, gain = mix_tracks(ch1, ch2, root / relative)
-                reference_segments = collect_segments(row["word_alignments"])
-                speaker_refs = [
-                    {"speaker": speaker, "reference": " ".join(
-                        seg["text"] for seg in reference_segments
-                        if seg["speaker"] == speaker
-                    )} for speaker in ("speaker_1", "speaker_2")
-                ]
-                commit({
-                    "id": cid, "language": language,
-                    "locale": row.get("locale"), "kind": "multi",
-                    "audio": relative, "duration_s": duration,
-                    "scenario": "real_two_speaker_conversation",
-                    "speaker_count": 2,
-                    "reference_segments": reference_segments,
-                    "speakers": speaker_refs,
-                    "overlap_type": row.get("overlap_type"),
-                    "overlap_fraction": row.get("clip_overlap_frac"),
-                    "mix_gain": gain,
-                    "timing_contains_pseudo": any(
-                        s["timing_source"] == "pseudo"
-                        for s in reference_segments
-                    ),
-                    "source_repo": DAI, "source_rev": state["revisions"][DAI],
-                    "source_sample_id": sample_id,
-                    "source_file": filename,
-                    "sha256": checksum(root / relative),
-                    "license_restrictions": "evaluation only; no training, optimization or redistribution",
-                })
     return create_outputs(root, state)
 
 
