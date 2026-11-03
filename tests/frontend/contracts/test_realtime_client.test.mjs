@@ -75,3 +75,36 @@ test('sendPcm respects typed array byte offsets', () => {
   client.sendPcm(samples.subarray(1, 3))
   assert.equal(sockets[0].sent[0].byteLength, 4)
 })
+
+
+test('stop sends the exact PCM sample count and surfaces audio receipt', () => {
+  const { RealtimeClient, sockets } = createHarness()
+  const receipts = []
+  const client = new RealtimeClient({
+    url: 'ws://localhost/ws/audio',
+    onAudioReceived: (samples, matched) => receipts.push([samples, matched]),
+  })
+  client.connect()
+  client.sendPcm(new Int16Array([1, 2, 3, 4]))
+  client.sendPcm(new Int16Array([5, 6]))
+  client.sendStop()
+  assert.equal(JSON.parse(sockets[0].sent[2]).expected_samples, 6)
+  sockets[0].message({ type: 'audio_received', samples: 6, matched: true })
+  assert.deepEqual(receipts, [[6, true]])
+})
+
+test('a broken or congested stream cannot request a successful stop', () => {
+  const { RealtimeClient, sockets } = createHarness()
+  const errors = []
+  const client = new RealtimeClient({
+    url: 'ws://localhost/ws/audio',
+    onError: message => errors.push(message),
+  })
+  client.connect()
+  sockets[0].bufferedAmount = 1024 * 1024
+  client.sendPcm(new Int16Array([1]))
+  assert.equal(sockets[0].readyState, 3)
+  client.sendStop()
+  assert.equal(sockets[0].sent.length, 0)
+  assert.ok(errors.some(text => text.includes('congested')))
+})
