@@ -90,3 +90,6 @@ __screenshots__/
 
 # Updated balanced multilingual benchmark including licensed transcripts
 /benchmark/fixed180/
+
+# Final 195-clip benchmark, including licensed speaker-attributed content
+/benchmark/fixed195/
