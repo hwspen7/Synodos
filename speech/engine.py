@@ -33,3 +33,28 @@ def recognize(audio: np.ndarray, *, language: str = "auto", terms: str = "",
                 _ENGINES[key] = QwenEngine(config.model, config.device if config.device != "auto" else "cuda:0", aligner=aligner)
         backend = _ENGINES[key]
     return backend.recognize(filtered, language, terms)
+
+
+
+def prewarm_multilingual(config: SpeechSettings | None = None) -> None:
+    """Load the configured ASR model before accepting a live recording.
+
+    Cold model loading is intentionally visible at startup. It must not happen
+    on the microphone ingestion path without the operator being aware.
+    """
+    config = config or load_settings()
+    if config.engine == "legacy":
+        return
+    key = (config.engine, config.model, config.device, config.compute_type)
+    with _LOCK:
+        if key not in _ENGINES:
+            if config.engine == "whisper":
+                from speech.whisper import WhisperEngine
+                _ENGINES[key] = WhisperEngine(config.model, config.device, config.compute_type)
+            else:
+                from speech.qwen import QwenEngine
+                import os
+                aligner = os.getenv("MEETING_QWEN_FORCED_ALIGNER", "1").lower() not in ("0", "false", "no")
+                _ENGINES[key] = QwenEngine(config.model, config.device if config.device != "auto" else "cuda:0", aligner=aligner)
+        backend = _ENGINES[key]
+    backend._get_model()
