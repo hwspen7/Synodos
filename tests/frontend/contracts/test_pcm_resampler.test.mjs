@@ -15,11 +15,13 @@ test("48 kHz to 16 kHz keeps correct sample count across 128-sample worklet bloc
   const program = file.slice(start + prefix.length, end)
     .replace("${PCM_PROCESSOR_NAME}", "mop-pcm-processor")
   const chunks = []
+  const acknowledgements = []
   let Worklet = null
   class FakeWorkletProcessor {
     constructor() {
       this.port = { postMessage(message) {
         if (message && message.BYTES_PER_ELEMENT === 2) chunks.push(message)
+        if (message && message.type === 'flushed') acknowledgements.push(message.type)
       }}
     }
   }
@@ -35,4 +37,8 @@ test("48 kHz to 16 kHz keeps correct sample count across 128-sample worklet bloc
   }
   const outputSamples = chunks.reduce((sum, frame) => sum + frame.length, 0)
   assert.equal(outputSamples, 16000)
+  instance.port.onmessage({ data: { type: 'flush' } })
+  assert.deepEqual(acknowledgements, ['flushed'])
+  instance.process([[new Float32Array(128)]])
+  assert.equal(chunks.reduce((sum, frame) => sum + frame.length, 0), 16000)
 })
