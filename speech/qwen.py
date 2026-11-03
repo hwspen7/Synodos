@@ -5,9 +5,34 @@ import numpy as np
 from speech.contracts import Recognition, Utterance, Word
 from speech.language import normalize_language
 
-LANGUAGES = {"zh": "Chinese", "en": "English", "yue": "Cantonese", "fr": "French",
-             "de": "German", "ja": "Japanese", "ko": "Korean", "es": "Spanish",
-             "pt": "Portuguese", "ru": "Russian", "it": "Italian"}
+# Exact Qwen3-ASR language names as published in the upstream supported list.
+# A missing entry must never silently forward an ISO code as a full name.
+LANGUAGES = {
+    "zh": "Chinese", "en": "English", "yue": "Cantonese",
+    "ar": "Arabic", "de": "German", "fr": "French", "es": "Spanish",
+    "pt": "Portuguese", "id": "Indonesian", "it": "Italian",
+    "ko": "Korean", "ru": "Russian", "th": "Thai", "vi": "Vietnamese",
+    "ja": "Japanese", "tr": "Turkish", "hi": "Hindi", "ms": "Malay",
+    "nl": "Dutch", "sv": "Swedish", "da": "Danish", "fi": "Finnish",
+    "pl": "Polish", "cs": "Czech", "fil": "Filipino",
+    "fa": "Persian", "el": "Greek", "hu": "Hungarian",
+    "mk": "Macedonian", "ro": "Romanian",
+}
+
+
+def qwen_language_name(language: str) -> str | None:
+    """Convert a supported language code to the Qwen transcription API name.
+
+    Keep automatic detection as None. Reject unsupported codes, e.g. bn or ur:
+    a speech model cannot be said to support a language merely because Whisper
+    supports it, or because the UI offers a generic language selector.
+    """
+    value = normalize_language(language)
+    if value in ("auto", "und"):
+        return None
+    if value not in LANGUAGES:
+        raise ValueError(f"Qwen3-ASR forced-language mode is unsupported for {language!r}")
+    return LANGUAGES[value]
 
 
 class QwenEngine:
@@ -58,7 +83,7 @@ class QwenEngine:
             for start, end in windows:
                 window = samples[start:end]
                 arguments = {"audio": (window, 16000),
-                             "language": None if language in ("auto", "und", "") else LANGUAGES.get(language, language)}
+                             "language": qwen_language_name(language)}
                 try:
                     result = model.transcribe(**arguments, return_time_stamps=self.use_aligner)[0]
                 except (ValueError, RuntimeError) as exc:
