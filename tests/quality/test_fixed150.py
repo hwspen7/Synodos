@@ -17,6 +17,9 @@ from tools.fixed150_prepare import (
     choose_source_file,
 )
 from phase07.quality import score_pair, aggregate
+from speech.qwen import qwen_language_name, LANGUAGES
+from speech.language import normalize_language
+from tools.fixed150_ablation import choose_cases, likely_failure
 from tools.fixed150_dashboard import (
     summarize_multis, summarize_singles, token_recall, token_bag,
 )
@@ -85,6 +88,40 @@ class Fixed150Contracts(unittest.TestCase):
         self.assertEqual(data["mixed_token_er"], 0)
         self.assertIsNone(next(x["mixed_token_er"] for x in data["per_language"]
                                if x["language"] == "th"))
+
+    def test_qwen_language_mapping_uses_supported_names(self):
+        self.assertIsNone(qwen_language_name("auto"))
+        self.assertIsNone(qwen_language_name("und"))
+        for code, expected in {
+            "ar": "Arabic", "hi": "Hindi", "id": "Indonesian",
+            "tr": "Turkish", "vi": "Vietnamese", "ko": "Korean",
+            "fa": "Persian", "el": "Greek", "fil": "Filipino",
+        }.items():
+            self.assertEqual(qwen_language_name(code), expected)
+            self.assertEqual(normalize_language(expected), code)
+        self.assertEqual(len(LANGUAGES), 30)
+        with self.assertRaises(ValueError):
+            qwen_language_name("bn")
+        with self.assertRaises(ValueError):
+            qwen_language_name("ur")
+
+    def test_targeted_ablation_selection_is_stable(self):
+        fake = {"cases": [
+            {"id": "single-1", "kind": "single", "language": "ko"},
+            {"id": "single-2", "kind": "single", "language": "ko"},
+            {"id": "single-3", "kind": "single", "language": "pt"},
+            {"id": "multi-4", "kind": "multi", "language": "ko"},
+        ]}
+        self.assertEqual(
+            [x["id"] for x in choose_cases(fake, {"ko", "pt"}, 1)],
+            ["single-1", "single-3"],
+        )
+        with self.assertRaises(ValueError):
+            choose_cases(fake, {"ur"}, 1)
+        self.assertIn("PIPELINE_LOSS_OR_SEGMENTATION",
+                      likely_failure(.8, .2, .2, "ko", "ko"))
+        self.assertIn("AUTO_LANGUAGE_OR_DECODING",
+                      likely_failure(.8, .8, .1, "en", "ko"))
 
     def test_exact_diverse_allocations(self):
         self.assertEqual(len(MIND_LOCALES) * len(MIND_ROWS), 56)
