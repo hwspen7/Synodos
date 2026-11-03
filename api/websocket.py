@@ -208,6 +208,7 @@ async def ws_audio(
             await websocket.send_json({"type": "feature_warning", "feature": "recording", "message": str(exc)})
     forwarder = asyncio.create_task(_outbox_forwarder(session))
     stop_requested = False
+    received_samples = 0
     try:
         while True:
             message = await websocket.receive()
@@ -218,6 +219,7 @@ async def ws_audio(
                     try:
                         frame = decode_pcm_frame(data)
                         session.buffer.append(frame)
+                        received_samples += len(frame)
                         if audio_archive is not None:
                             audio_archive.append(data)
                         if online is not None:
@@ -242,7 +244,22 @@ async def ws_audio(
                     except json.JSONDecodeError:
                         ctrl = {}
                     if ctrl.get("type") == "stop":
-                        # Finish processing the remaining buffered audio before closing.
+                        expected = ctrl.get("expected_samples")
+                        if expected is not None and (
+                            type(expected) is not int or expected < 0 or expected != received_samples
+                        ):
+                            metrics.increment("audio_sample_count_mismatches")
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "Audio delivery mismatch. Some microphone samples may be missing.",
+                            })
+                        await websocket.send_json({
+                            "type": "audio_received",
+                            "samples": received_samples,
+                            "matched": expected is None or (
+                                type(expected) is int and expected == received_samples
+                            ),
+                        })
                         stop_requested = True
                         break
             elif kind == "websocket.disconnect":
