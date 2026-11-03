@@ -8,7 +8,7 @@ import numpy as np
 
 from api.socket_transport import AudioFrameSequence
 from tools.live_caption_ws_replay import (
-    DEFAULT_WS_URL, capture_event, new_capture, pcm_packet,
+    DEFAULT_WS_URL, capture_event, new_capture, pcm_packet, summarize_timing,
 )
 
 
@@ -133,6 +133,60 @@ class LiveCaptionWsReplayTests(unittest.TestCase):
                 for item in state["feature_warning_samples"]), 240
         )
         self.assertEqual(state["speaker_reassignments"], 0)
+
+    def test_rolling_caption_freshness_reports_endurance_regression(self):
+        state = new_capture(interval_seconds=60)
+        capture_event(state, {
+            "type": "partial", "revision": 1, "text": "First",
+            "end_ms": 1500,
+        }, 3000)
+        capture_event(state, {
+            "type": "transcript", "version": 1,
+            "segments": [{"id": 1, "speaker_id": -1,
+                          "end_ms": 3000, "text": "First"}],
+        }, 8000)
+        capture_event(state, {
+            "type": "audio_progress", "samples": 16000,
+        }, 10000, sent_samples=20000)
+        capture_event(state, {
+            "type": "partial", "revision": 2, "text": "Second",
+            "end_ms": 60500,
+        }, 64500)
+        capture_event(state, {
+            "type": "transcript", "version": 2,
+            "segments": [
+                {"id": 1, "speaker_id": 2, "end_ms": 3000,
+                 "text": "First"},
+                {"id": 2, "speaker_id": -1, "end_ms": 62500,
+                 "text": "Second"},
+            ],
+        }, 71000)
+        periods = summarize_timing(state, 121000)
+        self.assertEqual(len(periods), 3)
+        self.assertEqual(periods[0]["preview_lag_p95_ms"], 1500)
+        self.assertEqual(periods[0]["confirmation_lag_p95_ms"], 5000)
+        self.assertEqual(periods[0]["new_confirmed_segments"], 1)
+        self.assertEqual(periods[0]["max_audio_transport_gap_ms"], 250)
+        self.assertEqual(periods[1]["preview_lag_p95_ms"], 4000)
+        self.assertEqual(periods[1]["confirmation_lag_p95_ms"], 8500)
+        self.assertEqual(periods[1]["speaker_label_changes"], 1)
+        self.assertEqual(periods[1]["new_confirmed_segments"], 1)
+        self.assertIsNone(periods[2]["preview_lag_p95_ms"])
+        self.assertIsNone(periods[2]["confirmation_lag_p95_ms"])
+        self.assertEqual(periods[2]["new_confirmed_segments"], 0)
+        self.assertEqual(state["first_preview_ms"], 3000)
+
+    def test_empty_and_invalid_lag_samples_not_misrepresented_as_zero(self):
+        state = new_capture()
+        capture_event(state, {
+            "type": "partial", "revision": 1, "text": "Hi",
+            "end_ms": 5000,
+        }, 1000)
+        report = summarize_timing(state, 1500)[0]
+        self.assertEqual(report["preview_lag_samples"], 0)
+        self.assertIsNone(report["preview_lag_p95_ms"])
+        with self.assertRaises(ValueError):
+            new_capture(interval_seconds=15)
 
     def test_stop_ack_and_terminal_confirmation(self):
         state = new_capture()
