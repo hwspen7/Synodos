@@ -168,3 +168,42 @@ explicit maximum latency budget, strong evidence before finalization,
 and safeguards against real code switching. A high-confidence competing
 language must veto monolingual stabilization. Do not enable this as a
 production heuristic based on a single short Portuguese recording.
+
+## Full original-corpus language-anchor experiment
+
+On the eight selected previous regressions, the retrospective, source-blind
+model-language anchor produced 36.25% to 32.33% weighted CER, improved two
+clips and left six unchanged, with no regressions observed in that selected
+set. Portuguese 048 improved from 79.78% to 61.20%, still far worse than
+28.4% from a different whole-clip direct-Whisper comparison. This is a
+candidate benefit in an intentionally nonrepresentative failure set.
+
+Test all 100 frozen single-speaker originals, including initially healthy
+cases and other languages, to measure net benefit and newly harmed clips:
+
+    .\.venv\Scripts\python.exe tools\fixed150_language_anchor.py --scope all
+
+The command writes distinct local files:
+- benchmark/fixed150/language_anchor_all.json
+- benchmark/fixed150/language_anchor_all_summary.json
+
+Or target only the 68 priority-language originals:
+
+    .\.venv\Scripts\python.exe tools\fixed150_language_anchor.py --scope focus
+
+The new summary includes weighted CER for all and the priority 15,
+per-language numbers, retried-window counts, improved/worsened/unchanged
+cases, total retry-compute milliseconds and a model-runtime overhead ratio.
+The latter is not streaming end-to-end latency. Original source annotations
+including questionable Korean case 036 remain in the official figures;
+the report marks them for manual review.
+
+The previously generated eight-case output remains at
+benchmark/fixed150/language_anchor_audit.json. Do not overwrite it with
+the new whole-corpus checkpoint. Code fingerprints reject stale checkpoint
+reuse after the experiment implementation changes.
+
+Even a favorable 100-case result is not a real-time release gate, because
+the current anchor can depend on subsequent audio windows. Evaluate
+code-switching, simultaneous speakers, text stability, caption latency,
+and an untouched independent holdout before building a causal version.
