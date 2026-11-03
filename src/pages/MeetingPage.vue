@@ -63,6 +63,7 @@ const micLevel = ref(0)
 const micSilent = ref(false)
 const capturedSeconds = ref(0)
 const deliveredSeconds = ref(0)
+const durableSeconds = ref<number | null>(null)
 const wavRecordingEnabled = ref(false)
 const settingsSaving = ref(false)
 const appliedSettings = ref('')
@@ -397,6 +398,7 @@ async function startMic(): Promise<void> {
   capturePaintSample = 0
   capturedSeconds.value = 0
   deliveredSeconds.value = 0
+  durableSeconds.value = null
   let silentCount = 0
   try {
     recorder = await startMicRecording(
@@ -508,6 +510,7 @@ function connect(autostart = false): void {
   capturedSamples = 0
   capturedSeconds.value = 0
   deliveredSeconds.value = 0
+  durableSeconds.value = null
   wavRecordingEnabled.value = false
   clearAudioDeliveryWatchdog()
   stickToBottom = true
@@ -559,15 +562,25 @@ function connect(autostart = false): void {
       if (clientSeq !== mySeq) return
       bufferedMs.value = ms
     },
-    onAudioProgress: (samples) => {
+    onAudioProgress: (samples, durableSamples) => {
       if (clientSeq !== mySeq) return
       deliveredSeconds.value = samples / 16000
+      if (durableSamples !== null && durableSamples !== undefined) {
+        durableSeconds.value = durableSamples / 16000
+      }
       if (samples > 0) clearAudioDeliveryWatchdog()
     },
-    onAudioReceived: (samples, matched) => {
+    onAudioReceived: (samples, matched, durableSamples) => {
       if (clientSeq !== mySeq) return
       audioStopAcknowledged = matched
       deliveredSeconds.value = samples / 16000
+      if (durableSamples !== null && durableSamples !== undefined) {
+        durableSeconds.value = durableSamples / 16000
+        if (durableSamples !== samples) {
+          realtimeError = true
+          error.value = 'WAV durable sample count differs from the received audio.'
+        }
+      }
       if (!matched) {
         realtimeError = true
         error.value = 'Audio sample mismatch: the server did not receive every sent sample.'
@@ -735,7 +748,7 @@ onBeforeUnmount(() => stopInternal())
             </span>
             <span v-if="recording">Mic {{ capturedSeconds.toFixed(1) }}s sent / {{ deliveredSeconds.toFixed(1) }}s received</span>
             <span v-if="serverInfo">Buffered {{ (bufferedMs / 1000).toFixed(1) }}s</span>
-            <span v-if="serverInfo">WAV {{ wavRecordingEnabled ? 'on' : 'off' }}</span>
+            <span v-if="serverInfo">WAV {{ wavRecordingEnabled ? 'on' : 'off' }}{{ durableSeconds !== null ? ` · ${durableSeconds.toFixed(1)}s on disk` : '' }}</span>
             <span>Segments {{ transcriptMeta.segments }} \u00b7 Paragraphs {{ transcriptMeta.paragraphs }}</span>
             <span v-if="participantNames.length > 0" class="participant-chip">
               <AppIcon name="users" :size="13" />

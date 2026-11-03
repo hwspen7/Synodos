@@ -21,6 +21,7 @@ class RecordingWriter:
         self.path = self.folder / f"{uuid.uuid4().hex}.wav"
         self.quota = quota
         self.written = 0
+        self.durable_bytes = 0
         self.lock = threading.RLock()
         self._handle = open(self.path, "wb")
         self.file = wave.open(self._handle, "wb")
@@ -42,17 +43,26 @@ class RecordingWriter:
             self.written += len(data)
             self._checkpoint_bytes += len(data)
             if self._checkpoint_bytes >= 32000:
-                # Recover readable WAV frames up to the latest durable checkpoint.
-                self.file.writeframes(b"")
-                self._handle.flush()
-                os.fsync(self._handle.fileno())
-                self._checkpoint_bytes = 0
+                self.checkpoint()
+
+    def checkpoint(self) -> int:
+        """Flush the wave header and PCM bytes before reporting durable samples."""
+        with self.lock:
+            if self.closed:
+                raise RuntimeError("Recording already closed")
+            self.file.writeframes(b"")
+            self._handle.flush()
+            os.fsync(self._handle.fileno())
+            self.durable_bytes = self.written
+            self._checkpoint_bytes = 0
+            return self.durable_bytes // 2
 
     def close(self):
         with self.lock:
             if not self.closed:
-                self.file.close()
-                self._handle.flush()
-                os.fsync(self._handle.fileno())
-                self._handle.close()
-                self.closed = True
+                try:
+                    self.checkpoint()
+                finally:
+                    self.file.close()
+                    self._handle.close()
+                    self.closed = True

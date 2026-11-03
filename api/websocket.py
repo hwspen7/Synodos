@@ -274,6 +274,7 @@ async def ws_audio(
                             await session.outbox.put({
                                 "type": "audio_progress",
                                 "samples": received_samples,
+                                "durable_samples": audio_archive.durable_bytes // 2 if audio_archive is not None else None,
                                 "last_sequence": frame_sequence.next_sequence - 1 if frame_sequence.versioned else None,
                             })
                         if online is not None:
@@ -318,9 +319,21 @@ async def ws_audio(
                                 "type": "error",
                                 "message": "Audio delivery mismatch. Some microphone samples may be missing.",
                             })
+                        durable_samples = None
+                        if audio_archive is not None:
+                            try:
+                                durable_samples = audio_archive.checkpoint()
+                            except OSError as exc:
+                                metrics.increment("wav_checkpoint_failure")
+                                await websocket.send_json({
+                                    "type": "error",
+                                    "message": f"WAV audio checkpoint failed: {type(exc).__name__}",
+                                })
+                                break
                         await websocket.send_json({
                             "type": "audio_received",
                             "samples": received_samples,
+                            "durable_samples": durable_samples,
                             "matched": expected is None or (
                                 type(expected) is int and expected == received_samples
                             ),
@@ -334,7 +347,14 @@ async def ws_audio(
         pass
     finally:
         if audio_archive is not None:
-            audio_archive.close()
+            try:
+                audio_archive.close()
+            except OSError as exc:
+                metrics.increment("wav_close_failure")
+                await session.outbox.put({
+                    "type": "error",
+                    "message": f"WAV finalization failed: {type(exc).__name__}",
+                })
         if online is not None:
             try:
                 await asyncio.to_thread(online.finish)

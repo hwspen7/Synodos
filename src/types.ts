@@ -58,12 +58,14 @@ export interface ServerAudioProgress {
   type: 'audio_progress'
   samples: number
   last_sequence?: number | null
+  durable_samples?: number | null
 }
 
 export interface ServerAudioReceived {
   type: 'audio_received'
   samples: number
   last_sequence?: number | null
+  durable_samples?: number | null
   matched: boolean
 }
 

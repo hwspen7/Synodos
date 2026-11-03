@@ -8,8 +8,8 @@ export interface RealtimeClientOptions {
   onFeatureWarning?: (message: string) => void
   onAudioAnalysis?: (result: { emotion?: string | null, events?: string[], overlap?: Array<{start_ms: number, end_ms: number}>, quality?: { rms: number } }) => void
   onState?: (bufferedMs: number) => void
-  onAudioReceived?: (samples: number, matched: boolean) => void
-  onAudioProgress?: (samples: number) => void
+  onAudioReceived?: (samples: number, matched: boolean, durableSamples?: number | null) => void
+  onAudioProgress?: (samples: number, durableSamples?: number | null) => void
   onClosed?: (reason: 'closed' | 'disconnected', saved?: boolean) => void
   onError?: (message: string) => void
 }
@@ -76,10 +76,10 @@ export class RealtimeClient {
             break
           }
           this.acknowledgedSamples = msg.samples
-          this.options.onAudioProgress?.(msg.samples)
+          this.options.onAudioProgress?.(msg.samples, msg.durable_samples)
           break
         case 'audio_received':
-          this.options.onAudioReceived?.(msg.samples, msg.matched)
+          this.options.onAudioReceived?.(msg.samples, msg.matched, msg.durable_samples)
           break
         case 'error':
           this.options.onError?.(msg.message || 'Server processing error')
