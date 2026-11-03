@@ -1,0 +1,61 @@
+/* Meeting workspace refresh, scoped to the meeting route.
+   Inspired by focused controls and progressive disclosure in modern
+   collaboration tools. Existing warm orange/teal theme tokens are preserved. */
+.meeting-page{max-width:1540px;padding:24px clamp(16px,3vw,48px) 64px}
+.compact-meeting-header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:16px 20px;background:var(--mop-surface);border:1px solid var(--mop-border);border-radius:16px;box-shadow:0 3px 16px rgba(45,39,33,.035)}
+.compact-meeting-heading{display:flex;gap:14px;min-width:0;align-items:center}
+.meeting-back{height:36px;width:36px;border:1px solid var(--mop-border);border-radius:10px;background:var(--mop-paper);color:var(--mop-text-muted);display:inline-flex;align-items:center;justify-content:center;flex:none}
+.meeting-back:hover{color:var(--mop-primary-strong);border-color:rgba(var(--mop-primary-rgb),.35)}
+.compact-meeting-titles{min-width:0}
+.compact-meeting-titles h1{font-weight:750;letter-spacing:-.035em;margin:0 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--mop-text-strong);font-size:21px}
+.meeting-running-status{display:flex;align-items:center;flex-wrap:wrap;gap:10px;color:var(--mop-text-muted);font-size:12px;font-variant-numeric:tabular-nums}
+.meeting-running-status .status-chip{padding:2px 8px;font-size:11px}
+.compact-mic-meter{display:inline-block;width:54px;height:6px;border-radius:10px;background:linear-gradient(90deg,var(--mop-secondary) var(--mic-fill),#e8e5df var(--mic-fill));box-shadow:inset 0 0 0 1px rgba(0,0,0,.03)}
+.compact-meeting-toolbar{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:7px}
+.compact-meeting-toolbar .btn{font-size:12px;padding:7px 11px;white-space:nowrap}
+.compact-record-action{min-width:138px;padding:9px 14px!important}
+.meeting-workspace-summary{display:flex;align-items:center;flex-wrap:wrap;gap:16px;padding:14px 16px;margin:16px 0;background:rgba(var(--mop-primary-rgb),.035);border:1px solid rgba(var(--mop-primary-rgb),.12);border-radius:12px;color:var(--mop-text-muted);font-size:12px}
+.workspace-summary-label{display:flex;align-items:center;gap:9px;color:var(--mop-text-strong);font-weight:720;font-size:13px}
+.summary-live-dot{height:7px;width:7px;background:#a4a4a4;border-radius:100%}
+.summary-live-dot.active{background:#ce4338;box-shadow:0 0 0 4px rgba(206,67,56,.12);animation:meeting-breathe 1.8s infinite}
+@keyframes meeting-breathe{50%{box-shadow:0 0 0 7px rgba(206,67,56,.045)}}
+.workspace-summary-detail{display:flex;gap:14px;flex:1;flex-wrap:wrap}
+.workspace-summary-detail span{white-space:nowrap}
+.workspace-export-tools{display:flex;gap:6px}
+.workspace-export-tools .btn{font-size:12px}
+.meeting-advanced-controls{margin:14px 0;box-shadow:none;animation:meeting-reveal .15s ease}
+@keyframes meeting-reveal{from{opacity:.4;transform:translateY(-3px)}to{opacity:1;transform:translateY(0)}}
+.meeting-workspace{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;align-items:start}
+.meeting-workspace:has(.meeting-review-panel){grid-template-columns:minmax(0,1.6fr) minmax(340px,.9fr)}
+.meeting-primary{min-width:0;background:var(--mop-surface);border:1px solid var(--mop-border);border-radius:14px;overflow:hidden;min-height:480px}
+.transcript-panel-heading{display:flex;align-items:center;justify-content:space-between;padding:20px 25px 16px;border-bottom:1px solid var(--mop-border)}
+.transcript-panel-heading h2{font-size:17px;line-height:1.3;font-weight:740;letter-spacing:-.018em;margin:0;color:var(--mop-text-strong)}
+.transcript-panel-heading span{font-size:12px;color:var(--mop-text-muted)}
+.transcript-panel-heading .transcript-count{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:12px;color:var(--mop-primary-strong);background:rgba(var(--mop-primary-rgb),.08);border-radius:20px;padding:4px 10px}
+.meeting-primary .transcript{height:min(70vh,920px);min-height:430px;padding:12px 22px 40px;scrollbar-gutter:stable}
+.meeting-primary .paragraph{background:transparent;border:0;border-bottom:1px solid var(--mop-border);border-radius:0;box-shadow:none;padding:18px 4px 19px;margin:0}
+.meeting-primary .paragraph:last-child{border-bottom:0}
+.meeting-primary .para-head{gap:10px;margin-bottom:7px}
+.meeting-primary .speaker-name{font-size:13px;font-weight:740}
+.meeting-primary .speaker-dot{width:8px;height:8px}
+.meeting-primary .para-time{font-size:11px;font-variant-numeric:tabular-nums}
+.meeting-primary .para-text{padding:0;margin:0 0 5px 18px;color:var(--mop-text-strong);font-size:14px;line-height:1.85;letter-spacing:.005em;white-space:pre-wrap;overflow-wrap:anywhere}
+.meeting-primary .transcript-sentence+.transcript-sentence{margin-top:9px}
+.meeting-primary .seg-count{background:var(--mop-bg);color:var(--mop-text-muted);font-weight:500;font-size:10px;padding:1px 6px}
+.transcript-edit-details{margin:10px 0 0 18px;font-size:11px;color:var(--mop-text-muted)}
+.transcript-edit-details summary{width:max-content;cursor:pointer;user-select:none;color:var(--mop-text-muted)}
+.transcript-edit-details summary:hover{color:var(--mop-primary-strong)}
+.transcript-edit-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.transcript-edit-actions .btn{font-size:11px;padding:5px 8px}
+.meeting-review-panel{min-width:0;max-height:calc(76vh + 40px);overflow-y:auto;padding:18px;background:var(--mop-surface);border:1px solid var(--mop-border);border-radius:14px;scrollbar-width:thin}
+.review-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:2px 0 16px;border-bottom:1px solid var(--mop-border);margin-bottom:16px}
+.review-panel-head h2{margin:0;font-size:16px;font-weight:760}
+.review-panel-head p{margin:4px 0 0;font-size:11px;color:var(--mop-text-muted)}
+.meeting-review-panel .panel{padding:14px;margin-bottom:12px;box-shadow:none}
+.meeting-review-panel .panel-title{font-size:13px}
+.meeting-page .error-banner{border-radius:10px;font-size:12px;padding:11px 14px}
+.meeting-page section[aria-live="polite"].meeting-controls{margin:10px 0 16px;background:var(--mop-paper);border-color:rgba(var(--mop-secondary-rgb),.2);font-size:13px}
+.meeting-page section[aria-live="polite"].meeting-controls strong{color:var(--mop-secondary);font-weight:700}
+@media(max-width:1120px){.compact-meeting-header{align-items:flex-start;flex-direction:column}.compact-meeting-toolbar{justify-content:flex-start}.meeting-workspace:has(.meeting-review-panel){grid-template-columns:minmax(0,1fr)}.meeting-review-panel{max-height:none}.meeting-primary .transcript{height:auto;min-height:420px;max-height:65vh}}
+@media(max-width:640px){.meeting-page{padding:12px 12px 40px}.compact-meeting-header{padding:14px;border-radius:12px}.compact-meeting-titles h1{font-size:18px}.compact-meeting-toolbar{width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.compact-meeting-toolbar .btn{min-width:0;white-space:nowrap;overflow:hidden;justify-content:center;font-size:11px;padding:8px 5px}.compact-meeting-toolbar .compact-record-action{grid-column:span 2;min-width:0}.meeting-workspace-summary{padding:12px}.workspace-export-tools{width:100%}.meeting-primary .transcript{padding:8px 13px 35px}.transcript-panel-heading{padding:15px}.meeting-primary .para-text{margin-left:17px;font-size:13px}.meeting-review-panel{padding:12px}.meeting-advanced-controls{padding:12px}}
+@media(prefers-reduced-motion:reduce){.summary-live-dot.active{animation:none}.meeting-advanced-controls{animation:none}}
