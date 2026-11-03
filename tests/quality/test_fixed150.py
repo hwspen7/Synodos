@@ -23,6 +23,7 @@ from tools.fixed150_ablation import choose_cases, likely_failure
 from tools.fixed150_reference_audit import source_flags, evaluate as audit_references, FOCUS_15
 from tools.fixed150_system_audit import summarize as summarize_system_ablation
 from speech.audio_windows import speech_windows
+from speech.text_format import join_transcript_text
 from tools.fixed150_dashboard import (
     summarize_multis, summarize_singles, token_recall, token_bag,
 )
@@ -164,6 +165,15 @@ class Fixed150Contracts(unittest.TestCase):
     def test_reference_audit_default_scope_is_15(self):
         self.assertEqual(len(FOCUS_15), 15)
         self.assertEqual(len(set(FOCUS_15)), 15)
+
+    def test_korean_word_boundaries_are_preserved(self):
+        self.assertEqual(join_transcript_text("안녕하세요", " 여러분"),
+                         "안녕하세요 여러분")
+        self.assertEqual(join_transcript_text("안녕하세요", "여러분"),
+                         "안녕하세요여러분")
+        self.assertEqual(join_transcript_text("你好", "世界"), "你好世界")
+        self.assertEqual(join_transcript_text("Hello", " world"), "Hello world")
+        self.assertEqual(join_transcript_text("Hello", " !"), "Hello!")
 
     def test_continuous_speech_is_hard_cut_at_18_seconds(self):
         samples = 40000 * 16
