@@ -1,0 +1,131 @@
+"""Deterministic no-download contract tests for the Fixed150 preparation and scoring.
+
+These tests do not imply that the 150 GB/MB-scale source files or actual GPU
+models have run. The real inference gate stays blocked until local replay.
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import tempfile
+import unittest
+import wave
+
+from tools.fixed150_prepare import (
+    AMI_ROWS, FLEURS_LOCALES, FLEURS_ROWS, LAION_ROWS,
+    MIND_LOCALES, MIND_ROWS, ami_spans, checksum, verify_case, verify_lock,
+)
+from tools.fixed150_dashboard import (
+    summarize_multis, summarize_singles, token_recall, token_bag,
+)
+
+
+class Fixed150Contracts(unittest.TestCase):
+    def test_exact_diverse_allocations(self):
+        self.assertEqual(len(MIND_LOCALES) * len(MIND_ROWS), 56)
+        self.assertEqual(len(FLEURS_LOCALES) * len(FLEURS_ROWS), 44)
+        self.assertEqual(len(AMI_ROWS), 25)
+        self.assertEqual(len(LAION_ROWS), 25)
+        langs = {code for _, code in MIND_LOCALES + FLEURS_LOCALES}
+        self.assertGreaterEqual(len(langs), 20)
+        self.assertEqual(len(set(AMI_ROWS)), 25)
+        self.assertEqual(len(set(LAION_ROWS)), 25)
+
+    def test_real_ami_timestamp_token_decoder(self):
+        text = "<|0.00|> Hello there.<|1.42|><|1.42|> Um.<|2.72|>"
+        spans = ami_spans(text, "speaker_1", 3.0)
+        self.assertEqual(len(spans), 2)
+        self.assertEqual(spans[0]["start_ms"], 0)
+        self.assertEqual(spans[1]["end_ms"], 2720)
+        self.assertEqual(spans[1]["text"], "Um.")
+
+    def test_timestamp_rejects_out_of_bounds(self):
+        self.assertEqual(ami_spans("<|4.00|> Bad.<|8.00|>", "s1", 3.0), [])
+
+    def test_unmeasured_results_not_zero_error(self):
+        fake = {"cases": [
+            {"id": f"fixed150-{i:03d}", "kind": "single",
+             "language": "en", "scenario": "read_speech"} for i in range(1, 101)
+        ]}
+        self.assertEqual(summarize_singles(fake, None)["status"], "NOT RUN")
+        missing = {"infer": True, "samples": 100, "engines": {
+            "whisper": {"samples": [{"index": i, "error": "GPU_NOT_READY"}
+                                    for i in range(100)]}
+        }}
+        result = summarize_singles(fake, missing)
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertEqual(result["engines"]["whisper"]["valid"], 0)
+
+    def test_token_recall_does_not_confuse_missing_voice_with_success(self):
+        self.assertAlmostEqual(token_recall("fresh talking audio", "fresh audio"), 2/3)
+        self.assertEqual(token_recall("fresh talking audio", ""), 0)
+        self.assertIsNone(token_recall("a I", "a I"))
+        self.assertTrue(token_bag("Talk talk")["talk"] == 2)
+
+    def test_source_sha_is_not_trusted_without_wav(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "audio").mkdir()
+            wav = root / "audio" / "x.wav"
+            with wave.open(str(wav), "wb") as out:
+                out.setframerate(16000)
+                out.setnchannels(1)
+                out.setsampwidth(2)
+                out.writeframes(b"\0\0" * 16000)
+            case = {"id": "x", "audio": "audio/x.wav", "sha256": checksum(wav)}
+            verify_case(root, case)
+            wav.write_bytes(b"corrupted")
+            with self.assertRaises(ValueError):
+                verify_case(root, case)
+
+    def test_partial_or_missing_lock_fails_closed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "lock.json").write_text(json.dumps({
+                "schema": "meeting-fixed150-v1", "cases": []
+            }), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                verify_lock(root)
+
+    def test_multispeaker_without_replay_remains_blocked(self):
+        fake = {"cases": [
+            {"id": f"fixed150-{i:03d}", "kind": "multi",
+             "scenario": "real_meeting_two_speakers"}
+            for i in range(101, 151)
+        ]}
+        result = summarize_multis(fake, None)
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertEqual(result["valid"], 0)
+        self.assertEqual(result["groups"]["real_meeting_two_speakers"]["count"], 50)
+
+    def test_speaker_permutation_invariant_content_attribution(self):
+        case = {
+            "id": "fixed150-101", "kind": "multi", "scenario": "real_meeting_two_speakers",
+            "sha256": "frozen",
+            "annotation_precision": "utterance",
+            "speakers": [
+                {"speaker": "speaker_1", "reference": "orange meeting notebook"},
+                {"speaker": "speaker_2", "reference": "green transport bus"},
+            ],
+            "reference_segments": [
+                {"speaker": "speaker_1", "start_ms": 0, "end_ms": 1000},
+                {"speaker": "speaker_2", "start_ms": 1000, "end_ms": 2000},
+            ],
+        }
+        prediction = {"results": {"fixed150-101": {
+            "status": "completed", "sha256": "frozen",
+            "sent_samples": 32000, "acknowledged_samples": 32000,
+            "segments": [
+                {"start_ms": 0, "end_ms": 1000,
+                 "speaker_id": "B", "text": "orange meeting notebook"},
+                {"start_ms": 1000, "end_ms": 2000,
+                 "speaker_id": "A", "text": "green transport bus"},
+            ],
+        }}}
+        report = summarize_multis({"cases": [case]}, prediction)
+        self.assertEqual(report["cases"][0]["der"], 0)
+        self.assertEqual(report["cases"][0]["attributed_content_recall"], [1, 1])
+
+
+if __name__ == "__main__":
+    unittest.main()
