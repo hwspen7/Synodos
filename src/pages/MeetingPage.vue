@@ -632,8 +632,8 @@ onBeforeUnmount(() => stopInternal())
         <AppIcon name="flame" :size="15" />
         Hotwords{{ selectedHotwordIds.length > 0 ? `(${selectedHotwordIds.length} items)` : '' }}
       </button>
-      <button class="btn btn-ghost" :disabled="segments.length === 0" @click="clearTranscript">
-        Clear
+      <button class="btn btn-ghost" title="Hide transcript in this browser view only; saved meeting data is unchanged" :disabled="segments.length === 0 || recording" @click="clearTranscript">
+        Hide transcript
       </button>
     </div>
 
