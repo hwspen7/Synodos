@@ -22,9 +22,17 @@ class PCMProcessor extends AudioWorkletProcessor {
     this.pending = new Float32Array(0)
     this.pos = 0
     this._dbgCount = 0
+    this.flushed = false
+    this.port.onmessage = event => {
+      if (event.data?.type === 'flush') {
+        this.flushed = true
+        this.port.postMessage({ type: 'flushed' })
+      }
+    }
   }
 
   process(inputs) {
+    if (this.flushed) return true
     const input = inputs[0]
     const channel = input && input[0]
     if (!channel || channel.length === 0) return true
