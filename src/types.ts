@@ -48,6 +48,12 @@ export interface ServerState {
   buffered_ms: number
 }
 
+export interface ServerAudioReceived {
+  type: 'audio_received'
+  samples: number
+  matched: boolean
+}
+
 export interface ServerClosed {
   type: 'closed'
   saved?: boolean
@@ -73,7 +79,7 @@ export interface ServerAudioAnalysis {
   type: 'audio_analysis'
   result: { emotion?: string | null, events?: string[], overlap?: Array<{start_ms: number, end_ms: number}>, quality?: { rms: number } }
 }
-export type ServerMessage = ServerReady | ServerTranscript | ServerState | ServerClosed | ServerError | ServerPartial | ServerFeatureWarning | ServerAudioAnalysis
+export type ServerMessage = ServerReady | ServerTranscript | ServerState | ServerClosed | ServerError | ServerPartial | ServerFeatureWarning | ServerAudioAnalysis | ServerAudioReceived
 
 /* Audio processing and UI rendering. */
 export interface Segment extends TranscriptSegment {
