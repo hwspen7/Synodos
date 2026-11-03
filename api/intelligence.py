@@ -75,6 +75,22 @@ async def submit_job(payload:JobRequest):
     mid=_meeting_id(payload.meeting_id) if payload.meeting_id else None
     if len(str(payload.payload))>15000:
         raise HTTPException(413,'Task payload too large')
+    if payload.kind == 'speaker_refine':
+        # Offline speaker model must never compete with the active recorder.
+        from core.runtime import meeting_sessions
+        from speech.offline_speaker import validate_recording
+        from speech.config import load_settings as load_speech_settings
+        if mid in meeting_sessions:
+            raise HTTPException(409, 'Stop recording before starting speaker refinement')
+        filename = payload.payload.get('filename')
+        if not isinstance(filename, str):
+            raise HTTPException(400, 'Saved WAV filename required')
+        try:
+            validate_recording(load_speech_settings().recording_root, mid, filename)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(404, str(exc)) from exc
     if payload.kind == 'context_correction':
         # Context review must never run concurrently with a live transcript.
         from core.runtime import meeting_sessions

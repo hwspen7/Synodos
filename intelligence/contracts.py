@@ -5,7 +5,7 @@ import re
 import uuid
 
 ALLOWED_MODES = frozenset({'meeting', 'research', 'classroom', 'interview', 'standup', 'sales'})
-ALLOWED_JOBS = frozenset({'summary', 'extract', 'research', 'classroom', 'translate', 'index_meeting', 'index_media', 'ask', 'analyze_media', 'live_translate', 'context_correction'})
+ALLOWED_JOBS = frozenset({'summary', 'extract', 'research', 'classroom', 'translate', 'index_meeting', 'index_media', 'ask', 'analyze_media', 'live_translate', 'context_correction', 'speaker_refine'})
 
 
 def evidence_ids(proposed, valid):

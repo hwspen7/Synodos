@@ -126,6 +126,18 @@ def process(job, gateway):
         output['source_revision'] = revision
         output['model'] = gateway.model_for('meeting')
         return output
+    if kind == 'speaker_refine':
+        # Second opinion only, never mutate a transcript or speaker registry.
+        from speech.offline_speaker import run_offline_refinement
+        from speech.config import load_settings as load_speech_settings
+        data = job.get('payload') or {}
+        filename = data.get('filename')
+        if not isinstance(filename, str):
+            raise ValueError('Saved WAV filename required')
+        result = run_offline_refinement(
+            load_speech_settings().recording_root, job['meeting_id'], filename,
+        )
+        return result
     if kind=='live_translate':
         target=str(job['payload'].get('target') or '').lower()
         if not re.fullmatch(r'[a-z]{2,3}(-[a-z]{2,4})?',target):
