@@ -38,11 +38,16 @@ def edit_distance(reference: list[str], hypothesis: list[str]) -> int:
     return previous[-1]
 
 
-def score_pair(reference: str, hypothesis: str, *, terms: list[str] | None = None) -> dict:
+def score_pair(reference: str, hypothesis: str, *, terms: list[str] | None = None,
+               language: str | None = None) -> dict:
     ref_chars, hyp_chars = char_tokens(reference), char_tokens(hypothesis)
-    ref_words, hyp_words = mixed_tokens(reference), mixed_tokens(hypothesis)
+    # Whitespace tokenization is not valid word segmentation for Thai.
+    # Reject an unsupported metric instead of implying a measured Thai WER.
+    token_supported = language not in ("th",)
+    ref_words = mixed_tokens(reference) if token_supported else []
+    hyp_words = mixed_tokens(hypothesis) if token_supported else []
     c_err = edit_distance(ref_chars, hyp_chars)
-    w_err = edit_distance(ref_words, hyp_words)
+    w_err = edit_distance(ref_words, hyp_words) if token_supported else 0
     ref_normal, hyp_normal = normalize_text(reference), normalize_text(hypothesis)
     matched_terms = [term for term in (terms or []) if normalize_text(term) in ref_normal]
     hit_terms = sum(normalize_text(term) in hyp_normal for term in matched_terms)
@@ -50,7 +55,8 @@ def score_pair(reference: str, hypothesis: str, *, terms: list[str] | None = Non
         "reference_characters": len(ref_chars), "character_edits": c_err,
         "cer": c_err / max(len(ref_chars), 1),
         "reference_tokens": len(ref_words), "token_edits": w_err,
-        "mixed_token_error_rate": w_err / max(len(ref_words), 1),
+        "token_metric_supported": token_supported,
+        "mixed_token_error_rate": (w_err / len(ref_words) if ref_words else None),
         "glossary_terms": len(matched_terms), "glossary_hits": hit_terms,
     }
 
