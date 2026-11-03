@@ -193,7 +193,9 @@ async def ws_audio(
             "spk_threshold": session.processor.spk_threshold,
             "min_speaker_audio_s": settings.min_speaker_audio_s,
             "asr_engine": speech_config.engine,
-            "asr_language": language,
+            "asr_model": speech_config.model if speech_config.engine != "legacy" else settings.asr_model,
+            "diarization_mode": os.getenv("MEETING_DIARIZATION_MODE", "cluster"),
+            "asr_language": session.processor.speech_language,
             "translation_target": session.processor.translate_target,
         }
     )
