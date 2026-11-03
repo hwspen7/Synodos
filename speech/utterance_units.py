@@ -13,7 +13,7 @@ import unicodedata
 from speech.contracts import Utterance, Word
 from speech.text_format import join_transcript_text
 
-_FINAL = frozenset(".!?。！？")
+_FINAL = frozenset(".!?\u3002\uff01\uff1f")
 _ABBREVIATIONS = frozenset({
     "mr.", "mrs.", "ms.", "dr.", "prof.", "sr.", "jr.",
     "st.", "vs.", "etc.", "e.g.", "i.e.", "u.s.", "u.k.",
@@ -26,7 +26,7 @@ def _characters(text: str) -> str:
 
 
 def _trailing_terminal(word: str) -> bool:
-    text = word.strip().rstrip('"”’»)]}）』」')
+    text = word.strip().rstrip('"\u201d\u2019\u00bb)]}\uff09\u300f\u300d')
     if not text or text.casefold() in _ABBREVIATIONS or _NUMBER.fullmatch(text):
         return False
     return text[-1] in _FINAL

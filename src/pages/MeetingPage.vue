@@ -205,11 +205,11 @@ function splitDisplaySentences(text: string): string[] {
   const sentences: string[] = []
   let current = ''
   for (let i = 0; i < original.length; i++) {
-    const char = original[i]
+    const char = original.charAt(i)
     current += char
-    if (!'.!?。！？'.includes(char)) continue
-    const cjkEnd = '。！？'.includes(char)
-    const next = original[i + 1] || ''
+    if (!'.!?\u3002\uff01\uff1f'.includes(char)) continue
+    const cjkEnd = '\u3002\uff01\uff1f'.includes(char)
+    const next = original.charAt(i + 1)
     const boundaries = cjkEnd || !next || /\s/.test(next)
     if (!boundaries) continue
     const token = (current.match(/(?:^|\s)(\S+)$/)?.[1] || '').toLowerCase()
@@ -217,22 +217,22 @@ function splitDisplaySentences(text: string): string[] {
     // Periods in acronyms and numerals do not form independent turns.
     if (char === '.' && /\d$/.test(current.slice(0, -1)) && /^\d/.test(next)) continue
     let j = i + 1
-    while (j < original.length && /["'”’）\])}]/.test(original[j])) {
-      current += original[j]
+    while (j < original.length && /["'\u201d\u2019\uff09\])}]/.test(original.charAt(j))) {
+      current += original.charAt(j)
       i = j
       j++
     }
     const sentence = current.trim()
     if (sentence) sentences.push(sentence)
     current = ''
-    while (i + 1 < original.length && /\s/.test(original[i + 1])) i++
+    while (i + 1 < original.length && /\s/.test(original.charAt(i + 1))) i++
   }
   if (current.trim()) sentences.push(current.trim())
   return sentences.length ? sentences : [original]
 }
 
 function endsFinishedThought(text: string): boolean {
-  return /[.!?。！？]["'”’）\])}]*\s*$/.test(text.trimEnd())
+  return /[.!?\u3002\uff01\uff1f]["'\u201d\u2019\uff09\])}]*\s*$/.test(text.trimEnd())
 }
 
 function mergeGapMs(): number {

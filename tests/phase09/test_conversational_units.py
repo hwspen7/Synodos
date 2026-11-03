@@ -74,10 +74,10 @@ class ConversationalUnitsTests(unittest.TestCase):
 
     def test_handles_chinese_punctuation_with_real_word_times(self):
         original = utterance([
-            ("你好。", 500, 100), ("最近", 350, 20), ("怎么样？", 500, 0),
-        ], text="你好。 最近 怎么样？", language="zh")
+            ("\u4f60\u597d\u3002", 500, 100), ("\u6700\u8fd1", 350, 20), ("\u600e\u4e48\u6837\uff1f", 500, 0),
+        ], text="\u4f60\u597d\u3002 \u6700\u8fd1 \u600e\u4e48\u6837\uff1f", language="zh")
         lines = split_utterance(original)
-        self.assertEqual([x.text for x in lines], ["你好。", "最近 怎么样？"])
+        self.assertEqual([x.text for x in lines], ["\u4f60\u597d\u3002", "\u6700\u8fd1 \u600e\u4e48\u6837\uff1f"])
 
     def test_output_order_is_stable(self):
         first = utterance([("Hello.", 500, 30), ("Welcome.", 500, 0)])
