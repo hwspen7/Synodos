@@ -103,6 +103,9 @@ def collect_mature_labels(
     for item in items:
         sid = item.get("speaker_id")
         if (type(sid) is int and sid > 0
+                and item.get("emb") is not None
+                and str(item.get("speaker_name") or "").lower()
+                    != "unidentified speaker"
                 and not item.get("speaker_uncertain", False)
                 and not item.get("speaker_override", False)
                 and latest - int(item["end_sample"]) >= horizon):
