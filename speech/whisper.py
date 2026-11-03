@@ -56,13 +56,27 @@ class WhisperEngine:
             if os.environ.get("MEETING_WHISPER_DUAL_VAD", "0").strip().lower() in ("1", "true", "yes"):
                 speech_regions = crosscheck_speech_regions(samples, speech_regions)
             if not speech_regions:
-                return Recognition(engine="whisper")
+                return Recognition(engine="whisper", speech_detected=False)
+            # Auto LID is per VAD speech window, never a global label
+            # copied onto every utterance. Keep an escape hatch for A/B tests.
+            if language in ("auto", "und", "") and os.getenv(
+                "MEETING_WHISPER_WINDOW_LID", "1"
+            ).strip().lower() in ("1", "true", "yes"):
+                from speech.multilingual_windows import recognize_windows
+                window_kwargs = dict(kwargs, multilingual=True)
+                return recognize_windows(
+                    samples, speech_regions,
+                    lambda chunk, **kw: self._get_model().transcribe(chunk, **kw),
+                    window_kwargs,
+                )
             segments, info = self._get_model().transcribe(samples, **kwargs)
             # Faster Whisper infers lazily; consume under the inference lock.
             pieces = list(segments)
-        detected = getattr(info, "language", None) or language or "und"
+        detected = (language if language not in ("auto", "und", "")
+                    else getattr(info, "language", None) or "und")
         utterances = verify_utterances(
             pieces, speech_regions, round(len(samples) * 1000 / 16000), detected
         )
         return Recognition(utterances, detected,
-                           getattr(info, "language_probability", None), "whisper")
+                           getattr(info, "language_probability", None), "whisper",
+                           speech_detected=True)

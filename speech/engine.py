@@ -28,6 +28,8 @@ def recognize(audio: np.ndarray, *, language: str = "auto", terms: str = "",
                 _ENGINES[key] = WhisperEngine(config.model, config.device, config.compute_type)
             else:
                 from speech.qwen import QwenEngine
-                _ENGINES[key] = QwenEngine(config.model, config.device if config.device != "auto" else "cuda:0")
+                import os
+                aligner = os.getenv("MEETING_QWEN_FORCED_ALIGNER", "1").lower() not in ("0", "false", "no")
+                _ENGINES[key] = QwenEngine(config.model, config.device if config.device != "auto" else "cuda:0", aligner=aligner)
         backend = _ENGINES[key]
     return backend.recognize(filtered, language, terms)

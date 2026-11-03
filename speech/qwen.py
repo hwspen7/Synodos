@@ -31,38 +31,62 @@ class QwenEngine:
 
     def recognize(self, audio: np.ndarray, language: str = "auto", terms: str = "") -> Recognition:
         if len(audio) == 0:
-            return Recognition(engine="qwen3")
+            return Recognition(engine="qwen3", speech_detected=False)
         import warnings
+        from faster_whisper.vad import VadOptions, get_speech_timestamps
+        from speech.audio_windows import speech_windows
+        from speech.dual_vad import crosscheck_speech_regions
+        import os
+        samples = np.asarray(audio, dtype=np.float32)
+        # Independent acoustic speech boundaries prevent a no-alignment
+        # transcript from spanning the entire rolling buffer indefinitely.
+        vad = VadOptions(min_speech_duration_ms=200, min_silence_duration_ms=600, speech_pad_ms=150)
+        regions = get_speech_timestamps(samples, vad, sampling_rate=16000)
+        if os.getenv("MEETING_WHISPER_DUAL_VAD", "0").lower() in ("1", "true", "yes"):
+            regions = crosscheck_speech_regions(samples, regions)
+        if not regions:
+            return Recognition(engine="qwen3", speech_detected=False)
+        windows = speech_windows(regions, len(samples), max_window_s=18)
+        if len(windows) > 100:
+            raise RuntimeError("Too many ASR windows; process a shorter interval")
         if terms.strip():
-            warnings.warn("Qwen3-ASR adapter does not support vocabulary prompts; the transcript may omit configured hotwords", RuntimeWarning)
+            warnings.warn("Qwen3-ASR has no vocabulary prompt support in this adapter", RuntimeWarning)
+        utterances = []
+        recognized_languages = set()
         with self._lock:
             model = self._get_model()
-            arguments = {"audio": (np.asarray(audio, dtype=np.float32), 16000),
-                         "language": None if language == "auto" else LANGUAGES.get(language, language)}
-            try:
-                result = model.transcribe(**arguments, return_time_stamps=self.use_aligner)[0]
-            except (ValueError, RuntimeError) as exc:
-                if not self.use_aligner:
-                    raise
-                warnings.warn(f"Qwen3 forced alignment unavailable; preserving text without word timings: {exc}", RuntimeWarning)
-                result = model.transcribe(**arguments, return_time_stamps=False)[0]
-        detected = normalize_language(str(getattr(result, "language", language) or "und"))
-        text = str(getattr(result, "text", "") or "").strip()
-        if not text:
-            return Recognition(language=detected, engine="qwen3")
-        timestamps = getattr(result, "time_stamps", None) or []
-        units = []
-        if timestamps:
-            for stamp in timestamps:
-                value = getattr(stamp, "text", None) or getattr(stamp, "word", None) or ""
-                start = getattr(stamp, "start_time", None)
-                end = getattr(stamp, "end_time", None)
-                if start is not None and end is not None:
-                    units.append(Word(str(value), round(float(start) * 1000), round(float(end) * 1000)))
-        if units:
-            begin, end, quality = units[0].start_ms, units[-1].end_ms, "word"
-        else:
-            # Model output has no alignment. A window boundary is not a true word timestamp.
-            begin, end, quality = 0, round(len(audio) / 16), "window_estimate"
-        return Recognition((Utterance(text, begin, end, detected, tuple(units), quality),),
-                           detected, engine="qwen3")
+            for start, end in windows:
+                window = samples[start:end]
+                arguments = {"audio": (window, 16000),
+                             "language": None if language in ("auto", "und", "") else LANGUAGES.get(language, language)}
+                try:
+                    result = model.transcribe(**arguments, return_time_stamps=self.use_aligner)[0]
+                except (ValueError, RuntimeError) as exc:
+                    if not self.use_aligner:
+                        raise
+                    warnings.warn(f"Forced alignment failed; preserving text without word timing: {exc}", RuntimeWarning)
+                    result = model.transcribe(**arguments, return_time_stamps=False)[0]
+                detected = normalize_language(str(getattr(result, "language", language) or "und"))
+                text = str(getattr(result, "text", "") or "").strip()
+                if not text:
+                    continue
+                if detected not in ("und", "auto", ""):
+                    recognized_languages.add(detected)
+                units = []
+                for stamp in getattr(result, "time_stamps", None) or []:
+                    value = getattr(stamp, "text", None) or getattr(stamp, "word", None) or ""
+                    a, b = getattr(stamp, "start_time", None), getattr(stamp, "end_time", None)
+                    if a is None or b is None:
+                        continue
+                    a_ms, b_ms = round(float(a) * 1000), round(float(b) * 1000)
+                    if 0 <= a_ms < b_ms <= round(len(window) / 16) + 250:
+                        units.append(Word(str(value), round(start / 16) + a_ms, round(start / 16) + b_ms))
+                if units:
+                    begin, finish, quality = units[0].start_ms, units[-1].end_ms, "word"
+                else:
+                    # Window is VAD-bounded, not a manufactured word timestamp.
+                    begin, finish, quality = round(start / 16), round(end / 16), "window_estimate"
+                if finish > begin:
+                    utterances.append(Utterance(text, begin, finish, detected, tuple(units), quality))
+        label = next(iter(recognized_languages)) if len(recognized_languages) == 1 else "mul" if recognized_languages else "und"
+        return Recognition(tuple(utterances), label, engine="qwen3", speech_detected=True)

@@ -19,6 +19,7 @@ class Utterance:
     words: tuple[Word, ...] = ()
     timestamp_quality: str = "segment"
     confidence: float | None = None
+    language_confidence: float | None = None
 
     def as_legacy(self) -> dict:
         return {
@@ -29,6 +30,7 @@ class Utterance:
             "timestamp_quality": self.timestamp_quality,
             "words": [vars(x) for x in self.words],
             "confidence": self.confidence,
+            "language_confidence": self.language_confidence,
         }
 
 
@@ -38,3 +40,4 @@ class Recognition:
     language: str = "und"
     confidence: float | None = None
     engine: str = "legacy"
+    speech_detected: bool | None = None
