@@ -131,3 +131,70 @@ def restore_mature_labels(
         item["speaker_id"] = sid
         item["speaker_name"] = name
     return restored
+
+
+def summarize_cluster_fragmentation(
+    records: Iterable[Mapping[str, object]],
+) -> dict[str, object]:
+    """Summarize the final raw acoustic clusters versus published labels.
+
+    Diagnostic only. Different raw cluster labels are not necessarily
+    distinct people; two labels in one raw cluster do not prove identity.
+    No transcript, voiceprint vectors or participant names are exposed.
+    """
+    raw_to_speaker: dict[int, Counter[int]] = {}
+    speaker_to_raw: dict[int, set[int]] = {}
+    labeled = set()
+    without_embedding = 0
+    for record in records:
+        sid = record.get("speaker_id")
+        if type(sid) is int and sid > 0:
+            labeled.add(sid)
+        if record.get("emb") is None:
+            without_embedding += 1
+        raw = record.get("cluster")
+        if type(raw) is not int or raw < 0:
+            continue
+        if raw not in raw_to_speaker:
+            raw_to_speaker[raw] = Counter()
+        if type(sid) is int and sid > 0:
+            raw_to_speaker[raw][sid] += 1
+            speaker_to_raw.setdefault(sid, set()).add(raw)
+
+    conflicts = [
+        {
+            "raw_cluster_id": raw,
+            "labeled_segments": sum(labels.values()),
+            "distinct_published_labels": len(labels),
+            "largest_label_segment_count": max(labels.values()),
+        }
+        for raw, labels in raw_to_speaker.items()
+        if len(labels) > 1
+    ]
+    conflicts.sort(
+        key=lambda item: (
+            -item["distinct_published_labels"],
+            -item["labeled_segments"],
+            item["raw_cluster_id"],
+        )
+    )
+    return {
+        "raw_cluster_count": len(raw_to_speaker),
+        "published_positive_speaker_count": len(labeled),
+        "segments_without_embedding": without_embedding,
+        "raw_clusters_with_multiple_published_labels": len(conflicts),
+        "labeled_segments_in_conflicted_raw_clusters": sum(
+            item["labeled_segments"] for item in conflicts
+        ),
+        "max_published_labels_per_raw_cluster": max(
+            (len(labels) for labels in raw_to_speaker.values()), default=0
+        ),
+        "published_labels_spanning_multiple_raw_clusters": sum(
+            len(raws) > 1 for raws in speaker_to_raw.values()
+        ),
+        "largest_raw_cluster_size": max(
+            (sum(labels.values()) for labels in raw_to_speaker.values()),
+            default=0,
+        ),
+        "top_conflicted_raw_clusters": conflicts[:8],
+    }
