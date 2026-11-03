@@ -7,6 +7,10 @@ NAMES = {
     "spanish": "es", "russian": "ru", "italian": "it", "portuguese": "pt",
     "arabic": "ar", "hindi": "hi", "vietnamese": "vi", "thai": "th",
     "dutch": "nl", "turkish": "tr", "indonesian": "id", "malay": "ms",
+    "swedish": "sv", "danish": "da", "finnish": "fi",
+    "polish": "pl", "czech": "cs", "filipino": "fil",
+    "persian": "fa", "greek": "el", "hungarian": "hu",
+    "macedonian": "mk", "romanian": "ro",
 }
 
 
