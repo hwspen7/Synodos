@@ -72,11 +72,14 @@ class AudioBuffer:
         min_seconds: float,
         stop_event: threading.Event,
         wake_event: threading.Event | None = None,
+        update_event: threading.Event | None = None,
     ) -> bool:
         """Wait for the buffer to reach min_seconds or wake_event, returning False on stop."""
         with self._cond:
             while not stop_event.is_set():
                 if wake_event is not None and wake_event.is_set():
+                    return True
+                if update_event is not None and update_event.is_set():
                     return True
                 if self._count / self.sample_rate >= min_seconds:
                     return True
