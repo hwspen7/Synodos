@@ -298,6 +298,7 @@ async def replay(args) -> dict:
     sent_sequence = 0
     first_send = None
     replay_clock_ms = []
+    send_elapsed_ms = None
     ready = None
     started = time.perf_counter()
     async with connect(args.url, origin=args.origin, max_size=8 * 1024 * 1024) as ws:
@@ -361,6 +362,10 @@ async def replay(args) -> dict:
                         f"warnings={sum(counters['feature_warning_counts'].values())}",
                         flush=True,
                     )
+            # Capture the end of PCM transmission BEFORE stop/ASR
+            # finalization. Terminal processing must not count as pacing drift.
+            send_elapsed_ms = round(
+                (time.perf_counter() - first_send) * 1000, 1)
             await ws.send(json.dumps({
                 "type": "stop", "expected_samples": sent_samples
             }))
@@ -395,6 +400,11 @@ async def replay(args) -> dict:
             round(playback_ms -
                   sent_samples * 1000 / (SAMPLE_RATE * args.speed), 1)
             if playback_ms is not None else None),
+        "sender_pacing_drift_ms": (
+            round(send_elapsed_ms -
+                  sent_samples * 1000 / (SAMPLE_RATE * args.speed), 1)
+            if send_elapsed_ms is not None else None),
+        "sender_timing_measurable": True,
         "timing_interval_s": args.interval_seconds,
         "timing_by_elapsed_window": summarize_timing(counters, elapsed_ms),
         "timestamp_lag_note": (
@@ -430,6 +440,9 @@ async def replay(args) -> dict:
         "asr_cer": None,
         "subtitle_completeness": "manual_review_required",
     }
+    if (summary["sender_pacing_drift_ms"] is not None
+            and summary["sender_pacing_drift_ms"] > 2000):
+        summary["flags"].append("sender_pacing_more_than_2s_late")
     if counters["audio_received_samples"] not in (None, sent_samples):
         summary["flags"].append("server_audio_sample_count_mismatch")
     if not counters["server_closed"]:
