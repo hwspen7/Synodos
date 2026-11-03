@@ -15,7 +15,7 @@ def _flag(name: str, default: bool = False) -> bool:
 
 @dataclass(frozen=True)
 class SpeechSettings:
-    engine: str = "legacy"
+    engine: str = "whisper"
     model: str = "small"
     device: str = "auto"
     compute_type: str = "default"
@@ -47,7 +47,7 @@ class SpeechSettings:
 
 def load_settings() -> SpeechSettings:
     return SpeechSettings(
-        engine=os.getenv("MEETING_ASR_ENGINE", "legacy").lower(),
+        engine=os.getenv("MEETING_ASR_ENGINE", "whisper").lower(),
         model=os.getenv("MEETING_ASR_MODEL", "small"),
         device=os.getenv("MEETING_ASR_DEVICE", "auto"),
         compute_type=os.getenv("MEETING_ASR_COMPUTE", "default"),
