@@ -2,14 +2,26 @@
 from __future__ import annotations
 
 import unittest
+from urllib.parse import parse_qs, urlparse
 
 import numpy as np
 
 from api.socket_transport import AudioFrameSequence
-from tools.live_caption_ws_replay import capture_event, new_capture, pcm_packet
+from tools.live_caption_ws_replay import (
+    DEFAULT_WS_URL, capture_event, new_capture, pcm_packet,
+)
 
 
 class LiveCaptionWsReplayTests(unittest.TestCase):
+    def test_default_replay_disables_unrequested_translation(self):
+        """Standalone ASR replay must match browser's No translation option."""
+        params = parse_qs(urlparse(DEFAULT_WS_URL).query,
+                          keep_blank_values=True)
+        self.assertEqual(params["language"], ["auto"])
+        self.assertEqual(params["record_audio"], ["false"])
+        self.assertIn("translate_to", params)
+        self.assertEqual(params["translate_to"], [""])
+
     def test_pcm_packet_matches_actual_audio_protocol_and_rejects_gap(self):
         sequence = AudioFrameSequence()
         first = pcm_packet(np.array([1, -1, 200], dtype=np.int16), 0, 0)
