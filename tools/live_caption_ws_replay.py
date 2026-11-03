@@ -41,6 +41,27 @@ def pcm_packet(pcm, seq: int, offset: int) -> bytes:
     return HEADER.pack(b"MOPA", seq, offset) + samples.astype("<i2").tobytes()
 
 
+def _speaker_is_unidentified(speaker_id: object, speaker_name: object) -> bool:
+    """Unidentified means no usable speaker assignment, not an unknown name."""
+    return (
+        type(speaker_id) is not int or speaker_id <= 0
+        or str(speaker_name or "").strip().lower() == "unidentified speaker"
+    )
+
+
+def _speaker_transition(old_id: object, old_name: object,
+                        new_id: object, new_name: object) -> str:
+    old_unknown = _speaker_is_unidentified(old_id, old_name)
+    new_unknown = _speaker_is_unidentified(new_id, new_name)
+    if old_unknown and not new_unknown:
+        return "unidentified_to_labeled"
+    if not old_unknown and new_unknown:
+        return "labeled_to_unidentified"
+    if old_unknown and new_unknown:
+        return "unidentified_to_other_unidentified"
+    return "labeled_to_different_labeled"
+
+
 def capture_event(state: dict, message: dict, elapsed_ms: float) -> bool:
     """Count events without writing private transcript strings to disk."""
     kind = str(message.get("type", "unknown"))
@@ -67,21 +88,57 @@ def capture_event(state: dict, message: dict, elapsed_ms: float) -> bool:
         if incoming and state["first_confirmed_ms"] is None:
             state["first_confirmed_ms"] = round(elapsed_ms, 1)
         previous = state["segment_speakers"]
+        prior_names = state["segment_speaker_names"]
+        prior_text = state["segment_texts"]
         updated = {}
+        updated_names = {}
+        updated_text = {}
         for segment in incoming:
             sid = segment.get("id")
-            if not isinstance(sid, int):
+            if type(sid) is not int:
                 state["flags"].append("invalid_segment_id")
                 continue
             voice = segment.get("speaker_id")
+            name = segment.get("speaker_name")
+            text = str(segment.get("text") or "")
             updated[sid] = voice
-            if sid in previous and previous[sid] != voice:
-                state["speaker_reassignments"] += 1
+            updated_names[sid] = name
+            updated_text[sid] = text
+            if sid in previous:
+                if previous[sid] != voice:
+                    state["speaker_reassignments"] += 1
+                    state["speaker_change_counts"][sid] += 1
+                    state["speaker_change_types"][_speaker_transition(
+                        previous[sid], prior_names.get(sid),
+                        voice, name,
+                    )] += 1
+                if sid in prior_text and prior_text[sid] != text:
+                    state["confirmed_text_changes"] += 1
+                    state["changed_text_ids"].add(sid)
         if len(updated) != len(incoming):
             state["flags"].append("duplicate_segment_ids")
-        # No semantic inference: repeated words can be genuine repeated speech.
+        disappeared = set(previous) - set(updated)
+        state["confirmed_segment_disappearances"] += len(disappeared)
+        # Text is held in memory for comparison, never persisted in reports.
+        state["segment_texts"] = updated_text
         state["segment_speakers"] = updated
+        state["segment_speaker_names"] = updated_names
         state["final_segment_count"] = len(updated)
+        state["max_visible_segments"] = max(
+            state["max_visible_segments"], len(updated)
+        )
+    elif kind == "feature_warning":
+        feature = str(message.get("feature") or "unspecified")[:80]
+        state["feature_warning_counts"][feature] += 1
+        sample = {
+            "feature": feature,
+            "message": str(message.get("message") or "")[:240],
+        }
+        # Keep only a few distinct diagnostic messages, never audio or
+        # recognized transcript text. Reports remain in gitignored storage.
+        if (sample not in state["feature_warning_samples"]
+                and len(state["feature_warning_samples"]) < 12):
+            state["feature_warning_samples"].append(sample)
     elif kind == "audio_received":
         state["audio_delivery_matched"] = message.get("matched") is True
         state["audio_received_samples"] = message.get("samples")
@@ -100,7 +157,15 @@ def new_capture() -> dict:
         "first_preview_ms": None, "first_confirmed_ms": None,
         "last_partial_revision": 0, "last_transcript_version": 0,
         "last_preview_chars": 0, "clear_events": 0,
-        "segment_speakers": {}, "speaker_reassignments": 0,
+        "segment_speakers": {}, "segment_speaker_names": {},
+        "segment_texts": {},
+        "speaker_reassignments": 0,
+        "speaker_change_types": Counter(),
+        "speaker_change_counts": Counter(),
+        "confirmed_text_changes": 0, "changed_text_ids": set(),
+        "confirmed_segment_disappearances": 0,
+        "max_visible_segments": 0,
+        "feature_warning_counts": Counter(), "feature_warning_samples": [],
         "final_segment_count": 0, "server_closed": False,
         "server_saved": None, "audio_delivery_matched": None,
         "audio_received_samples": None,
@@ -198,6 +263,16 @@ async def replay(args) -> dict:
         "first_confirmed_wall_ms": counters["first_confirmed_ms"],
         "final_confirmed_segments": counters["final_segment_count"],
         "speaker_reassignments": counters["speaker_reassignments"],
+        "speaker_reassignment_types": dict(counters["speaker_change_types"]),
+        "segments_with_speaker_changes": len(counters["speaker_change_counts"]),
+        "max_speaker_changes_one_segment": max(
+            counters["speaker_change_counts"].values(), default=0),
+        "confirmed_text_revisions": counters["confirmed_text_changes"],
+        "segments_with_text_revisions": len(counters["changed_text_ids"]),
+        "confirmed_segment_disappearances": counters["confirmed_segment_disappearances"],
+        "max_visible_confirmed_segments": counters["max_visible_segments"],
+        "feature_warning_counts": dict(counters["feature_warning_counts"]),
+        "feature_warning_samples": counters["feature_warning_samples"],
         "preview_clear_events": counters["clear_events"],
         "audio_received_samples": counters["audio_received_samples"],
         "delivery_matched": counters["audio_delivery_matched"],
