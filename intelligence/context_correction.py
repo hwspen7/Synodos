@@ -176,8 +176,10 @@ def review(
     suggestions = []
     for start in range(0, len(reviewable), 12):
         batch = reviewable[start:start + 12]
-        first_index = next(i for i, s in enumerate(ordered) if s["id"] == batch[0]["id"])
-        last_index = first_index + len(batch)
+        batch_ids = {int(item["id"]) for item in batch}
+        locations = [i for i, item in enumerate(ordered) if int(item["id"]) in batch_ids]
+        first_index = min(locations)
+        last_index = max(locations) + 1
         neighboring = ordered[max(0, first_index - 2):min(len(ordered), last_index + 2)]
         raw = gateway.structured(
             SYSTEM_PROMPT, prompt(neighboring, batch, selected_mode),
