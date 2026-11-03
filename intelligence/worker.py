@@ -170,9 +170,23 @@ def main():
     log.info('Phase 05 worker started (provider=%s)',cfg.provider)
     store.retry_stale()
     count=0
+    last_recovery=time.monotonic()
     while True:
+        if time.monotonic()-last_recovery > 90:
+            store.retry_stale()
+            last_recovery=time.monotonic()
         job=store.claim()
         if job:
+            from threading import Event, Thread
+            stop_heartbeat=Event()
+            def renew_lease():
+                while not stop_heartbeat.wait(60):
+                    try:
+                        store.touch_job(job['id'])
+                    except Exception:
+                        log.exception('Unable to refresh AI job lease')
+            heartbeat=Thread(target=renew_lease,daemon=True,name='ai-job-lease')
+            heartbeat.start()
             try:
                 out=process(job,gateway)
                 store.finish(job['id'],out)
@@ -180,6 +194,9 @@ def main():
             except Exception as exc:
                 store.fail(job['id'],str(exc))
                 log.exception('Job %s failed (%s)',job['id'],job['kind'])
+            finally:
+                stop_heartbeat.set()
+                heartbeat.join(timeout=1)
             count+=1
         elif args.once:
             break
