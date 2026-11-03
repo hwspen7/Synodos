@@ -574,6 +574,82 @@ class SessionProcessor(threading.Thread):
             self._send_state()
         return changed
 
+    def _notify_async_ready(self, _future: Future) -> None:
+        self._async_ready.set()
+        self.buffer.wake()
+
+    def _enqueue_translation(self, segment: dict) -> None:
+        if not self.translate_target:
+            return
+        source = str(segment.get("language") or "und").lower()
+        if source == self.translate_target:
+            segment["translation"] = segment["text"]
+            return
+        task = submit_translation(segment["text"], source, self.translate_target)
+        if task is None:
+            self._put({"type": "feature_warning", "feature": "translation",
+                       "message": "Translation backlog is full; original text retained"})
+            return
+        self._translation_tasks[segment["id"]] = task
+        task.add_done_callback(self._notify_async_ready)
+
+    def _collect_speakers(self, wait_seconds: float = 0.0) -> bool:
+        if not self._speaker_tasks:
+            return False
+        if wait_seconds > 0:
+            wait(tuple(self._speaker_tasks.values()), timeout=wait_seconds)
+        updated = False
+        for sid, future in tuple(self._speaker_tasks.items()):
+            if not future.done():
+                continue
+            self._speaker_tasks.pop(sid, None)
+            original = next((s for s in self.segments if s["id"] == sid), None)
+            if original is None:
+                continue
+            try:
+                pieces = future.result()
+            except Exception:
+                logger.exception("Speaker-turn analysis failed; keeping transcript")
+                pieces = []
+            if not pieces:
+                original["speaker_uncertain"] = True
+                self._enqueue_translation(original)
+                updated = True
+                continue
+            source_words = original.get("words", [])
+            source_language = original.get("language", "und")
+            for index, piece in enumerate(pieces):
+                if index == 0:
+                    segment = original
+                else:
+                    segment = dict(original)
+                    segment["id"] = self._next_segment_id
+                    self._next_segment_id += 1
+                    self.segments.append(segment)
+                segment["start_sample"] = int(piece["start"] * self.settings.sample_rate / 1000) + (
+                    original.get("_audio_base_sample", 0)
+                )
+                segment["end_sample"] = int(piece["end"] * self.settings.sample_rate / 1000) + (
+                    original.get("_audio_base_sample", 0)
+                )
+                segment["text"] = piece["text"]
+                segment["language"] = source_language
+                segment["emb"] = normalized_embedding(piece.get("emb"))
+                segment["cluster"] = -1
+                segment["speaker_uncertain"] = bool(piece.get("ambiguous") or segment["emb"] is None)
+                segment["translation"] = ""
+                if isinstance(source_words, list):
+                    segment["words"] = [
+                        w for w in source_words if isinstance(w, dict)
+                        and piece["start"] <= (int(w.get("start_ms", 0)) + int(w.get("end_ms", 0))) / 2 < piece["end"]
+                    ]
+                self._enqueue_translation(segment)
+            updated = True
+            metrics.increment("speaker_async_completed")
+        if updated:
+            self._last_reclustered_segment_id = 0
+        return updated
+
     def _collect_translations(self, wait_seconds: float = 0.0) -> None:
         if not self._translation_tasks:
             return
