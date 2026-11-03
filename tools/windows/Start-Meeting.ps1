@@ -175,8 +175,10 @@ function Test-BackendSourceUpdated([int]$ProcessId) {
     } catch {
         return $false
     }
-    foreach ($relativePath in @('main.py', 'api\websocket.py', 'sessions\processor.py',
-                                  'speech\whisper.py', 'core\runtime.py')) {
+    foreach ($relativePath in @('main.py', 'api\websocket.py', 'api\intelligence.py',
+                                  'intelligence\store.py', 'intelligence\contracts.py',
+                                  'sessions\processor.py', 'speech\whisper.py',
+                                  'core\runtime.py')) {
         $path = Join-Path $RepoRoot $relativePath
         if ((Test-Path -LiteralPath $path) -and
             (Get-Item -LiteralPath $path).LastWriteTimeUtc -gt $started.AddSeconds(1)) {
@@ -312,6 +314,19 @@ function Start-Launcher {
         $parentCommand = if ($null -eq $parentInfo) { '' } else { [string]$parentInfo.CommandLine }
         $workerReusable = ($parentCommand.IndexOf('Start-Meeting.ps1', [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
             $parentCommand.IndexOf('-Role worker', [StringComparison]::OrdinalIgnoreCase) -ge 0)
+    }
+    if ($workerReusable) {
+        $workerStart = (Get-Process -Id ([int]$workers[0].ProcessId)).StartTime.ToUniversalTime()
+        foreach ($relPath in @('intelligence\worker.py', 'intelligence\context_correction.py',
+                               'intelligence\contracts.py', 'intelligence\store.py')) {
+            $workerSource = Join-Path $RepoRoot $relPath
+            if ((Test-Path -LiteralPath $workerSource) -and
+                (Get-Item -LiteralPath $workerSource).LastWriteTimeUtc -gt $workerStart.AddSeconds(1)) {
+                $workerReusable = $false
+                Write-Host 'AI worker source has changed. Restarting the previous worker.'
+                break
+            }
+        }
     }
     if ($workerReusable) {
         Write-Host 'Reusing the AI worker started by this launcher.'
