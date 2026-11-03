@@ -14,6 +14,8 @@ import argparse
 import asyncio
 from collections import Counter
 import json
+import math
+from statistics import median
 from pathlib import Path
 import struct
 import sys
@@ -66,10 +68,73 @@ def _speaker_transition(old_id: object, old_name: object,
     return "labeled_to_different_labeled"
 
 
-def capture_event(state: dict, message: dict, elapsed_ms: float) -> bool:
+def _timing_bucket(state: dict, elapsed_ms: float) -> dict:
+    """Group streamed captions into elapsed-wall-time windows."""
+    interval = state["timing_interval_s"]
+    index = int(max(0, elapsed_ms) // (interval * 1000))
+    if index not in state["timing_buckets"]:
+        state["timing_buckets"][index] = {
+            "events": Counter(), "preview_lags": [],
+            "confirmation_lags": [], "new_segments": 0,
+            "speaker_label_changes": 0,
+            "confirmed_text_changes": 0,
+            "max_transport_gap_ms": 0.0,
+        }
+    return state["timing_buckets"][index]
+
+
+def _source_end_lag(elapsed_ms: float, end_ms: object) -> float | None:
+    """Apparent delay since reported utterance end, not word-level latency."""
+    if type(end_ms) not in (int, float) or not math.isfinite(end_ms):
+        return None
+    delta = elapsed_ms - end_ms
+    return round(delta, 1) if delta >= 0 else None
+
+
+def _p95(values: list[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    return round(ordered[math.ceil(0.95 * len(ordered)) - 1], 1)
+
+
+def summarize_timing(state: dict, elapsed_ms: float) -> list[dict]:
+    """Report whether apparent caption delay grows over a long session."""
+    width = state["timing_interval_s"]
+    periods = max(1, math.ceil(max(0, elapsed_ms) / (1000 * width)))
+    result = []
+    for index in range(periods):
+        bucket = state["timing_buckets"].get(index) or {}
+        previews = bucket.get("preview_lags", [])
+        confirms = bucket.get("confirmation_lags", [])
+        result.append({
+            "from_s": width * index,
+            "to_s": min(width * (index + 1), round(elapsed_ms / 1000, 1)),
+            "events": dict(bucket.get("events", {})),
+            "new_confirmed_segments": bucket.get("new_segments", 0),
+            "speaker_label_changes": bucket.get("speaker_label_changes", 0),
+            "confirmed_text_changes": bucket.get("confirmed_text_changes", 0),
+            "preview_lag_samples": len(previews),
+            "preview_lag_median_ms": (
+                round(median(previews), 1) if previews else None),
+            "preview_lag_p95_ms": _p95(previews),
+            "confirmation_lag_samples": len(confirms),
+            "confirmation_lag_median_ms": (
+                round(median(confirms), 1) if confirms else None),
+            "confirmation_lag_p95_ms": _p95(confirms),
+            "max_audio_transport_gap_ms": round(
+                bucket.get("max_transport_gap_ms", 0.0), 1),
+        })
+    return result
+
+
+def capture_event(state: dict, message: dict, elapsed_ms: float,
+                  *, sent_samples: int | None = None) -> bool:
     """Count events without writing private transcript strings to disk."""
     kind = str(message.get("type", "unknown"))
     state["events"][kind] += 1
+    bucket = _timing_bucket(state, elapsed_ms)
+    bucket["events"][kind] += 1
     if kind == "partial":
         revision = message.get("revision")
         if not isinstance(revision, int) or revision <= state["last_partial_revision"]:
@@ -79,6 +144,10 @@ def capture_event(state: dict, message: dict, elapsed_ms: float) -> bool:
         text = str(message.get("text", "") or "").strip()
         if text and state["first_preview_ms"] is None:
             state["first_preview_ms"] = round(elapsed_ms, 1)
+        if text:
+            lag = _source_end_lag(elapsed_ms, message.get("end_ms"))
+            if lag is not None:
+                bucket["preview_lags"].append(lag)
         if not text:
             state["clear_events"] += 1
         state["last_preview_chars"] = len(text)
@@ -108,9 +177,15 @@ def capture_event(state: dict, message: dict, elapsed_ms: float) -> bool:
             updated[sid] = voice
             updated_names[sid] = name
             updated_text[sid] = text
+            if sid not in previous:
+                bucket["new_segments"] += 1
+                lag = _source_end_lag(elapsed_ms, segment.get("end_ms"))
+                if lag is not None:
+                    bucket["confirmation_lags"].append(lag)
             if sid in previous:
                 if previous[sid] != voice:
                     state["speaker_reassignments"] += 1
+                    bucket["speaker_label_changes"] += 1
                     state["speaker_change_counts"][sid] += 1
                     state["speaker_change_types"][_speaker_transition(
                         previous[sid], prior_names.get(sid),
@@ -118,6 +193,7 @@ def capture_event(state: dict, message: dict, elapsed_ms: float) -> bool:
                     )] += 1
                 if sid in prior_text and prior_text[sid] != text:
                     state["confirmed_text_changes"] += 1
+                    bucket["confirmed_text_changes"] += 1
                     state["changed_text_ids"].add(sid)
         if len(updated) != len(incoming):
             state["flags"].append("duplicate_segment_ids")
@@ -143,6 +219,13 @@ def capture_event(state: dict, message: dict, elapsed_ms: float) -> bool:
         if (sample not in state["feature_warning_samples"]
                 and len(state["feature_warning_samples"]) < 12):
             state["feature_warning_samples"].append(sample)
+    elif kind == "audio_progress":
+        accepted = message.get("samples")
+        if (type(accepted) is int and type(sent_samples) is int
+                and 0 <= accepted <= sent_samples):
+            gap_ms = (sent_samples - accepted) * 1000 / SAMPLE_RATE
+            bucket["max_transport_gap_ms"] = max(
+                bucket["max_transport_gap_ms"], gap_ms)
     elif kind == "audio_received":
         state["audio_delivery_matched"] = message.get("matched") is True
         state["audio_received_samples"] = message.get("samples")
@@ -155,8 +238,11 @@ def capture_event(state: dict, message: dict, elapsed_ms: float) -> bool:
     return False
 
 
-def new_capture() -> dict:
+def new_capture(interval_seconds: int = 300) -> dict:
+    if not 30 <= interval_seconds <= 1800:
+        raise ValueError("Timing interval must be within 30..1800 seconds")
     return {
+        "timing_interval_s": interval_seconds, "timing_buckets": {},
         "events": Counter(), "flags": [], "errors": [],
         "first_preview_ms": None, "first_confirmed_ms": None,
         "last_partial_revision": 0, "last_transcript_version": 0,
@@ -197,7 +283,7 @@ async def replay(args) -> dict:
         np.clip(np.round(wave * 32768), -32768, 32767).astype("<i2")
     ]
 
-    counters = new_capture()
+    counters = new_capture(args.interval_seconds)
     sent_samples = 0
     sent_sequence = 0
     first_send = None
@@ -222,7 +308,8 @@ async def replay(args) -> dict:
                 msg = json.loads(raw)
                 elapsed = 0.0 if first_send is None else (
                     time.perf_counter() - first_send) * 1000
-                if capture_event(counters, msg, elapsed):
+                if capture_event(
+                        counters, msg, elapsed, sent_samples=sent_samples):
                     return
             if not counters["server_closed"]:
                 counters["flags"].append("socket_closed_before_final_confirmation")
@@ -262,6 +349,13 @@ async def replay(args) -> dict:
         "sent_frames": sent_sequence, "sent_samples": sent_samples,
         "sent_audio_duration_s": round(sent_samples / SAMPLE_RATE, 2),
         "total_wall_ms": elapsed_ms,
+        "timing_interval_s": args.interval_seconds,
+        "timing_by_elapsed_window": summarize_timing(counters, elapsed_ms),
+        "timestamp_lag_note": (
+            "Apparent lag compares wall-clock event reception with ASR "
+            "utterance end timestamps. This does not measure word-by-word "
+            "latency or certify transcript completeness."
+        ),
         "server_ready": ready,
         "events": dict(counters["events"]),
         "first_preview_wall_ms": counters["first_preview_ms"],
@@ -313,6 +407,8 @@ def main() -> int:
     parser.add_argument("--speed", type=float, default=1.0,
                         help="Only speed=1.0 gives real-time timing")
     parser.add_argument("--final-timeout", type=float, default=120.0)
+    parser.add_argument("--interval-seconds", type=int, default=300,
+                        help="Group progress and caption lag every 5 minutes")
     parser.add_argument("--output", type=Path,
                         default=Path("benchmark/fixed195/live_caption_replay.json"))
     args = parser.parse_args()
