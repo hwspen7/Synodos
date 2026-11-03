@@ -95,6 +95,11 @@ def fail(jid, error):
         conn.execute("UPDATE ai_jobs SET status=CASE WHEN attempts < max_attempts THEN 'queued' ELSE 'failed' END, error=%s, locked_at=NULL, updated_at=now() WHERE id=%s AND status='running'", (msg, jid))
 
 
+def touch_job(jid):
+    with connection() as conn:
+        conn.execute("UPDATE ai_jobs SET locked_at=now() WHERE id=%s AND status='running'", (jid,))
+
+
 def retry_stale(minutes=45):
     # Worker crash recovery, bounded by max_attempts.
     with connection() as conn:
