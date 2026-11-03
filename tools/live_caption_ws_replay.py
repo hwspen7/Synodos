@@ -208,6 +208,7 @@ async def replay(args) -> dict:
             "model": opening.get("asr_model"),
             "processing_window_s": opening.get("processing_window_s"),
             "min_commit_context_s": opening.get("min_commit_context_s"),
+            "translation_target": opening.get("translation_target"),
         }
 
         async def receive():
@@ -297,8 +298,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--audio", type=Path,
                         default=Path("benchmark/fixed195/audio/fixed195-en-m01.wav"))
+    # An absent translate_to query parameter inherits MEETING_TRANSLATE_TO
+    # (which defaults to English). An explicit empty value matches the
+    # browser's "No translation" option and isolates ASR/diarization testing.
     parser.add_argument("--url", default="ws://127.0.0.1:8000/ws/audio?"
-                        "language=auto&record_audio=false")
+                        "language=auto&record_audio=false&translate_to=")
     parser.add_argument("--origin", default="http://localhost:5173")
     parser.add_argument("--loops", type=int, default=1,
                         help="Repeat same source for endurance only, not accuracy")
