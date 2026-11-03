@@ -24,7 +24,7 @@ const router = useRouter()
 const WS_BASE = (import.meta.env.VITE_WS_URL as string | undefined) ?? ''
 const language = ref('en')
 const translationTarget = ref('en')
-const recordAudio = ref(false)
+const recordAudio = ref(true)
 const partialText = ref('')
 const partialLanguage = ref('')
 const audioAnalysis = ref('')
@@ -61,6 +61,9 @@ const spkThreshold = ref(0.3)
 const applying = ref(false)
 const micLevel = ref(0)
 const micSilent = ref(false)
+const capturedSeconds = ref(0)
+const deliveredSeconds = ref(0)
+const wavRecordingEnabled = ref(false)
 
 let client: RealtimeClient | null = null
 let recorder: Awaited<ReturnType<typeof startMicRecording>> | null = null
@@ -69,6 +72,17 @@ let stickToBottom = true
 let stopRequested = false
 let realtimeError = false
 let audioStopAcknowledged = false
+let capturedSamples = 0
+let capturePaintSample = 0
+let startingSegmentCount = 0
+let audioDeliveryWatchdog: ReturnType<typeof setTimeout> | null = null
+
+function clearAudioDeliveryWatchdog(): void {
+  if (audioDeliveryWatchdog !== null) {
+    window.clearTimeout(audioDeliveryWatchdog)
+    audioDeliveryWatchdog = null
+  }
+}
 
 const statusText = computed(() => {
   switch (status.value) {
@@ -317,10 +331,22 @@ async function startMic(): Promise<void> {
   error.value = ''
   micLevel.value = 0
   micSilent.value = false
+  capturedSamples = 0
+  capturePaintSample = 0
+  capturedSeconds.value = 0
+  deliveredSeconds.value = 0
   let silentCount = 0
   try {
     recorder = await startMicRecording(
-      (pcm) => client?.sendPcm(pcm),
+      (pcm) => {
+        if (!client?.connected) return
+        client.sendPcm(pcm)
+        capturedSamples += pcm.length
+        if (capturedSamples - capturePaintSample >= 8000) {
+          capturePaintSample = capturedSamples
+          capturedSeconds.value = capturedSamples / 16000
+        }
+      },
       16000,
       (level) => {
         micLevel.value = level
@@ -333,9 +359,22 @@ async function startMic(): Promise<void> {
           micSilent.value = false
         }
       },
+      () => {
+        realtimeError = true
+        error.value = 'Microphone device disconnected or permission was revoked.'
+        if (recording.value) void stop()
+      },
     )
+    startingSegmentCount = segments.value.length
     recording.value = true
     status.value = 'recording'
+    clearAudioDeliveryWatchdog()
+    audioDeliveryWatchdog = window.setTimeout(() => {
+      if (recording.value && capturedSamples >= 16000 && deliveredSeconds.value === 0) {
+        realtimeError = true
+        error.value = 'Microphone audio is not confirmed by the server. Check the connection before recording further.'
+      }
+    }, 7000)
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
     status.value = serverInfo.value ? 'idle' : status.value
@@ -360,6 +399,7 @@ async function stop(): Promise<void> {
   stopRequested = true
   audioStopAcknowledged = false
   status.value = 'stopping'
+  clearAudioDeliveryWatchdog()
   const activeRecorder = recorder
   recorder = null
   micLevel.value = 0
@@ -377,6 +417,7 @@ async function stop(): Promise<void> {
 }
 
 function stopInternal(): void {
+  clearAudioDeliveryWatchdog()
   recording.value = false
   void recorder?.stop().catch(() => {})
   recorder = null
@@ -399,6 +440,11 @@ function connect(autostart = false): void {
   bufferedMs.value = 0
   partialText.value = ''
   serverInfo.value = null
+  capturedSamples = 0
+  capturedSeconds.value = 0
+  deliveredSeconds.value = 0
+  wavRecordingEnabled.value = false
+  clearAudioDeliveryWatchdog()
   stickToBottom = true
   stopRequested = false
   realtimeError = false
@@ -410,6 +456,10 @@ function connect(autostart = false): void {
     onReady: (msg) => {
       if (clientSeq !== mySeq) return
       serverInfo.value = msg
+      wavRecordingEnabled.value = msg.wav_recording_enabled === true
+      if (recordAudio.value && !wavRecordingEnabled.value) {
+        error.value = 'WAV recording was requested but the server could not enable it.'
+      }
       meetingTitle.value = msg.title ?? 'Untitled Meeting'
       mergeGapS.value = msg.merge_gap_s || 2
       if (msg.participant_ids) selectedParticipantIds.value = msg.participant_ids
@@ -443,9 +493,15 @@ function connect(autostart = false): void {
       if (clientSeq !== mySeq) return
       bufferedMs.value = ms
     },
-    onAudioReceived: (_samples, matched) => {
+    onAudioProgress: (samples) => {
+      if (clientSeq !== mySeq) return
+      deliveredSeconds.value = samples / 16000
+      if (samples > 0) clearAudioDeliveryWatchdog()
+    },
+    onAudioReceived: (samples, matched) => {
       if (clientSeq !== mySeq) return
       audioStopAcknowledged = matched
+      deliveredSeconds.value = samples / 16000
       if (!matched) {
         realtimeError = true
         error.value = 'Audio sample mismatch: the server did not receive every sent sample.'
@@ -460,6 +516,7 @@ function connect(autostart = false): void {
       if (clientSeq !== mySeq) return
       client = null
       recording.value = false
+      clearAudioDeliveryWatchdog()
       void recorder?.stop().catch(() => {})
       recorder = null
       if (reason === 'closed') {
@@ -470,8 +527,13 @@ function connect(autostart = false): void {
           realtimeError = true
           error.value = 'Audio stop acknowledgement missing. Verify the recording before relying on it.'
         } else if (stopRequested && !realtimeError) {
-          showToast('Stopped and automatically saved')
+          if (deliveredSeconds.value >= 1 && segments.value.length <= startingSegmentCount) {
+            error.value = 'Audio reached the server, but no speech was recognized. Check the microphone level and the saved WAV.'
+          } else {
+            showToast('Stopped and automatically saved')
+          }
         }
+        if (stopRequested && recordAudio.value) void loadRecordings()
       } else {
         status.value = 'disconnected'
         if (!realtimeError) error.value = 'Connection lost before final confirmation.'
@@ -565,7 +627,9 @@ onBeforeUnmount(() => stopInternal())
             <span v-if="recording" class="mic-level" :title="`Microphone level ${(micLevel * 100).toFixed(1)}%`">
               <span class="mic-level-bar" :style="{ width: Math.min(100, micLevel * 300) + '%' }"></span>
             </span>
+            <span v-if="recording">Mic {{ capturedSeconds.toFixed(1) }}s sent / {{ deliveredSeconds.toFixed(1) }}s received</span>
             <span v-if="serverInfo">Buffered {{ (bufferedMs / 1000).toFixed(1) }}s</span>
+            <span v-if="serverInfo">WAV {{ wavRecordingEnabled ? 'on' : 'off' }}</span>
             <span>Segments {{ transcriptMeta.segments }} \u00b7 Paragraphs {{ transcriptMeta.paragraphs }}</span>
             <span v-if="participantNames.length > 0" class="participant-chip">
               <AppIcon name="users" :size="13" />
@@ -683,8 +747,8 @@ onBeforeUnmount(() => stopInternal())
       <div v-if="segments.length === 0" class="empty-state">
         <div class="empty-icon"><AppIcon name="mic" :size="26" /></div>
         <h3>{{ recording ? 'Listening...' : 'No transcript yet' }}</h3>
-        <p v-if="!recording">Start recording and pause at least two seconds after speaking.</p>
-        <p v-else>Pause for two seconds after speaking to create a segment.</p>
+        <p v-if="!recording">Start recording and speak for several seconds. Short recordings are finalized when stopped.</p>
+        <p v-else>Speak for several seconds. Confirmed text may appear after about seven seconds, or when recording stops.</p>
         <p v-if="recording && micSilent" class="hint-text warn-text" style="margin-top:8px">
           No microphone input detected. Check browser permission and system microphone settings.
         </p>

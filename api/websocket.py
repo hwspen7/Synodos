@@ -173,6 +173,20 @@ async def ws_audio(
         if connection_lock is not None:
             connection_lock.release()
 
+    # Initialize the WAV writer before announcing whether recording is active.
+    recording_requested = bool(meeting_id) and (
+        record_audio if record_audio is not None else speech_config.record_audio
+    )
+    archive_warning = None
+    if recording_requested:
+        try:
+            audio_archive = RecordingWriter(
+                speech_config.recording_root, meeting_id,
+                speech_config.max_recording_bytes,
+            )
+        except Exception as exc:
+            archive_warning = f"WAV recording could not start: {exc}"
+
     await websocket.send_json(
         {
             "type": "ready",
@@ -197,18 +211,18 @@ async def ws_audio(
             "diarization_mode": os.getenv("MEETING_DIARIZATION_MODE", "cluster"),
             "asr_language": session.processor.speech_language,
             "translation_target": session.processor.translate_target,
+            "wav_recording_enabled": audio_archive is not None,
         }
     )
-
-    if meeting_id and (record_audio if record_audio is not None else speech_config.record_audio):
-        try:
-            audio_archive = RecordingWriter(speech_config.recording_root, meeting_id,
-                                            speech_config.max_recording_bytes)
-        except Exception as exc:
-            await websocket.send_json({"type": "feature_warning", "feature": "recording", "message": str(exc)})
+    if archive_warning:
+        await websocket.send_json({
+            "type": "feature_warning", "feature": "recording",
+            "message": archive_warning,
+        })
     forwarder = asyncio.create_task(_outbox_forwarder(session))
     stop_requested = False
     received_samples = 0
+    last_progress_samples = 0
     try:
         while True:
             message = await websocket.receive()
@@ -222,6 +236,14 @@ async def ws_audio(
                         received_samples += len(frame)
                         if audio_archive is not None:
                             audio_archive.append(data)
+                        # A running microphone UI must be backed by confirmed
+                        # server-side PCM, not just by browser permissions.
+                        if received_samples - last_progress_samples >= settings.sample_rate // 2:
+                            last_progress_samples = received_samples
+                            await session.outbox.put({
+                                "type": "audio_progress",
+                                "samples": received_samples,
+                            })
                         if online is not None:
                             live_text = await asyncio.to_thread(online.accept, frame)
                             preview = online_preview.update(live_text, language, 0,
@@ -232,6 +254,12 @@ async def ws_audio(
                         await websocket.send_json({"type": "error", "message": str(exc)})
                     except RecordingQuotaExceeded as exc:
                         await websocket.send_json({"type": "error", "message": str(exc)})
+                        break
+                    except OSError:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "WAV recording failed while writing audio. Check disk space and permissions.",
+                        })
                         break
                     except AudioBackpressureError:
                         metrics.increment("websocket_backpressure_stops")

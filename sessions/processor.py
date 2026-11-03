@@ -121,6 +121,7 @@ class SessionProcessor(threading.Thread):
         self._transcript_version = 0
         self._last_state_sent = 0.0
         self._last_inferred_absolute_end = -1
+        self._asr_failure_reported = False
         self._last_reclustered_segment_id = 0
 
         # Handle transcripts and speaker assignments.
@@ -200,6 +201,12 @@ class SessionProcessor(threading.Thread):
                     changed = self._cycle(final=False)
                 except Exception:
                     logger.exception("session %s cycle failed", self.session_id)
+                    if not self._asr_failure_reported:
+                        self._asr_failure_reported = True
+                        self._put({
+                            "type": "error",
+                            "message": "Speech recognition failed. Check the backend ASR and GPU logs.",
+                        })
                     changed = False
                 if self._drain_save_requests():
                     continue

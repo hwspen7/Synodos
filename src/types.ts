@@ -19,6 +19,7 @@ export interface ServerReady {
   diarization_mode?: string
   asr_language?: string
   translation_target?: string
+  wav_recording_enabled?: boolean
 }
 
 export interface TranscriptSegment {
@@ -46,6 +47,11 @@ export interface ServerTranscript {
 export interface ServerState {
   type: 'state'
   buffered_ms: number
+}
+
+export interface ServerAudioProgress {
+  type: 'audio_progress'
+  samples: number
 }
 
 export interface ServerAudioReceived {
@@ -79,7 +85,7 @@ export interface ServerAudioAnalysis {
   type: 'audio_analysis'
   result: { emotion?: string | null, events?: string[], overlap?: Array<{start_ms: number, end_ms: number}>, quality?: { rms: number } }
 }
-export type ServerMessage = ServerReady | ServerTranscript | ServerState | ServerClosed | ServerError | ServerPartial | ServerFeatureWarning | ServerAudioAnalysis | ServerAudioReceived
+export type ServerMessage = ServerReady | ServerTranscript | ServerState | ServerClosed | ServerError | ServerPartial | ServerFeatureWarning | ServerAudioAnalysis | ServerAudioReceived | ServerAudioProgress
 
 /* Audio processing and UI rendering. */
 export interface Segment extends TranscriptSegment {
