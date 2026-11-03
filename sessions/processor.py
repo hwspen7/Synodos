@@ -46,7 +46,8 @@ from speech.commit_guard import is_temporal_duplicate
 from phase07.recovery import autosave_seconds
 from sessions.outbox import enqueue_message
 from sessions.translation_tasks import submit_translation
-from sessions.speaker_tasks import submit_speaker_analysis
+from sessions.speaker_tasks import submit_speaker_analysis, submit_acoustic_window
+from speech.acoustic_timeline import AcousticTimeline
 from sessions.speaker_fallback import (
     UNIDENTIFIED_CLUSTER, fallback_speaker_id, normalized_embedding,
 )
@@ -137,6 +138,11 @@ class SessionProcessor(threading.Thread):
         self.ui_settings: dict = {}
         self._translation_tasks: dict[int, Future] = {}
         self._speaker_tasks: dict[int, Future] = {}
+        self._acoustic_timeline = AcousticTimeline(sr)
+        self._acoustic_tasks: dict[int, Future] = {}
+        self._next_acoustic_sample = 0
+        self._acoustic_window_samples = int(2.0 * sr)
+        self._acoustic_stride_samples = int(1.5 * sr)
         self._async_ready = threading.Event()
 
         # Handle transcripts and speaker assignments.
@@ -190,8 +196,9 @@ class SessionProcessor(threading.Thread):
                 if self._async_ready.is_set():
                     self._async_ready.clear()
                     speaker_updated = self._collect_speakers()
+                    acoustic_updated = self._collect_acoustic()
                     self._collect_translations()
-                    if speaker_updated:
+                    if speaker_updated or acoustic_updated:
                         self._recluster()
                         self._last_reclustered_segment_id = self._next_segment_id - 1
                     if self.segments:
@@ -239,7 +246,8 @@ class SessionProcessor(threading.Thread):
                 logger.exception("session %s final transcription failed", self.session_id)
                 self._put({"type": "error", "message": "Final transcription failed; confirmed text may be incomplete"})
         speaker_updated = self._collect_speakers(wait_seconds=5.0)
-        if speaker_updated:
+        acoustic_updated = self._collect_acoustic(wait_seconds=6.0)
+        if speaker_updated or acoustic_updated:
             try:
                 self._recluster()
                 self._last_reclustered_segment_id = self._next_segment_id - 1
@@ -248,10 +256,11 @@ class SessionProcessor(threading.Thread):
                 self._fallback_labels()
         self._collect_translations(wait_seconds=2.0)
         self._rebuild_and_push()
-        if self._speaker_tasks:
+        if self._speaker_tasks or self._acoustic_tasks:
             self._put({"type": "feature_warning", "feature": "diarization",
                        "message": "Speaker analysis unfinished; uncertain speakers were kept unidentified"})
             self._speaker_tasks.clear()
+            self._acoustic_tasks.clear()
         if self._translation_tasks:
             self._put({"type": "feature_warning", "feature": "translation",
                        "message": "Some translations were not completed before meeting shutdown"})
@@ -394,6 +403,7 @@ class SessionProcessor(threading.Thread):
         # Handle transcripts and speaker assignments.
         offset = max((int(s["end_sample"]) for s in self.segments), default=0)
         self.buffer.set_start_offset(offset)
+        self._next_acoustic_sample = offset
 
         self._last_fingerprint = None
         self.meeting_title = state.get("title") or self.meeting_title
@@ -445,6 +455,7 @@ class SessionProcessor(threading.Thread):
             self._send_state()
             return False
         absolute_end = start_offset + len(audio)
+        self._schedule_acoustic(start_offset, audio)
         # A rescan with no new microphone samples cannot improve recognition.
         # Finalization is exempt so the last incomplete utterance gets one chance.
         if not final and absolute_end == self._last_inferred_absolute_end:
@@ -573,11 +584,12 @@ class SessionProcessor(threading.Thread):
                     metrics.increment("audio_safe_silence_reclaimed")
 
         self._collect_speakers()
+        acoustic_updated = self._collect_acoustic()
         self._collect_translations()
         changed = False
         if self.segments:
             try:
-                if self._last_reclustered_segment_id != self._next_segment_id - 1:
+                if acoustic_updated or self._last_reclustered_segment_id != self._next_segment_id - 1:
                     self._recluster()
                     self._last_reclustered_segment_id = self._next_segment_id - 1
             except Exception:
@@ -597,6 +609,62 @@ class SessionProcessor(threading.Thread):
         if not final:
             self._send_state()
         return changed
+
+    def _schedule_acoustic(self, start_offset: int, audio: np.ndarray) -> None:
+        """Schedule speaker evidence from continuous audio, without ASR boundaries."""
+        sr = self.settings.sample_rate
+        end = start_offset + len(audio)
+        self._next_acoustic_sample = max(self._next_acoustic_sample, start_offset)
+        # Never allocate an unbounded acoustic task backlog.
+        while (self._next_acoustic_sample + self._acoustic_window_samples <= end
+               and len(self._acoustic_tasks) < 10):
+            start = self._next_acoustic_sample
+            left = start - start_offset
+            right = left + self._acoustic_window_samples
+            audio_window = audio[left:right]
+            task = submit_acoustic_window(start, audio_window, self.models.embed, sr)
+            if task is None:
+                break
+            self._acoustic_tasks[start] = task
+            task.add_done_callback(self._notify_async_ready)
+            self._next_acoustic_sample += self._acoustic_stride_samples
+
+    def _collect_acoustic(self, wait_seconds: float = 0.0) -> bool:
+        """Backfill short ASR segments from the independent acoustic timeline."""
+        if wait_seconds and self._acoustic_tasks:
+            wait(tuple(self._acoustic_tasks.values()), timeout=wait_seconds)
+        added = False
+        for key, task in tuple(self._acoustic_tasks.items()):
+            if not task.done():
+                continue
+            self._acoustic_tasks.pop(key, None)
+            try:
+                start, length, emb = task.result()
+            except Exception:
+                logger.exception("Independent acoustic speaker window failed")
+                continue
+            if self._acoustic_timeline.add(start, start + length, emb):
+                added = True
+        if not added:
+            return False
+        updated = False
+        for segment in self.segments:
+            if segment.get("emb") is not None or segment.get("speaker_override"):
+                continue
+            if segment["id"] in self._speaker_tasks:
+                continue
+            embedding = self._acoustic_timeline.embedding_for(
+                int(segment["start_sample"]), int(segment["end_sample"]),
+            )
+            if embedding is None:
+                continue
+            segment["emb"] = embedding
+            segment["speaker_uncertain"] = False
+            updated = True
+            metrics.increment("speaker_acoustic_timeline_resolved")
+        if updated:
+            self._last_reclustered_segment_id = 0
+        return updated
 
     def _notify_async_ready(self, _future: Future) -> None:
         self._async_ready.set()

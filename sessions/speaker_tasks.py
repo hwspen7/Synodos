@@ -36,3 +36,33 @@ def submit_speaker_analysis(sentence: dict, samples: np.ndarray, embed, sample_r
     except BaseException:
         _SLOTS.release()
         raise
+
+
+
+def submit_acoustic_window(
+    start_sample: int, samples: np.ndarray, embed, sample_rate: int,
+) -> Future | None:
+    """Analyze independent, bounded voice windows without holding up ASR."""
+    if not _SLOTS.acquire(blocking=False):
+        return None
+    audio = np.asarray(samples, dtype=np.float32).copy()
+
+    def work():
+        try:
+            # Cheap silence gate avoids embedding non-voice audio. It is not
+            # a speech classifier and must not discard the audio itself.
+            if len(audio) < int(sample_rate * 1.2):
+                return start_sample, len(audio), None
+            rms = float(np.sqrt(np.mean(audio * audio)))
+            if not np.isfinite(rms) or rms < 0.001:
+                return start_sample, len(audio), None
+            from speech.acoustic_timeline import normalize
+            return start_sample, len(audio), normalize(embed(audio))
+        finally:
+            _SLOTS.release()
+
+    try:
+        return _POOL.submit(work)
+    except BaseException:
+        _SLOTS.release()
+        raise
