@@ -83,6 +83,16 @@ def _timing_bucket(state: dict, elapsed_ms: float) -> dict:
     return state["timing_buckets"][index]
 
 
+def _clock_wait_seconds(
+    start: float, samples_sent: int, sample_rate: int, speed: float,
+    now: float,
+) -> float:
+    """Wait to an absolute media-time deadline, not 0.2s per send."""
+    if sample_rate <= 0 or speed <= 0:
+        raise ValueError("Invalid replay pacing")
+    return max(0.0, start + samples_sent / (sample_rate * speed) - now)
+
+
 def _source_end_lag(elapsed_ms: float, end_ms: object) -> float | None:
     """Apparent delay since reported utterance end, not word-level latency."""
     if type(end_ms) not in (int, float) or not math.isfinite(end_ms):
@@ -287,6 +297,7 @@ async def replay(args) -> dict:
     sent_samples = 0
     sent_sequence = 0
     first_send = None
+    replay_clock_ms = []
     ready = None
     started = time.perf_counter()
     async with connect(args.url, origin=args.origin, max_size=8 * 1024 * 1024) as ws:
@@ -327,7 +338,18 @@ async def replay(args) -> dict:
                         await ws.send(packet)
                         sent_sequence += 1
                         sent_samples += len(pcm)
-                        await asyncio.sleep(len(pcm) / SAMPLE_RATE / args.speed)
+                        # Absolute-deadline pacing prevents per-frame scheduler
+                        # oversleep from accumulating over long Windows runs.
+                        now = time.perf_counter()
+                        drift_ms = (
+                            now - first_send
+                            - sent_samples / (SAMPLE_RATE * args.speed)
+                        ) * 1000
+                        replay_clock_ms.append(drift_ms)
+                        pause_s = _clock_wait_seconds(
+                            first_send, sent_samples, SAMPLE_RATE, args.speed, now)
+                        if pause_s > 0:
+                            await asyncio.sleep(pause_s)
                 if args.loops > 1:
                     print(
                         f"[{loop_index + 1}/{args.loops}] "
@@ -357,11 +379,18 @@ async def replay(args) -> dict:
         "sent_frames": sent_sequence, "sent_samples": sent_samples,
         "sent_audio_duration_s": round(sent_samples / SAMPLE_RATE, 2),
         "total_wall_ms": elapsed_ms,
+        "max_late_send_ms": round(max(replay_clock_ms, default=0.0), 1),
+        "max_early_send_ms": round(max(
+            (-value for value in replay_clock_ms), default=0.0), 1),
+        "replay_pacing_method": "absolute_monotonic_deadline",
+        "expected_replay_wall_ms": round(
+            sent_samples * 1000 / (SAMPLE_RATE * args.speed), 1),
         "timing_interval_s": args.interval_seconds,
         "timing_by_elapsed_window": summarize_timing(counters, elapsed_ms),
         "timestamp_lag_note": (
             "Apparent lag compares wall-clock event reception with ASR "
-            "utterance end timestamps. This does not measure word-by-word "
+            "utterance end timestamps. Absolute-time PCM pacing reduces "
+            "scheduler accumulation. This does not measure word-by-word "
             "latency or certify transcript completeness."
         ),
         "server_ready": ready,
