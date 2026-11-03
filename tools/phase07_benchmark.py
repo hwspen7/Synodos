@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--engines", nargs="+", choices=["whisper", "qwen3"], default=["whisper", "qwen3"])
     parser.add_argument("--infer", action="store_true", help="Load models and run real audio inference")
-    parser.add_argument("--whisper-model", default="small")
+    parser.add_argument("--whisper-model", default="large-v3")
     parser.add_argument("--qwen-model", default="Qwen3-ASR-0.6B")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--compute-type", default="default")
