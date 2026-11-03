@@ -94,6 +94,11 @@ class AcousticTimeline:
         mean = normalize(np.sum(vectors * weights[:, None], axis=0))
         if mean is None:
             return None
-        if len(relevant) > 1 and float(np.min(vectors @ mean)) < min_consistency:
-            return None
+        if len(relevant) > 1:
+            similarities = vectors @ vectors.T
+            minimum_pairwise = float(
+                np.min(similarities[np.triu_indices(len(relevant), k=1)])
+            )
+            if minimum_pairwise < min_consistency:
+                return None
         return mean
