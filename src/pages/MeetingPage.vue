@@ -94,6 +94,7 @@ let stickToBottom = true
 let stopRequested = false
 let realtimeError = false
 let audioStopAcknowledged = false
+let lastPartialRevision = 0
 let capturedSamples = 0
 let capturePaintSample = 0
 let startingSegmentCount = 0
@@ -591,6 +592,7 @@ function connect(autostart = false): void {
   error.value = ''
   bufferedMs.value = 0
   partialText.value = ''
+  lastPartialRevision = 0
   serverInfo.value = null
   capturedSamples = 0
   capturedSeconds.value = 0
@@ -623,8 +625,9 @@ function connect(autostart = false): void {
       // Start automatically on create, resume, or restart.
       if (autostart || route.query.autostart === '1') void startMic()
     },
-    onPartial: (text, detectedLanguage) => {
-      if (clientSeq !== mySeq) return
+    onPartial: (text, detectedLanguage, revision) => {
+      if (clientSeq !== mySeq || revision <= lastPartialRevision) return
+      lastPartialRevision = revision
       partialText.value = text
       partialLanguage.value = detectedLanguage
       if (text) void scrollIfNeeded()
