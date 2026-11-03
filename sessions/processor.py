@@ -117,6 +117,8 @@ class SessionProcessor(threading.Thread):
         self._last_fingerprint: Optional[tuple] = None
         self._transcript_version = 0
         self._last_state_sent = 0.0
+        self._last_inferred_absolute_end = -1
+        self._last_reclustered_segment_id = 0
 
         # Handle transcripts and speaker assignments.
         self.meeting_store = meeting_store
@@ -379,9 +381,15 @@ class SessionProcessor(threading.Thread):
         buffer_s = len(audio) / sr
 
         if len(audio) < sr * 0.2 and not final:
-            if not final:
-                self._send_state()
+            self._send_state()
             return False
+        absolute_end = start_offset + len(audio)
+        # A rescan with no new microphone samples cannot improve recognition.
+        # Finalization is exempt so the last incomplete utterance gets one chance.
+        if not final and absolute_end == self._last_inferred_absolute_end:
+            self._send_state()
+            return False
+        self._last_inferred_absolute_end = absolute_end
 
         # Handle transcripts and speaker assignments.
         phase07_asr_started = time.monotonic()
@@ -504,7 +512,9 @@ class SessionProcessor(threading.Thread):
         changed = False
         if self.segments:
             try:
-                self._recluster()
+                if self._last_reclustered_segment_id != self._next_segment_id - 1:
+                    self._recluster()
+                    self._last_reclustered_segment_id = self._next_segment_id - 1
             except Exception:
                 logger.exception("speaker clustering failed; publishing confirmed text")
                 self._fallback_labels()
@@ -713,7 +723,7 @@ class SessionProcessor(threading.Thread):
         metrics.gauge("phase07_unidentified_segments", phase07_speaker["unidentified_segments"])
         fingerprint = tuple(
             (i["id"], i["speaker_id"], i["speaker_name"], i["start_ms"], i["end_ms"], i["text"],
-             i["language"], i.get("language_confidence"))
+             i["language"], i.get("language_confidence"), i.get("translation"))
             for i in items
         )
         if fingerprint == self._last_fingerprint:
