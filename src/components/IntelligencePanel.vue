@@ -93,7 +93,7 @@ const views: Array<{ id: View; label: string }> = [
 ]
 const mode = ref<Mode>('meeting')
 const view = ref<View>('overview')
-const language = ref('zh')
+const language = ref('en')
 const question = ref('')
 const searchText = ref('')
 const notice = ref('')
@@ -152,7 +152,7 @@ function formatTime(ms: number): string {
 function formatDate(value?: string): string {
   if (!value) return ''
   const date = new Date(value)
-  return Number.isNaN(date.valueOf()) ? '' : date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return Number.isNaN(date.valueOf()) ? '' : date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 function kindLabel(kind: string): string {
   return ({ summary: 'Meeting notes', extract: 'Action extraction', index_meeting: 'Knowledge index',
