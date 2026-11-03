@@ -22,6 +22,7 @@ Their text and voiceprint embeddings remain unchanged after confirmation.
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import Future, wait
 import logging
 import threading
 import time
@@ -44,6 +45,7 @@ from phase07.speakers import speaker_stats, find_distinct_participant
 from speech.commit_guard import is_temporal_duplicate
 from phase07.recovery import autosave_seconds
 from sessions.outbox import enqueue_message
+from sessions.translation_tasks import submit_translation
 from sessions.speaker_fallback import (
     UNIDENTIFIED_CLUSTER, fallback_speaker_id, normalized_embedding,
 )
@@ -130,6 +132,7 @@ class SessionProcessor(threading.Thread):
         self._phase07_autosave_interval = autosave_seconds()
         self._phase07_last_autosave = time.monotonic()
         self._phase07_saved_segment_id = 0
+        self._translation_tasks: dict[int, Future] = {}
 
         # Handle transcripts and speaker assignments.
         self.speaker_store = speaker_store
@@ -208,6 +211,12 @@ class SessionProcessor(threading.Thread):
             except Exception:
                 logger.exception("session %s final transcription failed", self.session_id)
                 self._put({"type": "error", "message": "Final transcription failed; confirmed text may be incomplete"})
+        self._collect_translations(wait_seconds=2.0)
+        self._rebuild_and_push()
+        if self._translation_tasks:
+            self._put({"type": "feature_warning", "feature": "translation",
+                       "message": "Some translations were not completed before meeting shutdown"})
+            self._translation_tasks.clear()
         self._final_save_ok = self._do_save()
         if not self._final_save_ok and self.meeting_store and self.meeting_id:
             self._put({"type": "error", "message": "Unable to save the final meeting transcript"})
@@ -519,6 +528,7 @@ class SessionProcessor(threading.Thread):
                     self.buffer.drop_before(drop)
                     metrics.increment("audio_safe_silence_reclaimed")
 
+        self._collect_translations()
         changed = False
         if self.segments:
             try:
@@ -542,6 +552,26 @@ class SessionProcessor(threading.Thread):
         if not final:
             self._send_state()
         return changed
+
+    def _collect_translations(self, wait_seconds: float = 0.0) -> None:
+        if not self._translation_tasks:
+            return
+        if wait_seconds > 0:
+            wait(tuple(self._translation_tasks.values()), timeout=wait_seconds)
+        completed = [(sid, future) for sid, future in self._translation_tasks.items()
+                     if future.done()]
+        for sid, future in completed:
+            self._translation_tasks.pop(sid, None)
+            try:
+                value = future.result()
+            except Exception as exc:
+                self._put({"type": "feature_warning", "feature": "translation",
+                           "message": str(exc)})
+                continue
+            for segment in self.segments:
+                if segment["id"] == sid:
+                    segment["translation"] = value
+                    break
 
     # --------------------------------------------------------------- cluster
     def _recluster(self) -> None:
