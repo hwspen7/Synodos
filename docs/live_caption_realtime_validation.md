@@ -98,3 +98,49 @@ local comparison. This increases the frequency of speculative Whisper
 calls and could change draft stability. Do not treat a faster preview as
 a certified improvement until measured on an independent recording.
 Production default remains 2.5 seconds.
+
+## First local 75-second A/B outcome (November 3, 2026)
+
+A real-time local DataHive English 75-second dialogue was replayed twice
+using the identical audio transport. After switching to the current
+backend and verifying the 2.5s processing window, observed metrics were:
+
+| Metric | Before (4.0s window) | After (2.5s window) |
+|---|---:|---:|
+| First provisional subtitle wall latency | 5277.1ms | 3364.7ms |
+| First confirmed subtitle wall latency | 8645.2ms | 7626.5ms |
+| Non-monotonic subtitle revision flags | 6 | 0 |
+| Final confirmed segments | 25 | 24 |
+| Cumulative speaker label reassignments | 54 | 48 |
+| Received PCM samples | 1,200,000 | 1,200,000 |
+
+Both runs received all the sent PCM and completed the WebSocket session.
+The follow-up emitted 8 `feature_warning` events. Prior reporter versions
+count warnings but did not show their feature or message. This is a
+sample-level observation, not a statistical latency guarantee; 48 speaker
+ID changes are **snapshot transition counts**, not 48 proven incorrect
+speakers, and 24 vs 25 text segments is not a proven accuracy change.
+
+## Run the enhanced speaker/warning triage
+
+After updating this branch in your existing test checkout, rerun the same
+75-second real-time audio command. The report now additionally contains:
+
+- `feature_warning_counts` by feature plus up to 12 short distinct
+  `feature_warning_samples`. These remain in the local Git-ignored report.
+- `speaker_reassignment_types` categorizing transitions between currently
+  unidentified, assigned cluster/label, or a different assigned label.
+  **Labeled does not necessarily mean a known person's identity.**
+- `segments_with_speaker_changes` and
+  `max_speaker_changes_one_segment` to distinguish routine one-time
+  initial assignment from repeated back-and-forth relabels.
+- `confirmed_text_revisions` and
+  `confirmed_segment_disappearances` to flag unexpected instability
+  within complete transcript snapshots, without treating all legitimate
+  post-processor splits as failures.
+
+The diagnostics do not change the model, speaker cluster assignments,
+decoding parameters, or backend cadence. These outputs supplement, not
+replace, visual/listening checks of the full transcript. Repeated playback
+of one clip is insufficient to certify diarization quality.
+
