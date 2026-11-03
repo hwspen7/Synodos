@@ -29,6 +29,7 @@ from tools.fixed150_system_audit import summarize as summarize_system_ablation
 from tools.fixed150_system_triage import inspect as inspect_system_triage
 from tools.fixed150_stage_audit import select_impacted, measure as measure_stage
 from tools.fixed150_guard_audit import assess_one as assess_guard_one, summarize as summarize_guard
+from tools.fixed150_language_anchor import infer_anchor, needs_redecode, params as lid_params
 from speech.audio_windows import speech_windows
 from speech.text_format import join_transcript_text
 from speech.quality_guard import verify_utterances
@@ -279,6 +280,61 @@ class Fixed150Contracts(unittest.TestCase):
         self.assertEqual(preserved[0].text, piece.text)
         self.assertEqual(preserved[0].timestamp_quality, "segment")
         self.assertEqual(preserved[0].words, ())
+
+    def test_language_anchor_requires_independent_confident_votes(self):
+        pt = [
+            {"language": "pl", "probability": .396,
+             "speech_seconds": 7.8, "has_model_text": True},
+            {"language": "en", "probability": .579,
+             "speech_seconds": 1.5, "has_model_text": False},
+            {"language": "pt", "probability": .961,
+             "speech_seconds": 1.94, "has_model_text": True},
+            {"language": "de", "probability": .274,
+             "speech_seconds": 2.5, "has_model_text": True},
+            {"language": "pt", "probability": .942,
+             "speech_seconds": 3.22, "has_model_text": True},
+            {"language": "pl", "probability": .489,
+             "speech_seconds": 2.1, "has_model_text": True},
+            {"language": "en", "probability": .610,
+             "speech_seconds": 2.4, "has_model_text": True},
+            {"language": "es", "probability": .418,
+             "speech_seconds": 1.1, "has_model_text": True},
+        ]
+        self.assertEqual(infer_anchor(pt), "pt")
+        self.assertTrue(needs_redecode(pt[0], "pt"))
+        self.assertTrue(needs_redecode(pt[3], "pt"))
+        self.assertTrue(needs_redecode(pt[6], "pt"))
+        self.assertFalse(needs_redecode(pt[1], "pt"))
+        self.assertFalse(needs_redecode(pt[2], "pt"))
+        self.assertFalse(needs_redecode(pt[0], None))
+        self.assertIsNone(infer_anchor(pt[:4]))
+        self.assertIsNone(infer_anchor(
+            pt + [{"language": "en", "probability": .98,
+                   "speech_seconds": 5, "has_model_text": True}]
+        ))
+        self.assertFalse(needs_redecode({
+            "language": "fr", "probability": .96,
+            "speech_seconds": 4, "has_model_text": True,
+        }, "pt"))
+        self.assertIsNone(infer_anchor([
+            {"language": "pt", "probability": float("nan"),
+             "speech_seconds": 5, "has_model_text": True},
+            {"language": "pt", "probability": .96,
+             "speech_seconds": 5, "has_model_text": True},
+        ]))
+
+    def test_language_anchor_forced_retry_disables_multilingual_redetection(self):
+        opts = SimpleNamespace(
+            min_speech_duration_ms=200,
+            min_silence_duration_ms=650, speech_pad_ms=180
+        )
+        original = lid_params(opts)
+        anchored = lid_params(opts, "pt")
+        self.assertIsNone(original["language"])
+        self.assertTrue(original["multilingual"])
+        self.assertEqual(anchored["language"], "pt")
+        self.assertFalse(anchored["multilingual"])
+        self.assertFalse(anchored["condition_on_previous_text"])
 
     def test_guard_audit_reuses_exact_same_model_output_for_both_policies(self):
         with tempfile.TemporaryDirectory() as folder:
