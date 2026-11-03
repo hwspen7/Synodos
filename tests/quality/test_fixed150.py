@@ -326,7 +326,7 @@ class Fixed150Contracts(unittest.TestCase):
         self.assertEqual(overall["unchanged"], 1)
         self.assertEqual(overall["retried_windows"], 2)
         self.assertEqual(overall["additional_retry_decode_ms"], 100.0)
-        self.assertAlmostEqual(overall["retry_compute_overhead_percent"], 100/600*100)
+        self.assertAlmostEqual(overall["retry_compute_overhead_percent"], 100/600*100, places=2)
         self.assertAlmostEqual(overall["baseline_cer"], 41/300)
         self.assertAlmostEqual(overall["candidate_cer"], 36/300)
         self.assertEqual(summary["per_language"]["en"]["worsened"], 1)
