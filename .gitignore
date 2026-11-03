@@ -87,3 +87,6 @@ __screenshots__/
 
 # Licensed third-party benchmark: audio, transcripts and gated DAI material
 /benchmark/fixed120/
+
+# Updated balanced multilingual benchmark including licensed transcripts
+/benchmark/fixed180/
