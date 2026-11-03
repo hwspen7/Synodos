@@ -4,7 +4,7 @@ export interface RealtimeClientOptions {
   url: string
   onReady?: (msg: ServerReady) => void
   onTranscript?: (msg: ServerTranscript) => void
-  onPartial?: (text: string, language: string) => void
+  onPartial?: (text: string, language: string, revision: number) => void
   onFeatureWarning?: (message: string) => void
   onAudioAnalysis?: (result: { emotion?: string | null, events?: string[], overlap?: Array<{start_ms: number, end_ms: number}>, quality?: { rms: number } }) => void
   onState?: (bufferedMs: number) => void
@@ -58,7 +58,7 @@ export class RealtimeClient {
           this.options.onReady?.(msg)
           break
         case 'partial':
-          this.options.onPartial?.(msg.text, msg.language)
+          this.options.onPartial?.(msg.text, msg.language, msg.revision)
           break
         case 'feature_warning':
           this.options.onFeatureWarning?.(msg.message)
