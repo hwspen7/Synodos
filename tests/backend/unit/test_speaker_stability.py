@@ -191,6 +191,55 @@ class IntegrationSpeakerStabilityContracts(unittest.TestCase):
             if s["speaker_id"] > 0
         }, {1, 2})
 
+    def test_opt_in_sticky_global_clustering_preserves_reliable_labels(self):
+        proc = self.make_processor()
+        sr = proc.settings.sample_rate
+        proc.segments = [
+            {
+                "id": i, "start_sample": (i - 1) * sr,
+                "end_sample": i * sr,
+                "speaker_id": sid,
+                "speaker_name": (
+                    f"Speaker {sid}" if sid > 0 else "Unidentified Speaker"
+                ),
+                "speaker_uncertain": False if sid > 0 else True,
+                "cluster": i,
+                "emb": np.array([1., 0.], dtype=np.float32)
+                if sid == 1 else np.array([0., 1.], dtype=np.float32),
+            }
+            for i, sid in [(1, 1), (2, 2), (3, -3)]
+        ]
+        # A global cluster merge should not rename a previously reliable
+        # speaker. New unknown utterances are still assigned acoustically.
+        with patch.dict(os.environ,
+                        {"MEETING_DIARIZATION_MODE": "cluster_sticky"}):
+            proc._recluster()
+        self.assertEqual([s["speaker_id"] for s in proc.segments[:2]],
+                         [1, 2])
+        self.assertGreater(proc.segments[2]["speaker_id"], 0)
+        self.assertEqual(len({s["speaker_id"] for s in proc.segments[:2]}), 2)
+
+    def test_standard_cluster_retains_existing_relabel_behavior(self):
+        proc = self.make_processor()
+        sr = proc.settings.sample_rate
+        proc.segments = [
+            {
+                "id": i, "start_sample": (i - 1) * sr,
+                "end_sample": i * sr,
+                "speaker_id": i,
+                "speaker_name": f"Speaker {i}",
+                "speaker_uncertain": False, "cluster": i,
+                "emb": np.array([float(i), 1.], dtype=np.float32),
+            }
+            for i in [1, 2]
+        ]
+        with patch.dict(os.environ, {"MEETING_DIARIZATION_MODE": "cluster"}):
+            proc._recluster()
+        # The synthetic model merges both acoustic clusters, so standard
+        # mode may revise earlier IDs as before, unlike sticky comparator.
+        self.assertEqual(proc.segments[0]["speaker_id"],
+                         proc.segments[1]["speaker_id"])
+
     def test_invalid_env_horizon_rejected(self):
         with patch.dict(os.environ, {"MEETING_SPEAKER_LABEL_REVISABLE_S": "4000"}):
             with self.assertRaisesRegex(ValueError, "REVISABLE_S"):
