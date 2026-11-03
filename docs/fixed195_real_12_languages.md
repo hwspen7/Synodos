@@ -41,18 +41,18 @@ No original recordings are edited or counted twice in the 195.
 
 ## Real dual-speaker conversations
 
-From gated `davidai-labs/DAI-ASR-I18N`, select 10 English and 5 in each
-other language by deterministic overlap stratification. Require two
-actual different speakers, original diarized word alignments, and
-at least four valid words per speaker. English uses ten 5%-95%
-overlap quantile positions; others use five 10%-90% quantiles.
-Mixed audio is made locally from synchronized authentic speaker tracks.
-Do not replace missing real recordings with synthetic combinations.
+The original 65-dialogue DAI-ASR-I18N proposal is blocked by manual
+access approval and is no longer the default preparation source.
+Current open-source replacement provides 25 authentic stereo audio excerpts
+from DataHive (10 English, 5 Hindi, 5 Indonesian, 5 Russian). There are no
+official human-verified transcripts or diarization time labels in the
+public DataHive release. They remain explicitly UNSCORED until annotated.
 
-The DAI dataset requires explicit access approval and its evaluation-
-only Data Use Agreement. Do not use these clips for model training,
-optimization or distribution. The corpus is a blind independent test,
-not a source for repeated model tuning.
+Additional 40 real recordings for Mandarin, Spanish, French, Arabic,
+Bengali, Portuguese, German and Japanese need independently verified
+sources and transcripts. See docs/fixed195_public_dialogue_sources.md for
+candidate sources and restrictions. Do not fabricate speaker references
+or declare the 195-case corpus completed from audio-only clips.
 
 ## Local setup on Windows
 
@@ -63,10 +63,16 @@ not a source for repeated model tuning.
 This checks and imports **56 historical recordings** and prepares
 **74 new FLEURS recordings**, without requiring gated DAI access.
 
-After DAI approval:
+Ungated real-audio collection (no DAI approval required):
 
-    hf auth login
     .\.venv\Scripts\python.exe tools\fixed195_prepare.py --source multi
+
+This prepares up to 25 public stereo conversation excerpts as separate
+speaker WAVs plus a mono mix, with missing transcripts clearly flagged.
+These are kept in public_multi_progress.json and are not counted in the
+final scored manifest. Only after 65 real conversations are independently
+annotated and validated can you run:
+
     .\.venv\Scripts\python.exe tools\fixed195_prepare.py --verify
 
 Files are private and Git-ignored under `benchmark/fixed195/`: WAVs,
@@ -82,4 +88,4 @@ pooled language-unweighted quality must be reported separately.
 
 Sources:
 https://huggingface.co/datasets/google/fleurs
-https://huggingface.co/datasets/davidai-labs/DAI-ASR-I18N
+https://huggingface.co/datasets/datahiveai/multilingual-conversations-sample
