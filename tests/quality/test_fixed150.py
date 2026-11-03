@@ -10,6 +10,10 @@ from pathlib import Path
 import tempfile
 import unittest
 import wave
+import sys
+import types
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from tools.fixed150_prepare import (
     AMI_ROWS, FLEURS_LOCALES, FLEURS_ROWS, LAION_ROWS,
@@ -24,6 +28,7 @@ from tools.fixed150_reference_audit import source_flags, evaluate as audit_refer
 from tools.fixed150_system_audit import summarize as summarize_system_ablation
 from tools.fixed150_system_triage import inspect as inspect_system_triage
 from tools.fixed150_stage_audit import select_impacted, measure as measure_stage
+from tools.fixed150_guard_audit import assess_one as assess_guard_one, summarize as summarize_guard
 from speech.audio_windows import speech_windows
 from speech.text_format import join_transcript_text
 from speech.quality_guard import verify_utterances
@@ -274,6 +279,89 @@ class Fixed150Contracts(unittest.TestCase):
         self.assertEqual(preserved[0].text, piece.text)
         self.assertEqual(preserved[0].timestamp_quality, "segment")
         self.assertEqual(preserved[0].words, ())
+
+    def test_guard_audit_reuses_exact_same_model_output_for_both_policies(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "audio").mkdir()
+            wav_file = root / "audio" / "mock.wav"
+            with wave.open(str(wav_file), "wb") as sink:
+                sink.setnchannels(1)
+                sink.setsampwidth(2)
+                sink.setframerate(16000)
+                sink.writeframes(b"\0\0" * 16000 * 3)
+            vad = types.ModuleType("faster_whisper.vad")
+            vad.VadOptions = lambda **kwargs: SimpleNamespace(**kwargs)
+            vad.get_speech_timestamps = lambda *_a, **_kw: [
+                {"start": 0, "end": 16000 * 2}
+            ]
+            parent = types.ModuleType("faster_whisper")
+            parent.vad = vad
+
+            class Model:
+                calls = 0
+
+                def transcribe(self, samples, **kwargs):
+                    self.calls += 1
+                    self.kwargs = kwargs
+                    piece = SimpleNamespace(
+                        text="Hello world", start=.1, end=1.9,
+                        words=[
+                            SimpleNamespace(word="Hello", start=.1, end=.5),
+                            SimpleNamespace(word=" world", start=2.0, end=2.1),
+                        ],
+                        no_speech_prob=.01, avg_logprob=-.1,
+                        compression_ratio=1.0,
+                    )
+                    return iter([piece]), SimpleNamespace(
+                        language="en", language_probability=.99
+                    )
+
+            model = Model()
+            case = {
+                "id": "fixed150-test", "audio": "audio/mock.wav",
+                "language": "en", "locale": "en-US",
+                "reference": "Hello world", "sha256": "fake",
+                "duration_s": 3,
+            }
+            with patch.dict(sys.modules, {
+                "faster_whisper": parent, "faster_whisper.vad": vad,
+            }):
+                row = assess_guard_one(model, root, case)
+            self.assertEqual(model.calls, 1)
+            self.assertTrue(model.kwargs["vad_filter"])
+            self.assertEqual(row["window_raw"]["cer"], 0)
+            self.assertGreater(row["strict"]["cer"], 0)
+            self.assertEqual(row["preserved"]["cer"], 0)
+            self.assertLess(row["preserved_minus_strict_pp"], 0)
+            self.assertGreater(row["segment_timestamp_fallbacks_extra"], 0)
+
+    def test_guard_audit_reports_harm_as_well_as_benefit(self):
+        def record(cid, lang, strict, preserved, flagged=False):
+            return {
+                "id": cid, "language": lang,
+                "reference_review_flags": ["suspected"] if flagged else [],
+                "strict": {"character_edits": strict,
+                           "reference_characters": 100},
+                "preserved": {"character_edits": preserved,
+                              "reference_characters": 100},
+                "window_raw": {"character_edits": strict,
+                               "reference_characters": 100},
+                "preserved_minus_strict_pp": preserved - strict,
+            }
+        summary = summarize_guard([
+            record("test-pt", "pt", 10, 20),
+            record("test-th", "th", 12, 0),
+            record("test-ko", "ko", 90, 90, flagged=True),
+        ], 3)
+        self.assertTrue(summary["complete"])
+        self.assertEqual(summary["overall"]["worsened"], 1)
+        self.assertEqual(summary["overall"]["improved"], 1)
+        self.assertEqual(summary["overall"]["unchanged"], 1)
+        self.assertFalse(summary["release_certified"])
+        self.assertEqual(summary["overall"]["review_reference_count"], 1)
+        self.assertAlmostEqual(summary["overall"]["weighted_cer"]["strict"], 112 / 300)
+        self.assertAlmostEqual(summary["overall"]["weighted_cer"]["preserved"], 110 / 300)
 
     def test_stage_audit_selects_only_verified_impacted_originals(self):
         cases = [
