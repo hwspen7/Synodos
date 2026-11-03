@@ -102,3 +102,30 @@ used to decide whether to run a full 100-original and mixed-language
 regression, which must precede enabling the opt-in production flag.
 
 Do not overwrite the original stage_audit.json or frozen source manifest.
+
+## Full 100-case matched-output guard audit
+
+The eight-case alignment-preservation trial had four improvements, two
+regressions, and two unchanged clips with internal Whisper VAD enabled.
+The eight cases had already been selected for poor original performance.
+These figures cannot estimate the benefit across the full dataset.
+
+Evaluate all 100 original single-speaker clips, including healthy samples:
+
+    .\.venv\Scripts\python.exe tools\fixed150_guard_audit.py --scope all
+
+Only one Whisper inference is run per acoustic window. Identical model
+segments are scored using raw text, the strict guard, and the experimental
+segment-preserving guard. This isolates policy effects from re-decoding.
+
+The numeric checkpoint is benchmark/fixed150/guard_audit_all.json.
+The separate summary is benchmark/fixed150/guard_audit_all_summary.json.
+Both are local. Raw transcript strings are not saved. Each case has
+reference-review flags and is preserved in the original CER denominator.
+Fifteen priority languages are reported separately. An interrupted run
+can resume if the source hashes, model name and relevant code match.
+
+Do not enable the experimental production mode based on preselected bad
+examples or a favorable aggregate alone. Verify held-out normal speech,
+silence/noise, bilingual code switching, speaker overlap and live captions.
+Do not globally disable secondary VAD: Thai 069 clearly regressed.
