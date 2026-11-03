@@ -23,7 +23,10 @@ from tools.phase09_speaker_benchmark import evaluate
 
 
 def token_bag(text: str) -> Counter:
-    return Counter(re.findall(r"[^\W_]{3,}", unicodedata.normalize("NFKC", text).casefold()))
+    # Short replies such as "I", "no", "OK" and "uh" matter in real meetings.
+    # The previous {3,} rule silently ignored these utterances and could
+    # inflate speaker-attributed recall by leaving them out of the denominator.
+    return Counter(re.findall(r"[^\\W_]+", unicodedata.normalize("NFKC", text).casefold()))
 
 
 def token_recall(reference: str, predicted: str) -> float | None:
@@ -410,7 +413,7 @@ td,th{{padding:12px;text-align:left;border-bottom:1px solid #e5e8e5}}
 @media(max-width:850px){{.grid{{grid-template-columns:1fr}}.stats{{grid-template-columns:repeat(2,1fr)}}}}
 </style></head><body><main><header><small>MEETING / QUALITY ENGINEERING</small>
 <h1>Fixed150 · multilingual and meeting audio</h1><p>100 original single-speaker cases
-and 50 multi-speaker cases. 25 as-recorded two-person AMI meeting clips plus 25 synthetic
+and 50 multi-speaker cases. 25 two-speaker AMI mixes reconstructed from real meeting headset tracks plus 25 synthetic
 three-language overlapping LAION clips. All scores require real model output and SHA-verified audio.</p>
 </header><div class="stats">{card_html}</div><div class="grid">{''.join(panels)}</div>
 <section class="audit"><h2>Completion and evidence gates</h2>
