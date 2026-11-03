@@ -58,6 +58,70 @@ class LiveCaptionWsReplayTests(unittest.TestCase):
         self.assertEqual(state["speaker_reassignments"], 1)
         self.assertEqual(state["events"]["transcript"], 2)
 
+    def test_diagnoses_speaker_changes_without_claiming_identity_errors(self):
+        state = new_capture()
+        capture_event(state, {
+            "type": "transcript", "version": 1, "segments": [
+                {"id": 10, "speaker_id": -1,
+                 "speaker_name": "Unidentified Speaker", "text": "Hello"},
+                {"id": 11, "speaker_id": 1,
+                 "speaker_name": "Speaker 1", "text": "Morning"},
+            ],
+        }, 6000)
+        capture_event(state, {
+            "type": "transcript", "version": 2, "segments": [
+                {"id": 10, "speaker_id": 2,
+                 "speaker_name": "Speaker 2", "text": "Hello"},
+                {"id": 11, "speaker_id": 3,
+                 "speaker_name": "Speaker 3", "text": "Morning"},
+            ],
+        }, 6400)
+        capture_event(state, {
+            "type": "transcript", "version": 3, "segments": [
+                {"id": 10, "speaker_id": 1,
+                 "speaker_name": "Speaker 1", "text": "Hello"},
+                {"id": 11, "speaker_id": -1,
+                 "speaker_name": "Unidentified Speaker", "text": "Morning revised"},
+            ],
+        }, 7100)
+        self.assertEqual(state["speaker_reassignments"], 4)
+        self.assertEqual(dict(state["speaker_change_types"]), {
+            "unidentified_to_labeled": 1,
+            "labeled_to_different_labeled": 2,
+            "labeled_to_unidentified": 1,
+        })
+        self.assertEqual(len(state["speaker_change_counts"]), 2)
+        self.assertEqual(max(state["speaker_change_counts"].values()), 2)
+        self.assertEqual(state["confirmed_text_changes"], 1)
+        self.assertEqual(len(state["changed_text_ids"]), 1)
+        self.assertEqual(state["confirmed_segment_disappearances"], 0)
+        # A confirmed segment disappears from a later complete snapshot.
+        capture_event(state, {
+            "type": "transcript", "version": 4, "segments": [
+                {"id": 10, "speaker_id": 1,
+                 "speaker_name": "Speaker 1", "text": "Hello"},
+            ],
+        }, 7400)
+        self.assertEqual(state["confirmed_segment_disappearances"], 1)
+        self.assertEqual(state["max_visible_segments"], 2)
+
+    def test_warnings_are_grouped_and_report_contains_only_bounded_samples(self):
+        state = new_capture()
+        for i in range(15):
+            capture_event(state, {
+                "type": "feature_warning",
+                "feature": "diarization",
+                "message": "Speaker analysis backlog full " + str(i) * 500,
+            }, 1500 + i)
+        self.assertEqual(state["events"]["feature_warning"], 15)
+        self.assertEqual(state["feature_warning_counts"]["diarization"], 15)
+        self.assertEqual(len(state["feature_warning_samples"]), 12)
+        self.assertLessEqual(
+            max(len(item["message"])
+                for item in state["feature_warning_samples"]), 240
+        )
+        self.assertEqual(state["speaker_reassignments"], 0)
+
     def test_stop_ack_and_terminal_confirmation(self):
         state = new_capture()
         capture_event(state, {"type": "audio_received",
