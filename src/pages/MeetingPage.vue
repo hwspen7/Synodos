@@ -139,6 +139,18 @@ function mergeGapMs(): number {
   return Math.round((mergeGapS.value || 2) * 1000)
 }
 
+/** Join text without breaking CJK scripts or concatenating Latin words. */
+function joinTranscriptText(left: string, right: string): string {
+  const a = left.trimEnd()
+  const b = right.trimStart()
+  if (!a) return b
+  if (!b) return a
+  if (/[[({（《「『“‘]$/.test(a) || /^[,!.?;:%)\]}，。！？；：、）》」』”’]/.test(b)) return a + b
+  const cjk = /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/
+  if (cjk.test(a.slice(-1)) || cjk.test(b.charAt(0))) return a + b
+  return a + ' ' + b
+}
+
 /** Merge adjacent segments with matching speakers and short gaps. */
 function buildParagraphs(segs: Segment[]): Paragraph[] {
   const ordered = [...segs].sort((a, b) => a.start_ms - b.start_ms)
@@ -155,7 +167,7 @@ function buildParagraphs(segs: Segment[]): Paragraph[] {
     ) {
       last.end_ms = seg.end_ms
       last.segmentIds.push(seg.id)
-      last.text += visibleText
+      last.text = joinTranscriptText(last.text, visibleText)
     } else {
       paras.push({
         id: seg.id,
