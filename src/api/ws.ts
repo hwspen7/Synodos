@@ -84,6 +84,12 @@ export class RealtimeClient {
   sendPcm(chunk: Int16Array): void {
     const ws = this.ws
     if (ws?.readyState === WebSocket.OPEN) {
+      // Stop and report congestion rather than silently dropping microphone audio.
+      if (ws.bufferedAmount + chunk.byteLength > 1024 * 1024) {
+        this.options.onError?.('Audio transport congested. Recording stopped to prevent silent data loss.')
+        ws.close(1011, 'Audio transport backpressure')
+        return
+      }
       // Send only the bytes in the provided view, not its entire backing buffer.
       const copy = new Uint8Array(chunk.byteLength)
       copy.set(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength))
