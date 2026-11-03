@@ -7,6 +7,8 @@ from tools.fixed120_prepare import (
     LANGUAGES, FLEURS_VALIDATION_ROWS, collect_segments,
     choose_dialogues, SCHEMA,
 )
+from speech.language import normalize_language
+from speech.qwen import qwen_language_name
 
 
 def sample(sid: str, language: str, overlap: float) -> dict:
@@ -27,6 +29,13 @@ def sample(sid: str, language: str, overlap: float) -> dict:
 
 
 class Fixed120Contracts(unittest.TestCase):
+    def test_bengali_names_are_recognized_without_false_qwen_support(self):
+        self.assertEqual(normalize_language("Bengali"), "bn")
+        self.assertEqual(normalize_language("Bangla"), "bn")
+        # Qwen3-ASR's documented set excludes Bengali; Whisper is primary.
+        with self.assertRaises(ValueError):
+            qwen_language_name("bn")
+
     def test_12_languages_five_new_fleurs_validation_rows(self):
         self.assertEqual(len(LANGUAGES), 12)
         self.assertEqual(len(set(k for k, _ in LANGUAGES)), 12)
