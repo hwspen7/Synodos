@@ -105,14 +105,15 @@ def triage(cases: list[dict], results: dict, *, top: int = 4,
             key=lambda x: (-x["character_edits"] / x["reference_characters"],
                            -x["character_edits"], x["id"]),
         )[:top]
-        worst_edits = sorted(
+        all_by_edits = sorted(
             group,
             key=lambda x: (-x["character_edits"],
                            -x["character_edits"] / x["reference_characters"],
                            x["id"]),
-        )[:top]
+        )
+        worst_edits = all_by_edits[:top]
         total_edits = sum(x["character_edits"] for x in group)
-        top_three_edits = sum(x["character_edits"] for x in worst_edits[:3])
+        top_three_edits = sum(x["character_edits"] for x in all_by_edits[:3])
         language_mismatches = [
             {"id": x["id"], "detected": x["predicted_language"]}
             for x in group
