@@ -27,11 +27,12 @@ def stabilized_cluster_ids(
     still refer to them.
     """
     items = list(records)
+    participant_set = {int(x) for x in participant_labels if int(x) > 0}
     raw_labels = sorted({
         int(s["cluster"]) for s in items
         if isinstance(s.get("cluster"), int) and int(s["cluster"]) >= 0
     })
-    reserved = {int(x) for x in participant_labels if int(x) > 0}
+    reserved = set(participant_set)
     known = {
         int(s["speaker_id"]) for s in items
         if isinstance(s.get("speaker_id"), int) and int(s["speaker_id"]) > 0
@@ -39,7 +40,6 @@ def stabilized_cluster_ids(
     if old_map:
         known.update(int(x) for x in old_map.values() if int(x) > 0)
     reserved.update(known)
-    participant_set = {int(x) for x in participant_labels if int(x) > 0}
 
     overlap: Counter[tuple[int, int]] = Counter()
     for item in items:
