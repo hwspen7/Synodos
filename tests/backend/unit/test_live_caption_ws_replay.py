@@ -8,7 +8,8 @@ import numpy as np
 
 from api.socket_transport import AudioFrameSequence
 from tools.live_caption_ws_replay import (
-    DEFAULT_WS_URL, _clock_wait_seconds, capture_event, new_capture, pcm_packet, summarize_timing,
+    DEFAULT_WS_URL, _clock_wait_seconds, _speaker_switch_age_bucket,
+    capture_event, new_capture, pcm_packet, summarize_timing,
 )
 
 
@@ -207,6 +208,72 @@ class LiveCaptionWsReplayTests(unittest.TestCase):
         self.assertIsNone(report["preview_lag_p95_ms"])
         with self.assertRaises(ValueError):
             new_capture(interval_seconds=15)
+
+    def test_relabel_age_distinguishes_recent_from_mature_audio(self):
+        self.assertEqual(
+            _speaker_switch_age_bucket(20000, 10000, 320000),
+            "0_to_15_s",
+        )
+        self.assertEqual(
+            _speaker_switch_age_bucket(35000, 10000, 560000),
+            "15_to_60_s",
+        )
+        self.assertEqual(
+            _speaker_switch_age_bucket(100000, 10000, 1600000),
+            "60_to_120_s",
+        )
+        self.assertEqual(
+            _speaker_switch_age_bucket(125000, 10000, 2000000),
+            "60_to_120_s",
+        )
+        self.assertEqual(
+            _speaker_switch_age_bucket(130000, 10000, 2080000),
+            "120_s_or_more",
+        )
+        self.assertEqual(
+            _speaker_switch_age_bucket(1000, None, 16000),
+            "timestamp_unavailable",
+        )
+
+    def test_labeled_reassignments_detect_speaker_proliferation(self):
+        state = new_capture()
+        capture_event(state, {
+            "type": "transcript", "version": 1,
+            "segments": [
+                {"id": 1, "speaker_id": 2, "speaker_name": "Speaker 2",
+                 "text": "alpha", "end_ms": 1000},
+                {"id": 2, "speaker_id": 2, "speaker_name": "Speaker 2",
+                 "text": "beta", "end_ms": 5000},
+            ],
+        }, 12000, sent_samples=192000)
+        capture_event(state, {
+            "type": "transcript", "version": 2,
+            "segments": [
+                {"id": 1, "speaker_id": 3, "speaker_name": "Speaker 3",
+                 "text": "alpha", "end_ms": 1000},
+                {"id": 2, "speaker_id": 2, "speaker_name": "Speaker 2",
+                 "text": "beta", "end_ms": 5000},
+            ],
+        }, 25000, sent_samples=400000)
+        capture_event(state, {
+            "type": "transcript", "version": 3,
+            "segments": [
+                {"id": 1, "speaker_id": 4, "speaker_name": "Speaker 4",
+                 "text": "alpha", "end_ms": 1000},
+                {"id": 2, "speaker_id": -2,
+                 "speaker_name": "Unidentified Speaker",
+                 "text": "beta", "end_ms": 5000},
+            ],
+        }, 175000, sent_samples=2800000)
+        self.assertEqual(state["speaker_change_types"][
+            "labeled_to_different_labeled"], 2)
+        self.assertEqual(dict(state["labeled_switch_age_buckets"]), {
+            "15_to_60_s": 1, "120_s_or_more": 1,
+        })
+        self.assertEqual(dict(state["labeled_switch_edges"]), {
+            (2, 3): 1, (3, 4): 1,
+        })
+        self.assertEqual(dict(state["speaker_change_counts"]), {1: 2, 2: 1})
 
     def test_stop_ack_and_terminal_confirmation(self):
         state = new_capture()
