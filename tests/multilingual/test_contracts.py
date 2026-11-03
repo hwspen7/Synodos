@@ -32,4 +32,4 @@ class ContractTests(unittest.TestCase):
 
     def test_native_streaming_needs_online_model(self):
         with self.assertRaises(ValueError):
-            SpeechSettings(native_streaming=True).validate()
+            SpeechSettings(engine="legacy", native_streaming=True).validate()
