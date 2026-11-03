@@ -118,6 +118,7 @@ class MeetingStore:
             "participant_ids": list(state.get("participant_ids") or []),
             "hotword_ids": list(state.get("hotword_ids") or []),
             "spk_threshold": float(state.get("spk_threshold", 0.3)),
+            "ui_settings": dict(state.get("ui_settings") or {}),
         }
 
     def list_segments(self, meeting_id: str) -> list[dict] | None:

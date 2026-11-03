@@ -162,6 +162,16 @@ async def ws_audio(
             session.processor.speech_language = language
             session.processor.translate_target = speech_config.translate_to if translate_to is None else translate_to
             session.start(loop, state=loaded_state)
+            session.processor.ui_settings = {
+                "language": language,
+                "translate_to": session.processor.translate_target,
+                "record_audio": bool(record_audio if record_audio is not None else speech_config.record_audio),
+                "vad_threshold": vad_s,
+                "rec_threshold": rec_s,
+                "participant_ids": list(session.processor.participant_ids),
+                "hotword_ids": list(session.processor.hotword_ids),
+                "spk_threshold": session.processor.spk_threshold,
+            }
         except Exception:
             if sessions.get(sid) is session:
                 sessions.pop(sid, None)
@@ -199,10 +209,18 @@ async def ws_audio(
             "resumed": bool(loaded_state and loaded_state.get("segments")),
             "title": session.processor.meeting_title,
             "participant_ids": session.processor.participant_ids,
+            "participant_enrollments": [
+                {"id": item["id"], "name": item["name"], "voiceprint_count": len(item["vectors"])}
+                for item in session.processor._participants
+            ],
             "participants": [
                 {"id": p["id"], "name": p["name"]} for p in session.processor._participants
             ],
             "hotword_ids": session.processor.hotword_ids,
+            "active_hotword_count": session.processor.active_hotword_count,
+            "processing_window_s": session.processor._process_threshold_s,
+            "confirmation_delay_s": session.processor._trusted_threshold_s,
+            "min_commit_context_s": getattr(session.processor, "_min_commit_context_s", 0),
             "hotwords": hotword_store.get_summaries(session.processor.hotword_ids),
             "spk_threshold": session.processor.spk_threshold,
             "min_speaker_audio_s": settings.min_speaker_audio_s,

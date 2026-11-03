@@ -20,6 +20,11 @@ export interface ServerReady {
   asr_language?: string
   translation_target?: string
   wav_recording_enabled?: boolean
+  participant_enrollments?: Array<{ id: string; name: string; voiceprint_count: number }>
+  active_hotword_count?: number
+  processing_window_s?: number
+  confirmation_delay_s?: number
+  min_commit_context_s?: number
 }
 
 export interface TranscriptSegment {
@@ -130,6 +135,16 @@ export interface MeetingDetail {
   participant_ids: string[]
   hotword_ids: string[]
   spk_threshold: number
+  ui_settings?: {
+    language?: string
+    translate_to?: string
+    record_audio?: boolean
+    vad_threshold?: number
+    rec_threshold?: number
+    participant_ids?: string[]
+    hotword_ids?: string[]
+    spk_threshold?: number
+  }
 }
 
 /* Audio processing and UI rendering. */

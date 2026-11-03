@@ -148,6 +148,7 @@ class SessionProcessor(threading.Thread):
         self._hotword_str: str = ""
         # Handle transcripts and speaker assignments.
         self._hotword_limit = 200
+        self.active_hotword_count = 0
         self.spk_threshold: float = float(
             spk_threshold
             if spk_threshold is not None
@@ -410,6 +411,7 @@ class SessionProcessor(threading.Thread):
         """Audio transcription and speaker data handling."""
         if not self.hotword_store or not self.hotword_ids:
             self._hotword_str = ""
+            self.active_hotword_count = 0
             return
         words = self.hotword_store.get_words_for_meeting(
             self.hotword_ids, limit=self._hotword_limit
@@ -418,6 +420,7 @@ class SessionProcessor(threading.Thread):
         valid_ids = {lib["id"] for lib in self.hotword_store.list_hotwords()}
         self.hotword_ids = [hid for hid in self.hotword_ids if hid in valid_ids]
         self._hotword_str = " ".join(words)
+        self.active_hotword_count = len(words)
         if len(words) >= self._hotword_limit:
             logger.warning(
                 "[%s] hotwords capped at %d, rest ignored",

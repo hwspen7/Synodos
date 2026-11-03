@@ -5,11 +5,57 @@ import shutil
 from pathlib import Path
 from speech.config import load_settings
 from typing import Optional
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException, Query, Response
-from core.runtime import meeting_store, meeting_sessions, sessions
+from core.runtime import meeting_store, meeting_sessions, sessions, speaker_store, hotword_store
 from api.session_lifecycle import meeting_connection_lock, stop_and_join
 
 router = APIRouter()
+
+class MeetingSettingsPayload(BaseModel):
+    language: str = Field(default="en", min_length=2, max_length=24)
+    translate_to: str = Field(default="en", max_length=24)
+    record_audio: bool = True
+    vad_threshold: float = Field(default=4.0, ge=0.5, le=30)
+    rec_threshold: float = Field(default=1.5, ge=0.2, le=30)
+    participant_ids: list[str] = Field(default_factory=list, max_length=64)
+    hotword_ids: list[str] = Field(default_factory=list, max_length=64)
+    spk_threshold: float = Field(default=0.3, ge=0, le=1)
+
+
+@router.patch("/api/meetings/{meeting_id}/settings")
+async def update_meeting_settings(meeting_id: str, payload: MeetingSettingsPayload) -> dict:
+    """Persist offline configuration without opening an idle recording session."""
+    if not meeting_store.valid_id(meeting_id):
+        raise HTTPException(400, "Invalid meeting ID")
+    participants = speaker_store.get_for_matching(payload.participant_ids)
+    if len(participants) != len(set(payload.participant_ids)):
+        raise HTTPException(400, "Selected speaker is missing")
+    libraries = {item["id"] for item in hotword_store.list_hotwords()}
+    if any(hid not in libraries for hid in payload.hotword_ids):
+        raise HTTPException(400, "Selected hotword library is missing")
+    from core.runtime import settings as app_settings
+    async with meeting_connection_lock(meeting_id):
+        if meeting_id in meeting_sessions:
+            raise HTTPException(409, "Stop the recording before updating settings")
+        def save():
+            meta = meeting_store.get_meta(meeting_id)
+            if meta is None:
+                raise HTTPException(404, "Meeting not found")
+            state = meeting_store.load_state(meeting_id) or {}
+            state.pop("meta", None)
+            state["id"] = meeting_id
+            state["title"] = state.get("title") or meta.get("title") or "Untitled Meeting"
+            state.setdefault("sample_rate", app_settings.sample_rate)
+            state.setdefault("merge_gap_s", app_settings.merge_gap_s)
+            state["participant_ids"] = list(dict.fromkeys(payload.participant_ids))
+            state["hotword_ids"] = list(dict.fromkeys(payload.hotword_ids))
+            state["spk_threshold"] = payload.spk_threshold
+            state["ui_settings"] = payload.model_dump()
+            meeting_store.save_state(state)
+            return {"ok": True, "settings": state["ui_settings"]}
+        return await asyncio.to_thread(save)
+
 
 @router.get("/api/meetings")
 async def list_meetings() -> dict:
