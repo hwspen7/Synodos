@@ -48,6 +48,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--whisper-model", default="large-v3")
     parser.add_argument("--qwen-model", default="Qwen3-ASR-0.6B")
     parser.add_argument("--device", default="auto")
+    parser.add_argument("--warmup-whisper", action="store_true",
+                        help="Load the Whisper model before timed samples; report cold-start separately")
     parser.add_argument("--compute-type", default="default")
     parser.add_argument("--qwen-device", default="cuda:0")
     parser.add_argument("--qwen-aligner", action="store_true")
@@ -73,6 +75,14 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("Benchmark limited to 10000 samples")
 
     models = {name: inference_engine(name, args) for name in args.engines} if args.infer else {}
+    cold_start_ms = None
+    if args.infer and args.warmup_whisper and "whisper" in models:
+        started = time.perf_counter()
+        # Explicitly load model weights before measuring per-case inference time.
+        # First CUDA kernel / VAD initialization may still affect the first sample.
+        models["whisper"]._get_model()
+        cold_start_ms = round((time.perf_counter() - started) * 1000, 2)
+        print(f"Whisper model preloaded in {cold_start_ms:.0f} ms", flush=True)
     results: dict[str, list[dict]] = {name: [] for name in args.engines}
     for index, item in enumerate(manifest):
         for name in args.engines:
@@ -108,6 +118,7 @@ def main(argv: list[str] | None = None) -> int:
                 results[name].append({"index": index, "error": type(exc).__name__})
                 print(f"Sample {index} / {name}: {type(exc).__name__}: {exc}", file=sys.stderr)
     report = {"schema": "meeting-phase07-benchmark-v1", "infer": args.infer,
+              "whisper_model_load_ms": cold_start_ms,
               "samples": len(manifest), "engines": {
                   name: {"summary": aggregate(rows), "samples": rows}
                   for name, rows in results.items()}}
