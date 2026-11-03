@@ -105,5 +105,11 @@ class PostgresMeetingStore(MeetingStore):
     def delete(self, meeting_id: str) -> bool:
         self._check_id(meeting_id)
         with self.database.pool.connection() as conn:
+            # Remove meeting-linked AI state in one transaction.
+            # Shared uploaded media is not meeting-owned.
+            conn.execute("DELETE FROM ai_knowledge WHERE source_kind='meeting' AND source_id=%s", (meeting_id,))
+            conn.execute("DELETE FROM ai_translations WHERE meeting_id=%s", (meeting_id,))
+            conn.execute("DELETE FROM ai_artifacts WHERE meeting_id=%s", (meeting_id,))
+            conn.execute("DELETE FROM ai_jobs WHERE meeting_id=%s", (meeting_id,))
             deleted = conn.execute("DELETE FROM meeting_records WHERE id = %s RETURNING id", (meeting_id,)).fetchone()
         return deleted is not None
