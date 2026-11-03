@@ -1657,3 +1657,21 @@ button {
     flex-direction: column;
   }
 }
+
+/* A provisional live caption belongs in the transcript flow, not in an
+   unrelated settings panel. Confirmed transcript paragraphs stay unchanged. */
+.transcript-live-preview {
+  border: 1px dashed var(--mop-border-strong);
+  border-left: 3px solid var(--mop-secondary);
+  background: rgba(var(--mop-secondary-rgb), 0.045);
+}
+
+.transcript-live-preview .para-text {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.transcript-preview-dot {
+  background: var(--mop-secondary);
+  opacity: 0.7;
+}
