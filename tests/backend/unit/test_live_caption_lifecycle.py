@@ -25,6 +25,9 @@ class FakeMultilingualModels:
             language="en", speech_detected=True,
         )
 
+    def embed(self, audio):
+        return None
+
 
 class RealtimeSubtitleContracts(unittest.TestCase):
     def test_previews_have_monotonic_revision_even_on_clear(self):
