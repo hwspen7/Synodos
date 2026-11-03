@@ -145,7 +145,7 @@ function joinTranscriptText(left: string, right: string): string {
   const b = right.trimStart()
   if (!a) return b
   if (!b) return a
-  if (/[[({（《「『“‘]$/.test(a) || /^[,!.?;:%)\]}，。！？；：、）》」』”’]/.test(b)) return a + b
+  if (/[[({\uff08\u300a\u300c\u300e\u201c\u2018]$/.test(a) || /^[,!.?;:%)\]}\uff0c\u3002\uff01\uff1f\uff1b\uff1a\u3001\uff09\u300b\u300d\u300f\u201d\u2019]/.test(b)) return a + b
   const cjk = /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/
   if (cjk.test(a.slice(-1)) || cjk.test(b.charAt(0))) return a + b
   return a + ' ' + b
@@ -540,7 +540,7 @@ onBeforeUnmount(() => stopInternal())
               <span class="mic-level-bar" :style="{ width: Math.min(100, micLevel * 300) + '%' }"></span>
             </span>
             <span v-if="serverInfo">Buffered {{ (bufferedMs / 1000).toFixed(1) }}s</span>
-            <span>Segments {{ transcriptMeta.segments }} · Paragraphs {{ transcriptMeta.paragraphs }}</span>
+            <span>Segments {{ transcriptMeta.segments }} \u00b7 Paragraphs {{ transcriptMeta.paragraphs }}</span>
             <span v-if="participantNames.length > 0" class="participant-chip">
               <AppIcon name="users" :size="13" />
               Participants: {{ participantNames.join(', ') }}
@@ -621,7 +621,7 @@ onBeforeUnmount(() => stopInternal())
         @click="showParticipants = true"
       >
         <AppIcon name="users" :size="15" />
-        Participants{{ selectedParticipantIds.length > 0 ? `(${selectedParticipantIds.length} people · ${spkThreshold})` : '' }}
+        Participants{{ selectedParticipantIds.length > 0 ? `(${selectedParticipantIds.length} people \u00b7 ${spkThreshold})` : '' }}
       </button>
       <button
         class="btn btn-ghost"
@@ -671,7 +671,7 @@ onBeforeUnmount(() => stopInternal())
             <span v-if="para.segmentIds.length > 1" class="seg-count">
               {{ para.segmentIds.length }} segments
             </span>
-            <span class="para-time">{{ formatTime(para.start_ms) }} – {{ formatTime(para.end_ms) }}</span>
+            <span class="para-time">{{ formatTime(para.start_ms) }} \u2013 {{ formatTime(para.end_ms) }}</span>
           </div>
           <p class="para-text">{{ para.text || '(No content in this paragraph)' }}</p>
           <div class="meeting-sub" v-if="!recording">
