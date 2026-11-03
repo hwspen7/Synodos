@@ -836,6 +836,25 @@ class SessionProcessor(threading.Thread):
         """
         if not self.segments:
             return
+        mode = os.getenv("MEETING_DIARIZATION_MODE", "cluster")
+        # Experimental comparator: use the same global acoustic clustering
+        # but avoid repeatedly rewriting already reliable live speaker IDs.
+        # This is presentation stability, not a guarantee of diarization
+        # accuracy. Unidentified and uncertain labels remain revisable.
+        sticky_labels = (
+            {
+                int(s["id"]): (
+                    int(s["speaker_id"]),
+                    str(s.get("speaker_name") or f'Speaker {s["speaker_id"]}'),
+                )
+                for s in self.segments
+                if type(s.get("speaker_id")) is int and s["speaker_id"] > 0
+                and s.get("emb") is not None
+                and not s.get("speaker_uncertain", False)
+                and not s.get("speaker_override", False)
+            }
+            if mode == "cluster_sticky" else {}
+        )
         mature_labels = collect_mature_labels(
             self.segments, self.settings.sample_rate,
             self._speaker_relabel_horizon_s,
@@ -863,6 +882,10 @@ class SessionProcessor(threading.Thread):
 
         self._remap_speakers()
         self._assign_labels(matched)
+        if sticky_labels:
+            prevented = restore_mature_labels(self.segments, sticky_labels)
+            if prevented:
+                metrics.increment("speaker_sticky_relabels_prevented", prevented)
         # Do not rewrite a user's already displayed historical transcript
         # on every later global clustering pass. Recent and uncertain
         # segments still receive new evidence and revisions.
