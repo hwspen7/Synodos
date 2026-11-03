@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Any
 
 from observability.metrics import metrics
+from phase07.telemetry import telemetry
 
 
 class InferenceBusyError(RuntimeError):
@@ -58,6 +59,7 @@ class InferenceScheduler:
             metrics.increment("inference_rejected")
             raise InferenceBusyError("Inference queue is full") from exc
         metrics.gauge("inference_pending", self._pending.qsize())
+        telemetry.observe_queue_depth(self._pending.qsize())
         try:
             return future.result(timeout=self.timeout_s if timeout_s is None else timeout_s)
         except FutureTimeoutError as exc:
@@ -72,8 +74,10 @@ class InferenceScheduler:
             except queue.Empty:
                 continue
             metrics.gauge("inference_pending", self._pending.qsize())
+            telemetry.observe_queue_depth(self._pending.qsize())
             try:
                 if task.future.set_running_or_notify_cancel():
+                    telemetry.observe_queue_wait(task.operation, time.monotonic() - task.submitted)
                     start = time.monotonic()
                     try:
                         result = task.callback()
@@ -84,7 +88,9 @@ class InferenceScheduler:
                         task.future.set_result(result)
                         metrics.increment("inference_completed")
                     finally:
-                        metrics.gauge("inference_last_duration_s", time.monotonic() - start)
+                        elapsed = time.monotonic() - start
+                        metrics.gauge("inference_last_duration_s", elapsed)
+                        telemetry.observe_inference(task.operation, elapsed)
             finally:
                 self._pending.task_done()
 

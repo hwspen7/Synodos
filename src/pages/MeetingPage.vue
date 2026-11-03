@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import IntelligencePanel from '@/components/IntelligencePanel.vue'
+import Phase07Status from '@/components/Phase07Status.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { downloadUrl, hotwordsApi, meetingsApi, speakersApi } from '@/api/client'
@@ -557,6 +558,9 @@ onBeforeUnmount(() => stopInternal())
         </button>
       </div>
     </div>
+
+    <Phase07Status :segments="segments" :buffered-ms="bufferedMs"
+      :recording="recording" :asr-engine="serverInfo?.asr_engine ?? 'unknown'" />
 
     <div class="meeting-controls">
       <label class="field">Recognition Language

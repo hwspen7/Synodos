@@ -3,6 +3,7 @@
 from fastapi import APIRouter, HTTPException
 from core.runtime import infra
 from observability.metrics import metrics
+from phase07.telemetry import telemetry
 from core.runtime import settings, models, sessions, meeting_sessions
 
 router = APIRouter()
@@ -32,4 +33,6 @@ async def health() -> dict:
 async def operational_metrics() -> dict:
     if not infra.metrics_enabled:
         raise HTTPException(status_code=404, detail="not found")
-    return metrics.snapshot()
+    report = metrics.snapshot()
+    report["phase07"] = telemetry.snapshot()
+    return report

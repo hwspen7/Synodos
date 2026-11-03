@@ -39,6 +39,9 @@ from storage.speakers import SpeakerStore
 from storage.meetings import MeetingStore
 from sessions.save_queue import SaveQueue
 from observability.metrics import metrics
+from phase07.telemetry import telemetry
+from phase07.speakers import speaker_stats, find_distinct_participant
+from phase07.recovery import autosave_seconds
 from sessions.outbox import enqueue_message
 from sessions.speaker_fallback import (
     UNIDENTIFIED_CLUSTER, fallback_speaker_id, normalized_embedding,
@@ -121,6 +124,9 @@ class SessionProcessor(threading.Thread):
         self._save_queue = SaveQueue()
         self._save_requested = self._save_queue.wake_event
         self._final_save_ok = False
+        self._phase07_autosave_interval = autosave_seconds()
+        self._phase07_last_autosave = time.monotonic()
+        self._phase07_saved_segment_id = 0
 
         # Handle transcripts and speaker assignments.
         self.speaker_store = speaker_store
@@ -230,6 +236,10 @@ class SessionProcessor(threading.Thread):
             return False
         try:
             self.meeting_store.save_state(self.snapshot_state())
+            self._phase07_last_autosave = time.monotonic()
+            self._phase07_saved_segment_id = max(
+                self._phase07_saved_segment_id, self._next_segment_id - 1
+            )
             logger.info("meeting %s saved (%d segments)", self.meeting_id, len(self.segments))
             return True
         except Exception:
@@ -303,6 +313,7 @@ class SessionProcessor(threading.Thread):
         else:
             max_id = 0
         self._next_segment_id = max(int(state.get("next_segment_id", max_id + 1)), max_id + 1)
+        self._phase07_saved_segment_id = max_id
         self._speaker_map = {int(k): int(v) for k, v in (state.get("speaker_map") or {}).items()}
         self._speaker_seg_ids = {}
         if not self._participants_explicit:
@@ -372,6 +383,7 @@ class SessionProcessor(threading.Thread):
             return False
 
         # Handle transcripts and speaker assignments.
+        phase07_asr_started = time.monotonic()
         if self._speech_settings.engine == "legacy":
             sentences = self.models.transcribe_sentences(audio, hotword=self._hotword_str or None)
         else:
@@ -382,6 +394,7 @@ class SessionProcessor(threading.Thread):
                 config=self._speech_settings,
             )
             sentences = [piece.as_legacy() for piece in recognition.utterances]
+        telemetry.observe_asr_cycle(buffer_s, time.monotonic() - phase07_asr_started)
         unconfirmed = []
         local_end = 0
         for sentence in sentences:
@@ -487,6 +500,15 @@ class SessionProcessor(threading.Thread):
                 self._fallback_labels()
             changed = self._rebuild_and_push()
 
+        # Autosave only when a new confirmed segment exists; never persist partial ASR.
+        if (changed and self._phase07_autosave_interval and self.meeting_store and self.meeting_id
+                and self._next_segment_id - 1 > self._phase07_saved_segment_id
+                and time.monotonic() - self._phase07_last_autosave >= self._phase07_autosave_interval):
+            if self._do_save():
+                metrics.increment("phase07_autosaves")
+            else:
+                metrics.increment("phase07_autosave_errors")
+
         if not final:
             self._send_state()
         return changed
@@ -578,6 +600,11 @@ class SessionProcessor(threading.Thread):
                 if sim > best_sim:
                     best_sim = sim
                     best_pid = p["id"]
+        # Opt-in ambiguity guard across distinct enrolled participants.
+        import os
+        margin = float(os.getenv("MEETING_PHASE07_SPEAKER_MARGIN", "0"))
+        if margin > 0 and self._participants:
+            return find_distinct_participant(self._participants, emb, margin)
         return best_pid, best_sim
 
     def _next_free_speaker_id(self, used: Optional[set[int]] = None) -> int:
@@ -671,6 +698,9 @@ class SessionProcessor(threading.Thread):
             }
             for s in ordered
         ]
+        phase07_speaker = speaker_stats(items)
+        metrics.gauge("phase07_speaker_changes", phase07_speaker["speaker_switches"])
+        metrics.gauge("phase07_unidentified_segments", phase07_speaker["unidentified_segments"])
         fingerprint = tuple(
             (i["id"], i["speaker_id"], i["speaker_name"], i["start_ms"], i["end_ms"], i["text"],
              i["language"], i.get("language_confidence"))

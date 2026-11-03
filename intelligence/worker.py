@@ -11,6 +11,7 @@ from intelligence.contracts import build_chunks, safe_artifact, ALLOWED_MODES
 from intelligence.model_gateway import ModelGateway
 from intelligence.prompts import SYSTEM, transcript_prompt, answer_prompt
 from intelligence import store, retrieval, media
+from phase07.evidence import evidence_audit, referenced_hits
 
 log=logging.getLogger('meeting.intelligence')
 
@@ -65,6 +66,7 @@ def process(job, gateway):
         else:
             raw=gateway.structured(SYSTEM,transcript_prompt(mode,segments),model=gateway.model_for(mode))
             data=safe_artifact(raw,[s['id'] for s in segments])
+        data['evidence_audit'] = evidence_audit(data, [s['id'] for s in segments])
         aid=store.save_artifact(job['meeting_id'],job['id'],kind,mode,revision,data,gateway.model_for(mode))
         return {'artifact_id':aid,'data':data,'source_revision':revision}
     if kind=='index_meeting':
@@ -109,7 +111,9 @@ def process(job, gateway):
         nums=raw.get('source_numbers')
         if not isinstance(nums,list):
             nums=[]
-        sources=[{k:v for k,v in hits[n-1].items() if k != 'embedding'} for n in nums if type(n) is int and 1<=n<=len(hits)]
+        sources=referenced_hits(hits, nums)
+        if not sources:
+            return {'answer':'No attributable evidence was returned.','sources':[]}
         return {'answer':str(raw.get('answer') or '')[:12000], 'sources':sources}
     if kind=='live_translate':
         target=str(job['payload'].get('target') or '').lower()
