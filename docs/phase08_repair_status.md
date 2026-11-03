@@ -37,7 +37,7 @@ or deploy as an authenticated multiuser service until the remaining P0 risks are
 | 23 | Incomplete meeting deletion | Partial | Meeting-owned WAV and PostgreSQL AI jobs/artifacts/translations/knowledge are deleted; shared media excluded |
 | 24 | Claim citation validity versus source support | Open | IDs are validated, semantic entailment is not |
 | 25 | Recent-only retrieval candidates | Open | Need full-corpus hybrid index and tests |
-| 26 | Browser resampling quality | Open | No tested polyphase resampler |
+| 26 | Browser resampling quality | Partial | Cross-block fractional phase corrected and sample-count regression added; linear resampling still lacks anti-alias filter |
 | 27 | Very small audio frames | Open | Worklet packet batching and scheduling needed |
 | 28 | UI Clear does not erase persisted transcript | Open | Need explicit clear-versus-delete controls |
 | 29 | Word-aligned audio playback corrections | Open | Edit by segment ID exists but no synced review timeline |
