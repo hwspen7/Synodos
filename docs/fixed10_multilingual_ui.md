@@ -80,8 +80,28 @@ dashboard will not show an invented metric when results are unavailable.
 A failed sample is a blocker, not a zero-error sample.
 
 To measure **all ten clips** rather than only the eight unambiguous
-single-speaker ASR samples, run the two overlap WAVs through the complete
-meeting pipeline and export per-person timestamped transcript segments to:
+single-speaker ASR samples, replay all ten WAVs through a running meeting
+backend. The tool verifies that the server acknowledged the exact PCM sample
+count and returned a completed transcript snapshot. Audio is sent at its
+actual wall-clock rate by default (1.0×).
+
+```powershell
+# In one terminal, start the validated backend
+& .\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
+
+# In another terminal, run from the project root
+& .\.venv\Scripts\python.exe -m pip install websockets
+& .\.venv\Scripts\python.exe tools\fixed10_replay.py --root benchmark\fixed10 --url ws://127.0.0.1:8000/ws/audio
+& .\.venv\Scripts\python.exe tools\fixed10_dashboard.py --root benchmark\fixed10
+```
+
+The replay saves `replay_results.json` for all ten cases and
+`overlap_predictions.json` for the complete pipeline's two overlapping
+clips. Transport errors, incomplete acknowledgements and missing finalization
+are flagged as failures. WebSocket replay does not substitute for testing
+the physical microphone, browser audio journal or multi-hour reliability.
+
+For external models you may alternatively supply timestamped predictions:
 
 ```json
 {
