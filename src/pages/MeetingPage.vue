@@ -22,8 +22,8 @@ const route = useRoute()
 const router = useRouter()
 
 const WS_BASE = (import.meta.env.VITE_WS_URL as string | undefined) ?? ''
-const language = ref('auto')
-const translationTarget = ref('')
+const language = ref('zh')
+const translationTarget = ref('zh')
 const recordAudio = ref(false)
 const partialText = ref('')
 const partialLanguage = ref('')
@@ -36,7 +36,6 @@ const supportedLanguages = [
 ]
 
 type Status = 'idle' | 'connecting' | 'recording' | 'stopping' | 'disconnected'
-type ViewMode = 'segments' | 'paragraph'
 
 const recording = ref(false)
 const status = ref<Status>('idle')
@@ -48,7 +47,6 @@ const serverInfo = ref<ServerReady | null>(null)
 const meetingTitle = ref('')
 const bufferedMs = ref(0)
 const segments = ref<Segment[]>([])
-const viewMode = ref<ViewMode>('segments')
 const mergeGapS = ref(2)
 const transcriptMeta = ref({ paragraphs: 0, segments: 0 })
 const transcriptEl = ref<HTMLElement | null>(null)
@@ -93,9 +91,10 @@ const statusClass = computed(() => {
 
 /** Group neighboring same-speaker segments locally into paragraphs. */
 const paragraphs = computed<Paragraph[]>(() => buildParagraphs(segments.value))
-const displayed = computed<Array<Segment | Paragraph>>(() =>
-  viewMode.value === 'paragraph' ? paragraphs.value : segments.value,
-)
+const untranslatedCount = computed(() => segments.value.filter((seg) =>
+  translationTarget.value && seg.language && seg.language !== 'und' &&
+  seg.language !== translationTarget.value && !seg.translation?.trim(),
+).length)
 const participantNames = computed(() => {
   const byId = new Map(speakers.value.map((s) => [s.id, s.name]))
   return selectedParticipantIds.value
@@ -147,6 +146,8 @@ function buildParagraphs(segs: Segment[]): Paragraph[] {
   const paras: Paragraph[] = []
   for (const seg of ordered) {
     const last = paras[paras.length - 1]
+    const visibleText = translationTarget.value && seg.translation?.trim()
+      ? seg.translation : seg.text
     if (
       last &&
       seg.speaker_id === last.speaker_id &&
@@ -154,7 +155,7 @@ function buildParagraphs(segs: Segment[]): Paragraph[] {
     ) {
       last.end_ms = seg.end_ms
       last.segmentIds.push(seg.id)
-      last.text += seg.text
+      last.text += visibleText
     } else {
       paras.push({
         id: seg.id,
@@ -162,7 +163,7 @@ function buildParagraphs(segs: Segment[]): Paragraph[] {
         speaker_name: seg.speaker_name,
         start_ms: seg.start_ms,
         end_ms: seg.end_ms,
-        text: seg.text,
+        text: visibleText,
         segmentIds: [seg.id],
         color: seg.color,
       })
@@ -182,11 +183,6 @@ function applyTranscript(msg: ServerTranscript): void {
     segments: msg.segments.length,
     paragraphs: buildParagraphs(segs).length,
   }
-  void scrollIfNeeded()
-}
-
-function toggleView(): void {
-  viewMode.value = viewMode.value === 'paragraph' ? 'segments' : 'paragraph'
   void scrollIfNeeded()
 }
 
@@ -281,7 +277,7 @@ async function exportMeeting(format: 'md' | 'json'): Promise<void> {
 }
 
 async function copyTranscript(): Promise<void> {
-  const text = displayed.value
+  const text = paragraphs.value
     .map((item) => `[${item.speaker_name || `Speaker ${item.speaker_id}`}] ${item.text}`)
     .join('\n')
   if (!text) return
@@ -483,6 +479,11 @@ async function loadRecordings(): Promise<void> {
   }
 }
 
+function editSegmentById(id: number): void {
+  const segment = segments.value.find((item) => item.id === id)
+  if (segment) void correctTranscript(segment)
+}
+
 async function correctTranscript(seg: Segment): Promise<void> {
   if (recording.value || status.value === 'stopping') return
   const text = window.prompt('Correct transcript segment', seg.text)
@@ -563,12 +564,12 @@ onBeforeUnmount(() => stopInternal())
       :recording="recording" :asr-engine="serverInfo?.asr_engine ?? 'unknown'" />
 
     <div class="meeting-controls">
-      <label class="field">Recognition Language
+      <label class="field">Spoken language
         <select v-model="language" :disabled="recording || status === 'connecting' || status === 'stopping'">
           <option v-for="entry in supportedLanguages" :key="entry[0]" :value="entry[0]">{{ entry[1] }}</option>
         </select>
       </label>
-      <label class="field">Translate to
+      <label class="field">Display translation
         <select v-model="translationTarget" :disabled="recording || status === 'connecting' || status === 'stopping'">
           <option value="">No translation</option>
           <option v-for="entry in supportedLanguages.filter((item) => item[0] !== 'auto')" :key="entry[0]" :value="entry[0]">{{ entry[1] }}</option>
@@ -599,15 +600,7 @@ onBeforeUnmount(() => stopInternal())
           :disabled="recording"
         />
       </label>
-      <button
-        class="btn btn-ghost"
-        :class="{ active: viewMode === 'paragraph' }"
-        :disabled="segments.length === 0"
-        @click="toggleView"
-      >
-        {{ viewMode === 'paragraph' ? 'Segment View' : 'Paragraph View' }}
-      </button>
-      <button class="btn btn-ghost" :disabled="displayed.length === 0" @click="copyTranscript">
+      <button class="btn btn-ghost" :disabled="paragraphs.length === 0" @click="copyTranscript">
         Copy Transcript
       </button>
       <button
@@ -633,6 +626,9 @@ onBeforeUnmount(() => stopInternal())
 
     <p v-if="error" class="error-banner">{{ error }}</p>
     <p v-if="audioAnalysis" class="meeting-sub">Audio analysis: {{ audioAnalysis }}</p>
+    <p v-if="untranslatedCount > 0" class="hint-text warn-text" role="status">
+      {{ untranslatedCount }} segment(s) have no available translation; original text is shown.
+    </p>
     <section v-if="partialText" class="meeting-controls" aria-live="polite">
       <strong>Live preview ({{ partialLanguage }})</strong>
       <span>{{ partialText }}</span>
@@ -655,23 +651,6 @@ onBeforeUnmount(() => stopInternal())
         </p>
       </div>
 
-      <template v-else-if="viewMode === 'segments'">
-        <article v-for="seg in segments" :key="seg.id" class="segment">
-          <div class="para-head">
-            <span class="speaker-dot" :style="{ background: seg.color }"></span>
-            <span class="speaker-name">{{ seg.speaker_name || `Speaker ${seg.speaker_id}` }}</span>
-            <span class="para-time">{{ formatTime(seg.start_ms) }} – {{ formatTime(seg.end_ms) }}</span>
-          </div>
-          <p class="para-text">{{ seg.text || '(No content in this segment)' }}</p>
-          <div class="meeting-sub" v-if="seg.language">
-            <span>Detected language: {{ seg.language === 'und' ? 'Uncertain' : seg.language }}</span>
-            <span v-if="seg.language_confidence != null">Confidence: {{ Math.round(seg.language_confidence * 100) }}%</span>
-          </div>
-      <p v-if="seg.translation" class="para-text">Translation: {{ seg.translation }}</p>
-      <button class="btn btn-ghost btn-sm" :disabled="recording" @click="correctTranscript(seg)">Edit text</button>
-        </article>
-      </template>
-
       <template v-else>
         <article v-for="para in paragraphs" :key="para.id" class="paragraph">
           <div class="para-head">
@@ -682,7 +661,12 @@ onBeforeUnmount(() => stopInternal())
             </span>
             <span class="para-time">{{ formatTime(para.start_ms) }} – {{ formatTime(para.end_ms) }}</span>
           </div>
-          <p class="para-text">{{ para.text || '(No content in this segment)' }}</p>
+          <p class="para-text">{{ para.text || '(No content in this paragraph)' }}</p>
+          <div class="meeting-sub" v-if="!recording">
+            <button v-for="segmentId in para.segmentIds" :key="segmentId"
+              class="btn btn-ghost btn-sm" :disabled="status === 'stopping'"
+              @click="editSegmentById(segmentId)">Edit #{{ segmentId }}</button>
+          </div>
         </article>
       </template>
     </main>
