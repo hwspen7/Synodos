@@ -101,7 +101,9 @@ class SessionProcessor(threading.Thread):
         if self._speech_settings.engine != "legacy":
             import os
             # Avoid repeatedly committing fragments from tiny ASR windows.
-            self._process_threshold_s = max(4.0, min(self._process_threshold_s,
+            # Render a provisional caption after the configured preview interval.
+            # Confirmed commits still require the longer acoustic context below.
+            self._process_threshold_s = max(1.5, min(self._process_threshold_s,
                                                      self._speech_settings.preview_interval_s))
             self._trusted_threshold_s = max(settings.rec_threshold_s,
                                             self._speech_settings.confirmation_delay_s)
@@ -547,19 +549,33 @@ class SessionProcessor(threading.Thread):
             metrics.increment("asr_segments_confirmed")
             local_end = max(local_end, e_g - start_offset)
 
-        if self._speech_settings.engine != "legacy" and not self._speech_settings.native_streaming and not final:
-            preview_text = " ".join(str(s.get("text", "")) for s in unconfirmed).strip()
-            if preview_text:
-                from speech.streaming import PreviewTracker
-                latest = unconfirmed[-1]
-                event = self._preview_tracker.update(preview_text, latest.get("language", "und"),
-                                                       start_offset * 1000 // sr,
-                                                       (start_offset + len(audio)) * 1000 // sr)
-                if event is not None:
-                    self._put({"type": "partial", **vars(event)})
-            elif local_end > 0:
-                self._preview_tracker.clear()
-                self._put({"type": "partial", "text": "", "language": "und", "revision": 0})
+        if self._speech_settings.engine != "legacy" and not self._speech_settings.native_streaming:
+            if final:
+                # An unfinished draft must not survive after final ASR.
+                cleared = self._preview_tracker.clear(
+                    start_offset * 1000 // sr, absolute_end * 1000 // sr)
+                if cleared is not None:
+                    self._put({"type": "partial", **vars(cleared)})
+            else:
+                preview_text = " ".join(str(s.get("text", "")) for s in unconfirmed).strip()
+                if preview_text:
+                    first = min(max(0, int(s["start"])) for s in unconfirmed)
+                    last = max(int(s["end"]) for s in unconfirmed)
+                    latest = unconfirmed[-1]
+                    event = self._preview_tracker.update(
+                        preview_text, latest.get("language", "und"),
+                        start_offset * 1000 // sr + first,
+                        start_offset * 1000 // sr + last,
+                    )
+                    if event is not None:
+                        self._put({"type": "partial", **vars(event)})
+                elif local_end > 0 or recognition.speech_detected is False:
+                    # Clear only when there is no pending draft, never merely
+                    # because a speaker re-label sent another transcript snapshot.
+                    cleared = self._preview_tracker.clear(
+                        start_offset * 1000 // sr, absolute_end * 1000 // sr)
+                    if cleared is not None:
+                        self._put({"type": "partial", **vars(cleared)})
         if final and (self._speech_settings.enable_events or self._speech_settings.enable_overlap):
             try:
                 from speech.analysis import analyze
