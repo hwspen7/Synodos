@@ -14,11 +14,49 @@ from speech.diarization import SpeakerCentroidTracker
 from sessions.processor import SessionProcessor
 from sessions.speaker_stability import (
     collect_mature_labels, restore_mature_labels, stabilized_cluster_ids,
+    summarize_cluster_fragmentation,
 )
 from speech.config import SpeechSettings
 
 
 class StabilityUnitContracts(unittest.TestCase):
+    def test_final_raw_clusters_explain_frozen_label_fragmentation(self):
+        # Two raw acoustic clusters but six frozen display labels
+        # isolates identity alias mapping from an acoustic split.
+        records = [
+            {"id": i, "cluster": i % 2, "speaker_id": i // 2 + 1,
+             "emb": np.array([1., 0.])}
+            for i in range(12)
+        ]
+        result = summarize_cluster_fragmentation(records)
+        self.assertEqual(result["raw_cluster_count"], 2)
+        self.assertEqual(result["published_positive_speaker_count"], 6)
+        self.assertEqual(result["raw_clusters_with_multiple_published_labels"], 2)
+        self.assertEqual(result["max_published_labels_per_raw_cluster"], 6)
+        self.assertEqual(result["labeled_segments_in_conflicted_raw_clusters"], 12)
+        self.assertEqual(
+            result["published_labels_spanning_multiple_raw_clusters"], 6)
+        self.assertEqual(result["largest_raw_cluster_size"], 6)
+        self.assertEqual(len(result["top_conflicted_raw_clusters"]), 2)
+
+    def test_final_raw_clusters_can_be_true_acoustic_fragmentation(self):
+        records = [
+            {"id": i, "cluster": i, "speaker_id": i + 1,
+             "emb": np.array([1., 0.])}
+            for i in range(5)
+        ]
+        result = summarize_cluster_fragmentation(records)
+        self.assertEqual(result["raw_cluster_count"], 5)
+        self.assertEqual(result["published_positive_speaker_count"], 5)
+        self.assertEqual(result["raw_clusters_with_multiple_published_labels"], 0)
+        self.assertEqual(result["labeled_segments_in_conflicted_raw_clusters"], 0)
+        self.assertEqual(result["top_conflicted_raw_clusters"], [])
+        missing = summarize_cluster_fragmentation([
+            {"cluster": -3, "speaker_id": -1, "emb": None},
+        ])
+        self.assertEqual(missing["raw_cluster_count"], 0)
+        self.assertEqual(missing["segments_without_embedding"], 1)
+
     def test_raw_cluster_renumbering_keeps_historical_speaker_ids(self):
         items = [
             {"id": i, "cluster": 31, "speaker_id": 2}
