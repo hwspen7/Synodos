@@ -157,6 +157,27 @@ def process(job, gateway):
     raise ValueError('Unsupported task kind')
 
 
+
+
+def realtime_recording_active(timeout=0.5):
+    """Cooperatively defer Ollama jobs while the local ASR session is live.
+
+    This process has no access to the backend's in-memory sessions. A bounded,
+    loopback-only health request avoids an unsafe cross-process GPU race.
+    In-flight LLM inference cannot be preempted by this check.
+    """
+    if os.getenv('MEETING_AI_DEFER_DURING_RECORDING', '1').lower() in ('0', 'no', 'false'):
+        return False
+    from urllib.request import urlopen
+    try:
+        with urlopen('http://127.0.0.1:8000/api/health', timeout=timeout) as response:
+            if response.status != 200:
+                return False
+            info = json.load(response)
+        return int(info.get('active_meetings', 0)) > 0
+    except (OSError, ValueError, TypeError, KeyError, TimeoutError):
+        return False
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--once',action='store_true')
@@ -171,10 +192,22 @@ def main():
     store.retry_stale()
     count=0
     last_recovery=time.monotonic()
+    waiting_for_realtime=False
     while True:
         if time.monotonic()-last_recovery > 90:
             store.retry_stale()
             last_recovery=time.monotonic()
+        if realtime_recording_active():
+            if not waiting_for_realtime:
+                log.info('Live ASR session active. Deferring new Ollama jobs to protect transcription.')
+                waiting_for_realtime=True
+            if args.once:
+                break
+            time.sleep(max(0.2, min(args.poll, 30)))
+            continue
+        if waiting_for_realtime:
+            log.info('Live ASR session ended. Resuming queued Ollama jobs.')
+            waiting_for_realtime=False
         job=store.claim()
         if job:
             from threading import Event, Thread
