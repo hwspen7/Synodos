@@ -28,6 +28,7 @@ export interface TranscriptSegment {
   end_ms: number
   text: string
   language?: string
+  language_confidence?: number | null
   translation?: string
   timestamp_quality?: string
   revision?: number

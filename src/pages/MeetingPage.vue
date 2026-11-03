@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import IntelligencePanel from '@/components/IntelligencePanel.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { downloadUrl, hotwordsApi, meetingsApi, speakersApi } from '@/api/client'
@@ -637,6 +638,8 @@ onBeforeUnmount(() => stopInternal())
       <audio v-for="name in recordingList" :key="name" controls :src="`/api/speech/meetings/${encodeURIComponent(props.id)}/recordings/${encodeURIComponent(name)}`"></audio>
     </div>
 
+    <!-- PHASE05_INTELLIGENCE_PATCH -->
+    <IntelligencePanel :meeting-id="props.id" :segments="segments" />
     <main ref="transcriptEl" class="transcript" @scroll="onTranscriptScroll">
       <div v-if="segments.length === 0" class="empty-state">
         <div class="empty-icon"><AppIcon name="mic" :size="26" /></div>
@@ -656,6 +659,10 @@ onBeforeUnmount(() => stopInternal())
             <span class="para-time">{{ formatTime(seg.start_ms) }} – {{ formatTime(seg.end_ms) }}</span>
           </div>
           <p class="para-text">{{ seg.text || '(No content in this segment)' }}</p>
+          <div class="meeting-sub" v-if="seg.language">
+            <span>Detected language: {{ seg.language === 'und' ? 'Uncertain' : seg.language }}</span>
+            <span v-if="seg.language_confidence != null">Confidence: {{ Math.round(seg.language_confidence * 100) }}%</span>
+          </div>
       <p v-if="seg.translation" class="para-text">Translation: {{ seg.translation }}</p>
       <button class="btn btn-ghost btn-sm" :disabled="recording" @click="correctTranscript(seg)">Edit text</button>
         </article>

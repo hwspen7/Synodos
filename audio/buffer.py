@@ -49,8 +49,14 @@ class AudioBuffer:
             return self._count / self.sample_rate
 
     def total_samples(self) -> int:
+        # Keep the existing API contract: buffered sample count.
         with self._lock:
             return self._count
+
+    def absolute_end_samples(self) -> int:
+        # Monotonic sample endpoint for real-time preview timestamps.
+        with self._lock:
+            return self._start_offset + self._count
 
     def start_offset(self) -> int:
         with self._lock:

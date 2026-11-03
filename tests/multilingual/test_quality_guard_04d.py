@@ -30,9 +30,9 @@ class SpeechEvidenceTests(unittest.TestCase):
         self.assertEqual(output, ())
 
     def test_language_neutral_real_chinese_sentence_is_preserved(self):
-        output = verify_utterances([segment(0.3, 2.4, "今天我们测试多语言系统")],
+        output = verify_utterances([segment(0.3, 2.4, "\u4eca\u5929\u6211\u4eec\u6d4b\u8bd5\u591a\u8bed\u8a00\u7cfb\u7edf")],
                                    [region(.25, 2.5)], 3000, "zh")
-        self.assertEqual(output[0].text, "今天我们测试多语言系统")
+        self.assertEqual(output[0].text, "\u4eca\u5929\u6211\u4eec\u6d4b\u8bd5\u591a\u8bed\u8a00\u7cfb\u7edf")
         self.assertEqual(output[0].language, "zh")
 
     def test_words_without_speech_support_are_removed(self):

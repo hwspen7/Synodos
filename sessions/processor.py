@@ -180,7 +180,8 @@ class SessionProcessor(threading.Thread):
                 if not changed:
                     # Handle transcripts and speaker assignments.
                     current = self.buffer.seconds()
-                    self.buffer.wait_until(current + 0.5, self._stop_event, self._save_requested)
+                    # Avoid repeated full-buffer model inference for each 0.5s of silence.
+                    self.buffer.wait_until(current + 1.5, self._stop_event, self._save_requested)
             # Handle transcripts and speaker assignments.
             self._finalize()
         except Exception:
@@ -261,6 +262,7 @@ class SessionProcessor(threading.Thread):
                     "speaker_name": s.get("speaker_name", ""),
                     "emb": s["emb"],  # Preserve behavior.
                     "language": s.get("language", "und"),
+                    "language_confidence": s.get("language_confidence"),
                     "timestamp_quality": s.get("timestamp_quality", "segment"),
                     "words": s.get("words", []),
                     "translation": s.get("translation", ""),
@@ -288,6 +290,7 @@ class SessionProcessor(threading.Thread):
                     "speaker_name": item.get("speaker_name", ""),
                     "text": item.get("text", "") or "",
                     "language": item.get("language", "und"),
+                    "language_confidence": item.get("language_confidence"),
                     "timestamp_quality": item.get("timestamp_quality", "segment"),
                     "words": item.get("words", []),
                     "translation": item.get("translation", ""),
@@ -420,6 +423,7 @@ class SessionProcessor(threading.Thread):
                     "end_sample": e_g,
                     "text": text,
                     "language": sentence.get("language", "und"),
+                    "language_confidence": sentence.get("language_confidence"),
                     "timestamp_quality": sentence.get("timestamp_quality", "segment"),
                     "words": sentence.get("words", []),
                     "emb": emb,
@@ -463,6 +467,16 @@ class SessionProcessor(threading.Thread):
         # Handle transcripts and speaker assignments.
         if local_end > 0:
             self.buffer.drop_before(local_end)
+        elif not final and not sentences and self._speech_settings.engine != "legacy" and recognition.speech_detected is False:
+            # Reclaim only very-low-energy LEADING silence when ASR returned
+            # no utterances. Preserve all uncertain or voice-like samples.
+            import os
+            if os.getenv("MEETING_SAFE_SILENCE_RECLAIM", "1").strip().lower() in ("1", "true", "yes"):
+                from speech.silence_retention import safe_silence_prefix
+                drop = safe_silence_prefix(audio, sr)
+                if drop:
+                    self.buffer.drop_before(drop)
+                    metrics.increment("audio_safe_silence_reclaimed")
 
         changed = False
         if self.segments:
@@ -650,6 +664,7 @@ class SessionProcessor(threading.Thread):
                 "end_ms": round(s["end_sample"] * 1000 / self.settings.sample_rate),
                 "text": s["text"],
                 "language": s.get("language", "und"),
+                "language_confidence": s.get("language_confidence"),
                 "timestamp_quality": s.get("timestamp_quality", "segment"),
                 "translation": s.get("translation", ""),
                 "revision": s.get("revision", 0),
@@ -657,7 +672,8 @@ class SessionProcessor(threading.Thread):
             for s in ordered
         ]
         fingerprint = tuple(
-            (i["id"], i["speaker_id"], i["speaker_name"], i["start_ms"], i["end_ms"], i["text"])
+            (i["id"], i["speaker_id"], i["speaker_name"], i["start_ms"], i["end_ms"], i["text"],
+             i["language"], i.get("language_confidence"))
             for i in items
         )
         if fingerprint == self._last_fingerprint:

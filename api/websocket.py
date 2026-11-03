@@ -221,7 +221,7 @@ async def ws_audio(
                         if online is not None:
                             live_text = await asyncio.to_thread(online.accept, frame)
                             preview = online_preview.update(live_text, language, 0,
-                                                            session.buffer.total_samples() * 1000 // settings.sample_rate)
+                                                            session.buffer.absolute_end_samples() * 1000 // settings.sample_rate)
                             if preview is not None:
                                 await session.outbox.put({"type": "partial", **vars(preview), "native": True})
                     except ValueError as exc:

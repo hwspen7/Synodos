@@ -51,6 +51,8 @@ app.include_router(meeting_router)
 app.include_router(speaker_router)
 app.include_router(hotword_router)
 app.include_router(realtime_router)
+# PHASE05_INTELLIGENCE_PATCH: optional AI service routes
+app.include_router(__import__('api.intelligence', fromlist=['router']).router)
 
 
 @app.on_event("startup")
