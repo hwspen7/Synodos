@@ -15,6 +15,8 @@ export interface ServerReady {
   spk_threshold?: number
   min_speaker_audio_s?: number
   asr_engine?: string
+  asr_model?: string
+  diarization_mode?: string
   asr_language?: string
   translation_target?: string
 }
