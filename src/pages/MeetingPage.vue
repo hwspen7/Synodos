@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import IntelligencePanel from '@/components/IntelligencePanel.vue'
+import ContextCorrectionPanel from '@/components/ContextCorrectionPanel.vue'
 import Phase07Status from '@/components/Phase07Status.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -875,6 +876,9 @@ onBeforeUnmount(() => stopInternal())
 
     <!-- PHASE05_INTELLIGENCE_PATCH -->
     <IntelligencePanel :meeting-id="props.id" :segments="segments" />
+    <ContextCorrectionPanel :meeting-id="props.id" :segments="segments"
+      :recording="recording || status === 'connecting' || status === 'stopping'"
+      @applied="loadSavedTranscript" />
     <main ref="transcriptEl" class="transcript" @scroll="onTranscriptScroll">
       <div v-if="segments.length === 0" class="empty-state">
         <div class="empty-icon"><AppIcon name="mic" :size="26" /></div>
