@@ -161,7 +161,9 @@ class Fixed150Contracts(unittest.TestCase):
     def test_token_recall_does_not_confuse_missing_voice_with_success(self):
         self.assertAlmostEqual(token_recall("fresh talking audio", "fresh audio"), 2/3)
         self.assertEqual(token_recall("fresh talking audio", ""), 0)
-        self.assertIsNone(token_recall("a I", "a I"))
+        self.assertEqual(token_recall("a I", "a I"), 1.0)
+        self.assertEqual(token_recall("I no OK uh", "I no"), 0.5)
+        self.assertEqual(token_recall("no", ""), 0.0)
         self.assertTrue(token_bag("Talk talk")["talk"] == 2)
 
     def test_source_sha_is_not_trusted_without_wav(self):
