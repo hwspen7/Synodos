@@ -613,6 +613,9 @@ class SessionProcessor(threading.Thread):
     def _schedule_acoustic(self, start_offset: int, audio: np.ndarray) -> None:
         """Schedule speaker evidence from continuous audio, without ASR boundaries."""
         sr = self.settings.sample_rate
+        embed = getattr(self.models, "embed", None)
+        if not callable(embed):
+            return
         end = start_offset + len(audio)
         self._next_acoustic_sample = max(self._next_acoustic_sample, start_offset)
         # Never allocate an unbounded acoustic task backlog.
@@ -622,7 +625,7 @@ class SessionProcessor(threading.Thread):
             left = start - start_offset
             right = left + self._acoustic_window_samples
             audio_window = audio[left:right]
-            task = submit_acoustic_window(start, audio_window, self.models.embed, sr)
+            task = submit_acoustic_window(start, audio_window, embed, sr)
             if task is None:
                 break
             self._acoustic_tasks[start] = task
