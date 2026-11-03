@@ -22,8 +22,8 @@ const route = useRoute()
 const router = useRouter()
 
 const WS_BASE = (import.meta.env.VITE_WS_URL as string | undefined) ?? ''
-const language = ref('auto')
-const translationTarget = ref('zh')
+const language = ref('en')
+const translationTarget = ref('en')
 const recordAudio = ref(false)
 const partialText = ref('')
 const partialLanguage = ref('')
