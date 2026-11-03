@@ -113,38 +113,18 @@ onMounted(load)
 
 <template>
   <div class="home">
-    <section class="hero">
-      <div class="hero-inner">
-        <p class="eyebrow">MEETING OF PIONEERS</p>
-        <h1>
-          Make every meeting
-          <span class="hero-accent">memorable</span>
-        </h1>
-        <p class="lead">
-          Realtime transcription, speaker recognition and export.
-          Enable your microphone and focus on the conversation.
-        </p>
-        <div class="hero-actions">
-          <button class="btn btn-primary btn-lg" @click="showCreate = true">
-            <AppIcon name="plus" :size="18" />
-            Create Meeting
-          </button>
-          <a class="btn btn-ghost btn-lg" href="#meetings">
-            <AppIcon name="file-text" :size="18" />
-            Browse Saved Meetings
-          </a>
-          <RouterLink class="btn btn-ghost btn-lg" to="/speakers/new">
-            <AppIcon name="user-plus" :size="18" />
-            Create Speaker
-          </RouterLink>
-          <RouterLink class="btn btn-ghost btn-lg" to="/speakers">
-            <AppIcon name="users" :size="18" />
-            Manage Speakers
-          </RouterLink>
+    <section class="home-compact-hero">
+      <div class="home-compact-hero-inner">
+        <div>
+          <p class="home-eyebrow">MEETING OF PIONEERS · WORKSPACE</p>
+          <h1>Your meetings, organized.</h1>
+          <p>Record conversations, follow speakers and review a clear transcript.</p>
         </div>
+        <button class="btn btn-primary btn-lg" @click="showCreate = true">
+          <AppIcon name="plus" :size="18" /> Start a meeting
+        </button>
       </div>
     </section>
-
     <main class="page-shell">
       <div class="metric-grid">
         <div class="metric-tile">
@@ -177,70 +157,17 @@ onMounted(load)
       </div>
       </div>
 
-      <section class="speaker-lib-section">
-        <div class="speaker-lib-card">
-          <div class="speaker-lib-icon"><AppIcon name="users" :size="24" /></div>
-          <div class="speaker-lib-info">
-            <h2>Speaker Voiceprint Library</h2>
-            <p class="section-sub">
-              Record audio or extract voiceprints from saved meetings.
-              Select participants to identify them automatically.
-            </p>
-          </div>
-          <div class="speaker-lib-stats">
-            <div>
-              <div class="metric-label">Speaker</div>
-              <div class="metric-value">{{ speakers.length }}</div>
-            </div>
-            <div>
-              <div class="metric-label">Voiceprint Samples</div>
-              <div class="metric-value">{{ totalSpeakerVectors }}</div>
-            </div>
-          </div>
-          <div class="speaker-lib-actions">
-            <button class="btn btn-primary" @click="router.push('/speakers/new')">
-              <AppIcon name="user-plus" :size="16" />
-              Create Speaker
-            </button>
-            <button class="btn btn-ghost" @click="router.push('/speakers')">
-              <AppIcon name="list" :size="16" />
-              Manage Speakers
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section class="hotword-lib-section">
-        <div class="hotword-lib-card">
-          <div class="hotword-lib-icon"><AppIcon name="flame" :size="24" /></div>
-          <div class="hotword-lib-info">
-            <h2>Hotword Libraries</h2>
-            <p class="section-sub">
-              Create libraries for terminology, names and products.
-              Selected hotwords improve recognition of specific terms.
-            </p>
-          </div>
-          <div class="hotword-lib-stats">
-            <div>
-              <div class="metric-label">Hotword Libraries</div>
-              <div class="metric-value">{{ hotwords.length }}</div>
-            </div>
-            <div>
-              <div class="metric-label">Hotwords</div>
-              <div class="metric-value">{{ totalHotwordWords }}</div>
-            </div>
-          </div>
-          <div class="hotword-lib-actions">
-            <button class="btn btn-primary" @click="router.push('/hotwords/new')">
-              <AppIcon name="flame" :size="16" />
-              Create Hotword Library
-            </button>
-            <button class="btn btn-ghost" @click="router.push('/hotwords')">
-              <AppIcon name="list" :size="16" />
-              Manage Hotword Libraries
-            </button>
-          </div>
-        </div>
+      <section class="home-quick-library" aria-label="Meeting resources">
+        <RouterLink class="home-library-shortcut" to="/speakers">
+          <span class="shortcut-icon"><AppIcon name="users" :size="19" /></span>
+          <span class="shortcut-copy"><strong>Speakers</strong><small>{{ speakers.length }} people · {{ totalSpeakerVectors }} voiceprints</small></span>
+          <span class="shortcut-arrow">→</span>
+        </RouterLink>
+        <RouterLink class="home-library-shortcut" to="/hotwords">
+          <span class="shortcut-icon"><AppIcon name="flame" :size="19" /></span>
+          <span class="shortcut-copy"><strong>Terminology</strong><small>{{ hotwords.length }} libraries · {{ totalHotwordWords }} terms</small></span>
+          <span class="shortcut-arrow">→</span>
+        </RouterLink>
       </section>
 
       <p v-if="error" class="error-banner">{{ error }}</p>
@@ -340,3 +267,5 @@ onMounted(load)
     </div>
   </div>
 </template>
+
+<style src="../assets/home-refresh.css"></style>
