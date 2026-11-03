@@ -84,3 +84,6 @@ lerna-debug.log*
 __screenshots__/
 /cypress/videos/
 /cypress/screenshots/
+
+# Licensed third-party benchmark: audio, transcripts and gated DAI material
+/benchmark/fixed120/
