@@ -59,8 +59,10 @@ class OfflineSpeakerTests(unittest.TestCase):
             mid, filename = "a" * 32, "b" * 32 + ".wav"
             (root / mid).mkdir()
             (root / mid / filename).write_bytes(b"RIFF")
-            with patch.dict("os.environ", {"HF_TOKEN": "", "HUGGINGFACE_TOKEN": ""}):
-                with self.assertRaisesRegex(OfflineDiarizationUnavailable, "HF_TOKEN"):
+            with patch.dict("os.environ", {"MEETING_SPEAKER_REFINER_PYTHON": ""}):
+                with self.assertRaisesRegex(
+                    OfflineDiarizationUnavailable, "MEETING_SPEAKER_REFINER_PYTHON"
+                ):
                     run_offline_refinement(root, mid, filename)
 
     def test_malformed_spans_are_rejected(self):
