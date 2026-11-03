@@ -144,3 +144,62 @@ decoding parameters, or backend cadence. These outputs supplement, not
 replace, visual/listening checks of the full transcript. Repeated playback
 of one clip is insufficient to certify diarization quality.
 
+
+
+## Long-session Windows playback pacing and speaker stabilization
+
+A user-ran 25-loop 1.0x 31.45-minute replay delivered all 30,192,000
+PCM samples, ended without WebSocket errors, and produced 625 confirmed
+segments. It also exposed two separate issues:
+
+1. The first replay implementation slept for 0.2 seconds **after each**
+   transmitted frame. The Windows event loop added roughly 4.6ms/frame
+   of overhead. With 9,447 frames, actual wall time exceeded 1,887 seconds
+   of recorded audio by about 43.6 seconds. The reported apparent subtitle
+   lag increased at almost the same rate. This was predominantly a **replay
+   clock artifact**, not evidence by itself of backend queue growth.
+2. The all-history speaker reclustering pipeline changed existing positive
+   speaker IDs 5,991 times over the run, with up to 53 changed assignments
+   for a single confirmed segment. These were snapshot identity churn
+   measurements, NOT 5,991 ground-truth diarization mistakes.
+
+The replay script now paces each frame relative to the absolute
+\`first_send + total_samples / sample_rate\` monotonic clock deadline.
+Sleeping to absolute deadlines avoids cumulative scheduling oversleep.
+The report adds \`sender_pacing_drift_ms\`, a separate measurement of
+playback lag **before** final ASR and WebSocket shutdown, plus
+\`max_late_send_ms\` and \`expected_replay_wall_ms\`. If the sender itself
+lags by more than two seconds, the report flags the measurement rather
+than attributing its lag trend to the backend.
+
+A conservative streaming speaker-label stability policy is now enabled in
+cluster mode. Raw cluster labels are aligned globally using overlap with
+previously displayed speaker IDs. Historical, voiceprint-backed,
+non-uncertain speaker assignments older than 120 seconds are preserved
+against subsequent relabels. Newly confirmed and uncertain segments remain
+mutable. Manual speaker corrections remain authoritative. This policy
+reduces visible historical churn at a potential cost to retrospective
+diarization corrections; it does NOT certify correct speaker identities.
+
+For direct comparison, set \`MEETING_SPEAKER_LABEL_REVISABLE_S=0\` before
+starting the backend to disable history freezing. The new overlap matching
+still operates in both configurations, so this is not an exact binary
+reproduction of the old code. The default is 120 seconds; values 0..3600
+are valid. Centroid and forced-single-speaker modes are unchanged.
+
+### Short acceptance replay before another 31-minute run
+
+From \`E:\Meeting-Fixed10-Test\`, restart the backend so its new speaker
+label policy loads. Then use the latest CLI to run:
+
+    .\.venv\Scripts\python.exe tools\live_caption_ws_replay.py --audio benchmark\fixed195\audio\fixed195-en-m01.wav --loops 4 --speed 1 --output benchmark\fixed195\live_caption_4loops.json
+
+Review \`sender_pacing_drift_ms\`, \`timing_by_elapsed_window\`,
+\`speaker_reassignment_types\`, \`max_speaker_changes_one_segment\`,
+\`delivery_matched\`, \`flags\` and \`errors\`. Only advance to 25 loops
+after the sender clock is close to actual audio time and the backend
+completes its final transcript without protocol errors. Compare audio,
+model, language, segment counts and source conditions across runs.
+
+Long-run user-facing diarization quality, sentence completeness and
+overlapped speech still require independent annotations and listening.
