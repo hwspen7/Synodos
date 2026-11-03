@@ -171,7 +171,7 @@ class Fixed150Contracts(unittest.TestCase):
                          "안녕하세요 여러분")
         self.assertEqual(join_transcript_text("안녕하세요", "여러분"),
                          "안녕하세요여러분")
-        self.assertEqual(join_transcript_text("你好", "世界"), "你好世界")
+        self.assertEqual(join_transcript_text("\u4f60\u597d", "\u4e16\u754c"), "\u4f60\u597d\u4e16\u754c")
         self.assertEqual(join_transcript_text("Hello", " world"), "Hello world")
         self.assertEqual(join_transcript_text("Hello", " !"), "Hello!")
 
