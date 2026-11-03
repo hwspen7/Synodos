@@ -28,8 +28,14 @@ class PreviewTracker:
         self.revision += 1
         return Preview(candidate[0], language, offset_ms, end_ms, self.revision)
 
-    def clear(self):
+    def clear(self, offset_ms: int = 0, end_ms: int = 0) -> Preview | None:
+        """Emit one monotonic removal event for a previously visible draft."""
+        if not self.last[0]:
+            return None
         self.last = ("", "")
+        self.revision += 1
+        return Preview("", "und", offset_ms, end_ms, self.revision)
+
 
 
 class NativeOnlineRecognizer:
