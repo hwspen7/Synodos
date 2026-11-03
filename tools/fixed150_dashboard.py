@@ -26,7 +26,7 @@ def token_bag(text: str) -> Counter:
     # Short replies such as "I", "no", "OK" and "uh" matter in real meetings.
     # The previous {3,} rule silently ignored these utterances and could
     # inflate speaker-attributed recall by leaving them out of the denominator.
-    return Counter(re.findall(r"[^\\W_]+", unicodedata.normalize("NFKC", text).casefold()))
+    return Counter(re.findall(r"[^\W_]+", unicodedata.normalize("NFKC", text).casefold()))
 
 
 def token_recall(reference: str, predicted: str) -> float | None:
