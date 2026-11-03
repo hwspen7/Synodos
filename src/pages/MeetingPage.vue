@@ -973,7 +973,9 @@ onBeforeUnmount(() => stopInternal())
             <p v-for="(sentence, sentenceIndex) in splitDisplaySentences(para.text)"
               :key="sentenceIndex" class="para-text transcript-sentence">{{ sentence }}</p>
           </div>
-          <div class="meeting-sub" v-if="!recording">
+          <details class="transcript-edit-details" v-if="!recording">
+            <summary>Edit transcript or speaker</summary>
+            <div class="transcript-edit-actions">
             <button v-for="segmentId in para.segmentIds" :key="segmentId"
               class="btn btn-ghost btn-sm" :disabled="status === 'stopping'"
               @click="editSegmentById(segmentId)">Edit #{{ segmentId }}</button>
