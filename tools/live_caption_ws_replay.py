@@ -138,6 +138,27 @@ def summarize_timing(state: dict, elapsed_ms: float) -> list[dict]:
     return result
 
 
+def _speaker_switch_age_bucket(
+    elapsed_ms: float, segment_end_ms: object,
+    sent_samples: int | None,
+) -> str:
+    """Age of audio evidence when a displayed speaker label was changed."""
+    if type(segment_end_ms) not in (int, float) or not math.isfinite(segment_end_ms):
+        return "timestamp_unavailable"
+    media_elapsed_ms = (
+        sent_samples * 1000 / SAMPLE_RATE
+        if type(sent_samples) is int else elapsed_ms
+    )
+    age_s = max(0.0, (media_elapsed_ms - segment_end_ms) / 1000)
+    if age_s < 15:
+        return "0_to_15_s"
+    if age_s < 60:
+        return "15_to_60_s"
+    if age_s < 120:
+        return "60_to_120_s"
+    return "120_s_or_more"
+
+
 def capture_event(state: dict, message: dict, elapsed_ms: float,
                   *, sent_samples: int | None = None) -> bool:
     """Count events without writing private transcript strings to disk."""
@@ -197,10 +218,20 @@ def capture_event(state: dict, message: dict, elapsed_ms: float,
                     state["speaker_reassignments"] += 1
                     bucket["speaker_label_changes"] += 1
                     state["speaker_change_counts"][sid] += 1
-                    state["speaker_change_types"][_speaker_transition(
-                        previous[sid], prior_names.get(sid),
-                        voice, name,
-                    )] += 1
+                    transition = _speaker_transition(
+                        previous[sid], prior_names.get(sid), voice, name,
+                    )
+                    state["speaker_change_types"][transition] += 1
+                    if transition == "labeled_to_different_labeled":
+                        age_bucket = _speaker_switch_age_bucket(
+                            elapsed_ms, segment.get("end_ms"), sent_samples,
+                        )
+                        state["labeled_switch_age_buckets"][age_bucket] += 1
+                        if (type(previous[sid]) is int
+                                and type(voice) is int):
+                            state["labeled_switch_edges"][
+                                (previous[sid], voice)
+                            ] += 1
                 if sid in prior_text and prior_text[sid] != text:
                     state["confirmed_text_changes"] += 1
                     bucket["confirmed_text_changes"] += 1
@@ -262,6 +293,8 @@ def new_capture(interval_seconds: int = 300) -> dict:
         "speaker_reassignments": 0,
         "speaker_change_types": Counter(),
         "speaker_change_counts": Counter(),
+        "labeled_switch_age_buckets": Counter(),
+        "labeled_switch_edges": Counter(),
         "confirmed_text_changes": 0, "changed_text_ids": set(),
         "confirmed_segment_disappearances": 0,
         "max_visible_segments": 0,
@@ -420,6 +453,26 @@ async def replay(args) -> dict:
         "final_confirmed_segments": counters["final_segment_count"],
         "speaker_reassignments": counters["speaker_reassignments"],
         "speaker_reassignment_types": dict(counters["speaker_change_types"]),
+        "labeled_switch_age_buckets": dict(counters["labeled_switch_age_buckets"]),
+        "labeled_switch_edges_top10": [
+            {"from_id": old, "to_id": new, "changes": count}
+            for (old, new), count in counters["labeled_switch_edges"].most_common(10)
+        ],
+        "speaker_change_hotspots_top10": [
+            {"segment_id": sid, "changes": count}
+            for sid, count in counters["speaker_change_counts"].most_common(10)
+        ],
+        "final_assigned_speaker_count": len({
+            voice for sid, voice in counters["segment_speakers"].items()
+            if not _speaker_is_unidentified(
+                voice, counters["segment_speaker_names"].get(sid)
+            )
+        }),
+        "final_unidentified_segment_count": sum(
+            _speaker_is_unidentified(
+                voice, counters["segment_speaker_names"].get(sid)
+            ) for sid, voice in counters["segment_speakers"].items()
+        ),
         "segments_with_speaker_changes": len(counters["speaker_change_counts"]),
         "max_speaker_changes_one_segment": max(
             counters["speaker_change_counts"].values(), default=0),
