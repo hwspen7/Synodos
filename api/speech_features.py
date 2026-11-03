@@ -2,12 +2,14 @@
 from __future__ import annotations
 import asyncio
 from pathlib import Path
+from datetime import datetime, timezone
+import wave
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from core.runtime import meeting_store, meeting_sessions
+from core.runtime import meeting_store, meeting_sessions, speaker_store
 from speech.config import load_settings
-from speech.corrections import correct_segment, RevisionConflict
+from speech.corrections import correct_segment, assign_segment_speaker, RevisionConflict
 from speech.translation import translate, TranslationUnavailable
 
 router = APIRouter(prefix="/api/speech", tags=["speech"])
@@ -21,6 +23,11 @@ class TranslationRequest(BaseModel):
 
 class CorrectionRequest(BaseModel):
     text: str = Field(min_length=1, max_length=10000)
+    revision: int = Field(default=0, ge=0)
+
+
+class SpeakerCorrectionRequest(BaseModel):
+    participant_id: str | None = None
     revision: int = Field(default=0, ge=0)
 
 
@@ -74,14 +81,73 @@ async def edit_segment(meeting_id: str, segment_id: int, payload: CorrectionRequ
         return await asyncio.to_thread(edit)
 
 
+@router.patch("/meetings/{meeting_id}/segments/{segment_id}/speaker")
+async def edit_segment_speaker(
+    meeting_id: str, segment_id: int, payload: SpeakerCorrectionRequest,
+) -> dict:
+    if not meeting_store.valid_id(meeting_id) or segment_id < 0:
+        raise HTTPException(400, "Invalid meeting or segment ID")
+    from api.session_lifecycle import meeting_connection_lock
+    async with meeting_connection_lock(meeting_id):
+        if meeting_id in meeting_sessions:
+            raise HTTPException(409, "Stop the recording before correcting the speaker")
+        speaker = None
+        if payload.participant_id is not None:
+            if not speaker_store.valid_id(payload.participant_id):
+                raise HTTPException(400, "Invalid participant ID")
+            found = speaker_store.get_for_matching([payload.participant_id])
+            if not found:
+                raise HTTPException(404, "Selected speaker does not exist")
+            speaker = found[0]
+
+        def edit():
+            state = meeting_store.load_state(meeting_id)
+            if state is None:
+                raise HTTPException(404, "Meeting not found")
+            try:
+                result = assign_segment_speaker(
+                    state, segment_id, payload.participant_id,
+                    speaker["name"] if speaker else None, payload.revision,
+                )
+            except RevisionConflict as exc:
+                raise HTTPException(409, str(exc)) from exc
+            except KeyError as exc:
+                raise HTTPException(404, "Segment not found") from exc
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            meeting_store.save_state(state)
+            return {
+                "speaker_id": result["speaker_id"],
+                "speaker_name": result["speaker_name"],
+                "revision": result["revision"],
+            }
+
+        return await asyncio.to_thread(edit)
+
+
 @router.get("/meetings/{meeting_id}/recordings")
 async def list_recordings(meeting_id: str) -> dict:
     cfg = load_settings()
     if not meeting_store.valid_id(meeting_id) or meeting_store.get_meta(meeting_id) is None:
         raise HTTPException(404, "Meeting not found")
     folder = Path(cfg.recording_root).resolve() / meeting_id
-    return {"recordings": [{"name": p.name, "bytes": p.stat().st_size}
-                           for p in sorted(folder.glob("*.wav"))] if folder.is_dir() else []}
+    def describe(path: Path) -> dict:
+        stat = path.stat()
+        duration = None
+        try:
+            with wave.open(str(path), "rb") as source:
+                duration = round(source.getnframes() / source.getframerate(), 2)
+        except (OSError, EOFError, ValueError, wave.Error, ZeroDivisionError):
+            pass
+        return {
+            "name": path.name,
+            "bytes": stat.st_size,
+            "modified_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+            "duration_s": duration,
+        }
+    return {"recordings": [describe(p) for p in sorted(
+        folder.glob("*.wav"), key=lambda p: p.stat().st_mtime, reverse=True,
+    )]} if folder.is_dir() else []}
 
 
 @router.get("/meetings/{meeting_id}/recordings/{filename}")

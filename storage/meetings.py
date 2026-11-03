@@ -140,6 +140,11 @@ class MeetingStore:
                     "start_ms": start_ms,
                     "end_ms": end_ms,
                     "duration_s": round(max(0.0, (end_ms - start_ms) / 1000.0), 3),
+                    "speaker_id": int(s.get("speaker_id", -1)),
+                    "speaker_name": str(s.get("speaker_name") or "Unidentified Speaker"),
+                    "language": s.get("language", "und"),
+                    "translation": s.get("translation", ""),
+                    "revision": int(s.get("revision", 0)),
                 }
             )
         return out

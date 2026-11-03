@@ -134,6 +134,7 @@ class SessionProcessor(threading.Thread):
         self._phase07_autosave_interval = autosave_seconds()
         self._phase07_last_autosave = time.monotonic()
         self._phase07_saved_segment_id = 0
+        self.ui_settings: dict = {}
         self._translation_tasks: dict[int, Future] = {}
         self._speaker_tasks: dict[int, Future] = {}
         self._async_ready = threading.Event()
@@ -328,12 +329,16 @@ class SessionProcessor(threading.Thread):
                     "translation": s.get("translation", ""),
                 "speaker_uncertain": bool(s.get("speaker_uncertain", False)),
                     "revision": s.get("revision", 0),
+                    "speaker_override": bool(s.get("speaker_override", False)),
+                    "speaker_override_id": s.get("speaker_override_id"),
+                    "speaker_override_name": s.get("speaker_override_name"),
                     "corrections": s.get("corrections", []),
                 }
                 for s in self.segments
             ],
             "next_segment_id": self._next_segment_id,
             "speaker_map": dict(self._speaker_map),
+            "ui_settings": dict(self.ui_settings),
         }
 
     def load_state(self, state: dict) -> None:
@@ -357,6 +362,9 @@ class SessionProcessor(threading.Thread):
                     "words": item.get("words", []),
                     "translation": item.get("translation", ""),
                     "revision": int(item.get("revision", 0)),
+                    "speaker_override": bool(item.get("speaker_override", False)),
+                    "speaker_override_id": item.get("speaker_override_id"),
+                    "speaker_override_name": item.get("speaker_override_name"),
                     "corrections": item.get("corrections", []),
                 }
             )
@@ -367,6 +375,7 @@ class SessionProcessor(threading.Thread):
         self._next_segment_id = max(int(state.get("next_segment_id", max_id + 1)), max_id + 1)
         self._phase07_saved_segment_id = max_id
         self._speaker_map = {int(k): int(v) for k, v in (state.get("speaker_map") or {}).items()}
+        self.ui_settings = dict(state.get("ui_settings") or {})
         self._speaker_seg_ids = {}
         if not self._participants_explicit:
             self.participant_ids = list(state.get("participant_ids") or [])
@@ -847,6 +856,10 @@ class SessionProcessor(threading.Thread):
     # ---------------------------------------------------------------- push
     def _rebuild_and_push(self) -> bool:
         """Audio transcription and speaker data handling."""
+        for record in self.segments:
+            if record.get("speaker_override"):
+                record["speaker_id"] = int(record.get("speaker_override_id") or -1)
+                record["speaker_name"] = str(record.get("speaker_override_name") or "Unidentified Speaker")
         ordered = sorted(self.segments, key=lambda s: s["start_sample"])
         items = [
             {

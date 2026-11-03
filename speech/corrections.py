@@ -30,3 +30,55 @@ def correct_segment(state: dict, segment_id: int, text: str, expected_revision: 
         segment["manually_corrected"] = True
         return segment
     raise KeyError(segment_id)
+
+def assign_segment_speaker(
+    state: dict, segment_id: int, participant_id: str | None,
+    participant_name: str | None, expected_revision: int,
+) -> dict:
+    """Persist a manual speaker label across reclustering and meeting resumes.
+
+    Assigning no participant intentionally restores the unidentified label.
+    The actual speaker's identity is supplied by the operator, not inferred
+    from insufficient acoustic evidence.
+    """
+    if expected_revision < 0:
+        raise ValueError("Invalid revision")
+    mapping = state.setdefault("participant_label_map", {})
+    for segment in state.get("segments") or []:
+        if int(segment.get("id", -1)) != segment_id:
+            continue
+        revision = int(segment.get("revision", 0))
+        if revision != expected_revision:
+            raise RevisionConflict(f"Stale revision: expected {expected_revision}, current {revision}")
+        if participant_id is None:
+            speaker_id, speaker_name = -1, "Unidentified Speaker"
+        else:
+            if not participant_name or not participant_name.strip():
+                raise ValueError("A valid enrolled speaker is required")
+            if participant_id not in mapping:
+                used = {int(s.get("speaker_id", -1)) for s in state.get("segments") or []}
+                used.update(int(v) for v in mapping.values())
+                speaker_id = max({0} | {value for value in used if value > 0}) + 1
+                mapping[participant_id] = speaker_id
+            else:
+                speaker_id = int(mapping[participant_id])
+            speaker_name = participant_name.strip()
+        if (segment.get("speaker_override") and
+            segment.get("speaker_override_id") == speaker_id and
+            segment.get("speaker_override_name") == speaker_name):
+            return segment
+        segment.setdefault("corrections", []).append({
+            "revision": revision,
+            "kind": "speaker",
+            "speaker_id": segment.get("speaker_id"),
+            "speaker_name": segment.get("speaker_name"),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        segment["speaker_override"] = True
+        segment["speaker_override_id"] = speaker_id
+        segment["speaker_override_name"] = speaker_name
+        segment["speaker_id"] = speaker_id
+        segment["speaker_name"] = speaker_name
+        segment["revision"] = revision + 1
+        return segment
+    raise KeyError(segment_id)
