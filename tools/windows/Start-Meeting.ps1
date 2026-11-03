@@ -67,13 +67,60 @@ function Get-ProcessInfo([int]$ProcessId) {
     return Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction SilentlyContinue
 }
 
+function Test-MeetingBackendIdentity {
+    try {
+        $schema = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/openapi.json' -TimeoutSec 3
+        if ($schema.info.title -ne 'Meeting of Pioneers' -or $null -eq $schema.paths) {
+            return $false
+        }
+        $paths = @($schema.paths.PSObject.Properties.Name)
+        return ($paths -contains '/api/health' -and
+            $paths -contains '/api/intelligence/capabilities')
+    } catch {
+        return $false
+    }
+}
+
+function Test-MeetingFrontendIdentity {
+    try {
+        $response = Invoke-WebRequest -Uri 'http://127.0.0.1:5173' -TimeoutSec 3 -UseBasicParsing
+        return ($response.StatusCode -eq 200 -and
+            $response.Content -like '*<title>Meeting of Pioneers</title>*' -and
+            $response.Content -like '*/src/main.ts*')
+    } catch {
+        return $false
+    }
+}
+
 function Assert-ProjectProcess([int]$ProcessId, [string]$Marker, [int]$Port) {
     $processInfo = Get-ProcessInfo $ProcessId
-    $command = if ($null -eq $processInfo) { '' } else { [string]$processInfo.CommandLine }
-    if ($command.IndexOf($RepoRoot, [StringComparison]::OrdinalIgnoreCase) -lt 0 -or
-        $command.IndexOf($Marker, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
-        throw "Port $Port belongs to process $ProcessId, which is not an identified Meeting process. Close it manually."
+    if ($null -eq $processInfo) {
+        throw "Port $Port owner PID $ProcessId could not be inspected. Stop it manually."
     }
+    $command = [string]$processInfo.CommandLine
+    $name = [string]$processInfo.Name
+    if ($command.IndexOf($RepoRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+        $command.IndexOf($Marker, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        return
+    }
+
+    # An earlier invocation may use a relative Python command without the
+    # repository path. Confirm the exact application signature before stopping it.
+    if ($Port -eq 8000 -and
+        $name -match '^(python|pythonw|uvicorn)\.exe$' -and
+        (Test-MeetingBackendIdentity)) {
+        return
+    }
+
+    # Vite launched through pnpm can also have a pathless Node command line.
+    # Reuse it only after verifying that this is the Meeting frontend.
+    if ($Port -eq 5173 -and
+        $name -match '^node\.exe$' -and
+        (Test-MeetingFrontendIdentity)) {
+        return
+    }
+
+    throw "Port $Port belongs to process $ProcessId ($name), which cannot be verified as Meeting. Close it manually."
 }
 
 function Wait-For([scriptblock]$Check, [int]$TimeoutSeconds, [string]$Description) {
