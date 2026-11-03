@@ -43,6 +43,23 @@ SAMPLE_RATE = 16000
 TIMED = re.compile(r"<\|([0-9]+(?:\.[0-9]+)?)\|>(.*?)<\|([0-9]+(?:\.[0-9]+)?)\|>", re.S)
 
 
+def choose_source_file(available: set[str], desired: str, *, repo: str = "dataset",
+                       revision: str = "pinned") -> str:
+    """Resolve a source path only within a known pinned repository tree."""
+    for candidate in (desired, f"parquet-data/{desired}", f"data/{desired}"):
+        if candidate in available:
+            return candidate
+    basename = desired.rsplit("/", 1)[-1]
+    matches = sorted(path for path in available
+                     if path == basename or path.endswith("/" + basename))
+    if len(matches) == 1:
+        return matches[0]
+    raise FileNotFoundError(
+        f"{repo}@{revision[:12]} has no unique file for {desired!r}. "
+        f"Matches: {matches[:8]}. The source path must be corrected."
+    )
+
+
 def checksum(path: Path) -> str:
     h = sha256()
     with path.open("rb") as f:
@@ -183,21 +200,8 @@ def prepare(root: Path, *, verify_only: bool = False) -> dict:
             remote_catalogs[repo] = set(api.list_repo_files(
                 repo_id=repo, repo_type="dataset", revision=revisions[repo]
             ))
-        available = remote_catalogs[repo]
-        candidates = (desired, f"parquet-data/{desired}", f"data/{desired}")
-        for candidate in candidates:
-            if candidate in available:
-                return candidate
-        # Only allow an unambiguous pinned-file match, never guess between
-        # multiple shards or silently change the source dataset revision.
-        base = desired.rsplit("/", 1)[-1]
-        matches = sorted(path for path in available if path == base or path.endswith("/" + base))
-        if len(matches) == 1:
-            return matches[0]
-        raise FileNotFoundError(
-            f"{repo}@{revisions[repo][:12]} has no unique file for {desired!r}. "
-            f"Matches: {matches[:8]}. The source path must be corrected."
-        )
+        return choose_source_file(remote_catalogs[repo], desired,
+                                  repo=repo, revision=revisions[repo])
 
     def download(repo: str, filename: str) -> Path:
         return Path(hf_hub_download(repo_id=repo, repo_type="dataset",
