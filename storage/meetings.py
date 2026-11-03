@@ -7,6 +7,8 @@ import os
 import pickle
 import re
 import uuid
+from functools import reduce
+from speech.text_format import join_transcript_text
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -283,7 +285,7 @@ class MeetingStore:
                     "speaker_name": first.get("speaker_name", ""),
                     "start_ms": round(g["start_sample"] * 1000 / sr),
                     "end_ms": round(g["end_sample"] * 1000 / sr),
-                    "text": "".join(str(s.get("text") or "") for s in g["segments"]),
+                    "text": reduce(join_transcript_text, (str(s.get("text") or "") for s in g["segments"]), ""),
                     "segments": [
                         {
                             "id": int(seg["id"]),
