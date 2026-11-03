@@ -32,3 +32,6 @@ jobs:
             exit 1
           }
           Write-Output 'Windows PowerShell 5.1 syntax OK'
+      - name: Verify process identity guards
+        shell: powershell
+        run: .\tests\windows\test_launcher_safety.ps1
