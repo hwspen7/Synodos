@@ -26,6 +26,8 @@ from tools.fixed150_system_triage import inspect as inspect_system_triage
 from tools.fixed150_stage_audit import select_impacted, measure as measure_stage
 from speech.audio_windows import speech_windows
 from speech.text_format import join_transcript_text
+from speech.quality_guard import verify_utterances
+from types import SimpleNamespace
 from tools.fixed150_dashboard import (
     summarize_multis, summarize_singles, token_recall, token_bag,
 )
@@ -215,6 +217,63 @@ class Fixed150Contracts(unittest.TestCase):
         self.assertIn("WINDOW_SEAM_WITHIN_DETECTED_SPEECH", top["flags"])
         with self.assertRaises(ValueError):
             inspect_system_triage({"schema": "bad", "cases": {}})
+
+    def test_preserve_unaligned_text_is_opt_in_and_needs_segment_voice(self):
+        sr = 16000
+        voice = [{"start": 0, "end": sr * 3}]
+        # The parent segment is supported by VAD, but the aligned word
+        # overlaps too little voice for word-level provenance.
+        piece = SimpleNamespace(
+            text="A valid meeting sentence.", start=0.0, end=3.0,
+            words=[SimpleNamespace(word="valid", start=3.0, end=3.2)],
+            no_speech_prob=0.05, avg_logprob=-0.1, compression_ratio=1.0,
+        )
+        strict = verify_utterances([piece], voice, 3200, "en")
+        self.assertEqual(strict, ())
+        preserved = verify_utterances(
+            [piece], voice, 3200, "en", preserve_disputed_text=True
+        )
+        self.assertEqual(len(preserved), 1)
+        self.assertEqual(preserved[0].text, piece.text)
+        self.assertEqual(preserved[0].timestamp_quality, "segment")
+        self.assertEqual(preserved[0].words, ())
+        # Both modes must reject a segment unsupported by acoustic evidence.
+        unsupported = [{"start": sr * 5, "end": sr * 6}]
+        self.assertEqual(verify_utterances(
+            [piece], unsupported, sr * 7 // 16, "en",
+            preserve_disputed_text=True
+        ), ())
+        bad_diagnostics = SimpleNamespace(
+            text="unsupported claim", start=0.0, end=3.0,
+            words=[], no_speech_prob=.98, avg_logprob=-1.3,
+            compression_ratio=1.0,
+        )
+        self.assertEqual(verify_utterances(
+            [bad_diagnostics], voice, 3200, "en",
+            preserve_disputed_text=True
+        ), ())
+
+    def test_preserve_partial_alignment_does_not_fabricate_word_times(self):
+        sr = 16000
+        voice = [{"start": 0, "end": sr * 3}]
+        piece = SimpleNamespace(
+            text="The entire phrase remains.", start=.0, end=3.0,
+            words=[
+                SimpleNamespace(word="The", start=.1, end=.4),
+                SimpleNamespace(word=" phrase", start=3.0, end=3.3),
+            ],
+            no_speech_prob=.04, avg_logprob=-.1, compression_ratio=1.0,
+        )
+        strict = verify_utterances([piece], voice, 3400, "en")
+        self.assertEqual(len(strict), 1)
+        self.assertNotEqual(strict[0].text, piece.text)
+        preserved = verify_utterances(
+            [piece], voice, 3400, "en", preserve_disputed_text=True
+        )
+        self.assertEqual(len(preserved), 1)
+        self.assertEqual(preserved[0].text, piece.text)
+        self.assertEqual(preserved[0].timestamp_quality, "segment")
+        self.assertEqual(preserved[0].words, ())
 
     def test_stage_audit_selects_only_verified_impacted_originals(self):
         cases = [
