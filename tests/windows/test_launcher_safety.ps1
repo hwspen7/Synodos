@@ -4,7 +4,12 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $launcher = Get-Content -Raw -LiteralPath (Join-Path $root 'tools\windows\Start-Meeting.ps1')
 $main = [regex]::Match($launcher, '(?m)^try \{\r?\n    Set-Location -LiteralPath \$RepoRoot')
 if (-not $main.Success) { throw 'Launcher entrypoint not found.' }
-. ([scriptblock]::Create($launcher.Substring(0, $main.Index)))
+$definitions = $launcher.Substring(0, $main.Index)
+$definitions = $definitions.Replace(
+    '$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot ''..\..'')).Path',
+    '$RepoRoot = ''' + $root + ''''
+)
+. ([scriptblock]::Create($definitions))
 
 $script:OwnerName = 'python.exe'
 $script:OwnerCommand = 'python -m uvicorn main:app --host 127.0.0.1 --port 8000'
