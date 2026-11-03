@@ -146,6 +146,21 @@ class ContextCorrectionTests(unittest.TestCase):
         self.assertTrue(result["review_required"])
         self.assertEqual(rows[0]["text"], text_before)
 
+    def test_manually_corrected_segments_are_never_rewritten(self):
+        records = transcript()
+        records[0]["manually_corrected"] = True
+        old = records[0]["text"]
+        current = records[1]["text"]
+        fake = FakeGateway([{"suggestions": [
+            suggestion(1, old, old[:-6]),
+            suggestion(2, current, "I don't like reading. I like playing games. Thanks.",
+                       "grammar"),
+        ]}])
+        output = review(records, fake, mode="readable")
+        self.assertEqual([s["segment_id"] for s in output["suggestions"]], [2])
+        self.assertEqual(output["reviewed_segments"], len(records))
+        self.assertTrue(output["complete"])
+
     def test_invalid_request_or_model_response_fails_closed(self):
         with self.assertRaises(ValueError):
             review(transcript(), FakeGateway([]), mode="force-rewrite")
