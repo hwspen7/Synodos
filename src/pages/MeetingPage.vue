@@ -222,7 +222,20 @@ function splitDisplaySentences(text: string): string[] {
   if (segmenterType) {
     const parts = [...new segmenterType(undefined, { granularity: 'sentence' }).segment(original)]
       .map((item) => item.segment.trim()).filter(Boolean)
-    if (parts.length > 1) return parts
+    // Intl.Segmenter occasionally breaks after title abbreviations such as
+    // "Dr."; repair only boundary artifacts while retaining native script
+    // segmentation for non-Latin languages.
+    const repaired: string[] = []
+    const titleEnding = /(?:^|\\s)(?:mr|mrs|ms|dr|prof|sr|jr|st|vs|etc|e\\.g|i\\.e|u\\.s|u\\.k)\\.$/i
+    for (const part of parts) {
+      const prior = repaired.length ? repaired[repaired.length - 1] : ''
+      if (prior && titleEnding.test(prior)) {
+        repaired[repaired.length - 1] = prior + ' ' + part
+      } else {
+        repaired.push(part)
+      }
+    }
+    if (repaired.length > 1) return repaired
   }
   const sentences: string[] = []
   let current = ''
