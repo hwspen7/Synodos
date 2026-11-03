@@ -16,6 +16,9 @@ from hashlib import sha256
 import json
 import math
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tools.fixed150_prepare import (
     atomic_json, checksum, choose_source_file, read_embedded_audio,
