@@ -54,6 +54,7 @@ from sessions.speaker_fallback import (
 )
 from sessions.speaker_stability import (
     collect_mature_labels, restore_mature_labels, stabilized_cluster_ids,
+    summarize_cluster_fragmentation,
 )
 
 logger = logging.getLogger(__name__)
@@ -247,7 +248,16 @@ class SessionProcessor(threading.Thread):
             self._put({"type": "error", "message": "backend processor crashed"})
         finally:
             self._save_queue.close(succeeded=self._final_save_ok)
-            self._put({"type": "closed", "saved": self._final_save_ok})
+            closed_payload = {"type": "closed", "saved": self._final_save_ok}
+            if os.getenv("MEETING_DIARIZATION_DIAGNOSTICS", "0").lower() in (
+                "1", "true", "yes"
+            ):
+                # Opt-in: only non-identifying cluster/label counts. No
+                # voiceprints, participant names or transcript content.
+                closed_payload["diarization_diagnostics"] = (
+                    summarize_cluster_fragmentation(self.segments)
+                )
+            self._put(closed_payload)
 
     def _finalize(self) -> None:
         if self.buffer.total_samples() > 0:
