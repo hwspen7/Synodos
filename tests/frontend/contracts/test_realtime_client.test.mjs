@@ -73,7 +73,13 @@ test('sendPcm respects typed array byte offsets', () => {
   client.connect()
   const samples = new Int16Array([1, 2, 3, 4])
   client.sendPcm(samples.subarray(1, 3))
-  assert.equal(sockets[0].sent[0].byteLength, 4)
+  const frame = sockets[0].sent[0]
+  assert.equal(frame.byteLength, 20)
+  const view = new DataView(frame)
+  assert.equal(String.fromCharCode(...new Uint8Array(frame, 0, 4)), 'MOPA')
+  assert.equal(view.getUint32(4, false), 0)
+  assert.equal(view.getBigUint64(8, false), 0n)
+  assert.deepEqual([...new Int16Array(frame.slice(16))], [2, 3])
 })
 
 
@@ -107,4 +113,28 @@ test('a broken or congested stream cannot request a successful stop', () => {
   client.sendStop()
   assert.equal(sockets[0].sent.length, 0)
   assert.ok(errors.some(text => text.includes('congested')))
+})
+
+
+test('versioned frames use contiguous offsets and monotonic sequence IDs', () => {
+  const { RealtimeClient, sockets } = createHarness()
+  const client = new RealtimeClient({ url: 'ws://localhost/ws/audio' })
+  client.connect()
+  assert.equal(client.sendPcm(new Int16Array([1, 2])), true)
+  assert.equal(client.sendPcm(new Int16Array([3])), true)
+  assert.equal(new DataView(sockets[0].sent[1]).getUint32(4, false), 1)
+  assert.equal(new DataView(sockets[0].sent[1]).getBigUint64(8, false), 2n)
+})
+
+test('invalid audio acknowledgement is treated as a terminal transport failure', () => {
+  const { RealtimeClient, sockets } = createHarness()
+  const errors = []
+  const client = new RealtimeClient({
+    url: 'ws://localhost/ws/audio', onError: err => errors.push(err),
+  })
+  client.connect()
+  client.sendPcm(new Int16Array([1, 2]))
+  sockets[0].message({ type: 'audio_progress', samples: 999 })
+  assert.equal(sockets[0].readyState, 3)
+  assert.ok(errors.some(e => e.includes('inconsistent')))
 })

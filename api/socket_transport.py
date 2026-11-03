@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import struct
+import hashlib
 
 MAX_PCM_FRAME_BYTES = 1024 * 1024
 
@@ -33,6 +34,7 @@ class AudioFrameSequence:
         self.next_sequence = 0
         self.samples = 0
         self.versioned = False
+        self._recent: dict[int, tuple[int, bytes]] = {}
 
     def accept(self, data: bytes) -> tuple[np.ndarray | None, bool]:
         """Return (audio, duplicate). Legacy raw PCM remains compatible."""
@@ -44,15 +46,19 @@ class AudioFrameSequence:
             if not self.versioned and self.samples:
                 raise AudioSequenceError("Cannot mix legacy and sequenced audio")
             self.versioned = True
+            fingerprint = hashlib.blake2s(data, digest_size=12).digest()
             if sequence < self.next_sequence:
-                if offset + len(samples) <= self.samples:
+                if self._recent.get(sequence) == (offset, fingerprint):
                     return None, True
-                raise AudioSequenceError("Conflicting audio frame replay")
+                raise AudioSequenceError("Conflicting or expired audio frame replay")
             if sequence != self.next_sequence or offset != self.samples:
                 raise AudioSequenceError(
                     f"Audio frame discontinuity: expected sequence {self.next_sequence} "
                     f"at sample {self.samples}, got {sequence} at {offset}"
                 )
+            self._recent[sequence] = (offset, fingerprint)
+            if len(self._recent) > 256:
+                del self._recent[min(self._recent)]
             self.next_sequence += 1
             self.samples += len(samples)
             return samples, False
