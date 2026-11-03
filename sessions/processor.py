@@ -488,6 +488,7 @@ class SessionProcessor(threading.Thread):
                                "message": "Speaker analysis backlog full; speaker remains unidentified"})
             record = {
                 "id": self._next_segment_id,
+                "_audio_base_sample": start_offset,
                 "start_sample": s_g,
                 "end_sample": e_g,
                 "text": text,
@@ -549,6 +550,7 @@ class SessionProcessor(threading.Thread):
                     self.buffer.drop_before(drop)
                     metrics.increment("audio_safe_silence_reclaimed")
 
+        self._collect_speakers()
         self._collect_translations()
         changed = False
         if self.segments:
