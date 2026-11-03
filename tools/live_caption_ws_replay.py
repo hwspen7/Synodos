@@ -28,6 +28,10 @@ HEADER = struct.Struct(">4sIQ")
 FRAME_SAMPLES = 3200
 SAMPLE_RATE = 16000
 SCHEMA = "meeting-live-caption-websocket-replay-v1"
+DEFAULT_WS_URL = (
+    "ws://127.0.0.1:8000/ws/audio?"
+    "language=auto&record_audio=false&translate_to="
+)
 
 
 def pcm_packet(pcm, seq: int, offset: int) -> bytes:
@@ -301,8 +305,7 @@ def main() -> int:
     # An absent translate_to query parameter inherits MEETING_TRANSLATE_TO
     # (which defaults to English). An explicit empty value matches the
     # browser's "No translation" option and isolates ASR/diarization testing.
-    parser.add_argument("--url", default="ws://127.0.0.1:8000/ws/audio?"
-                        "language=auto&record_audio=false&translate_to=")
+    parser.add_argument("--url", default=DEFAULT_WS_URL)
     parser.add_argument("--origin", default="http://localhost:5173")
     parser.add_argument("--loops", type=int, default=1,
                         help="Repeat same source for endurance only, not accuracy")
