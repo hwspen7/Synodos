@@ -200,7 +200,7 @@ class SessionProcessor(threading.Thread):
             self._put({"type": "closed", "saved": self._final_save_ok})
 
     def _finalize(self) -> None:
-        if self.buffer.seconds() >= self._final_discard_s:
+        if self.buffer.total_samples() > 0:
             try:
                 self._cycle(final=True)
             except Exception:
@@ -378,7 +378,7 @@ class SessionProcessor(threading.Thread):
         start_offset, audio = self.buffer.snapshot()
         buffer_s = len(audio) / sr
 
-        if len(audio) < sr * 0.2:
+        if len(audio) < sr * 0.2 and not final:
             if not final:
                 self._send_state()
             return False
