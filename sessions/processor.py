@@ -41,6 +41,7 @@ from sessions.save_queue import SaveQueue
 from observability.metrics import metrics
 from phase07.telemetry import telemetry
 from phase07.speakers import speaker_stats, find_distinct_participant
+from speech.commit_guard import is_temporal_duplicate
 from phase07.recovery import autosave_seconds
 from sessions.outbox import enqueue_message
 from sessions.speaker_fallback import (
@@ -415,7 +416,11 @@ class SessionProcessor(threading.Thread):
 
             s_g = start_offset + int(start_ms * sr / 1000)
             e_g = start_offset + int(end_ms * sr / 1000)
-            if e_g <= s_g:
+            if e_g <= s_g or start_ms < 0 or end_ms > buffer_s * 1000 + 250:
+                continue
+            if is_temporal_duplicate(s_g, e_g, text, self.segments):
+                metrics.increment("asr_temporal_duplicate_skipped")
+                local_end = max(local_end, e_g - start_offset)
                 continue
 
             # Handle transcripts and speaker assignments.
@@ -479,7 +484,12 @@ class SessionProcessor(threading.Thread):
                 self._put({"type": "feature_warning", "feature": "audio_analysis", "message": str(exc)})
         # Handle transcripts and speaker assignments.
         if local_end > 0:
-            self.buffer.drop_before(local_end)
+            # Preserve any earlier unfinished utterance before advancing audio.
+            if unconfirmed:
+                first_held_ms = min(max(0, int(item["start"])) for item in unconfirmed)
+                local_end = min(local_end, first_held_ms * sr // 1000)
+            if local_end > 0:
+                self.buffer.drop_before(local_end)
         elif not final and not sentences and self._speech_settings.engine != "legacy" and recognition.speech_detected is False:
             # Reclaim only very-low-energy LEADING silence when ASR returned
             # no utterances. Preserve all uncertain or voice-like samples.
