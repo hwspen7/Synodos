@@ -1,6 +1,9 @@
 """Meeting CRUD, saving, and export."""
 
 import asyncio
+import shutil
+from pathlib import Path
+from speech.config import load_settings
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Response
 from core.runtime import meeting_store, meeting_sessions, sessions
@@ -85,6 +88,17 @@ async def delete_meeting(meeting_id: str) -> dict:
         ok = await asyncio.get_running_loop().run_in_executor(None, meeting_store.delete, meeting_id)
     if not ok:
         raise HTTPException(status_code=404, detail="meeting not found")
+    # Remove the meeting's optional local audio archive after deleting the record.
+    root = Path(load_settings().recording_root).resolve()
+    recording_dir = (root / meeting_id).resolve()
+    if recording_dir.is_relative_to(root) and recording_dir.is_dir():
+        try:
+            await asyncio.to_thread(shutil.rmtree, recording_dir)
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="Meeting deleted, but source recordings could not be removed"
+            ) from exc
     return {"ok": True}
 
 
