@@ -16,7 +16,7 @@ only from the user's actual GPU inference and meeting backend.
 | ---: | --- | --- | --- |
 | 56 | PolyAI MInDS-14 | Recorded banking intent requests | 14 locale codes, including UK/AU/US English; natural recording variability, no asserted noise label |
 | 44 | Google FLEURS | Read speech | 11 additional languages, 4 utterances each, multiple scripts |
-| 25 | Trelis/AMI 2-speaker | As-recorded real English meetings | Interruptions, short acknowledgements, overlap, actual turn timestamps |
+| 25 | Trelis/AMI 2-speaker | Real AMI meeting utterances, re-mixed into two-speaker audio | Interruptions, short acknowledgements, overlap, actual turn timestamps |
 | 25 | LAION small overlapping bench | 3 voices mixed from independent multilingual speech | 3 overlapping languages/speakers, reference transcript and placement intervals |
 
 Total **23 distinct single-speaker language codes**:
@@ -54,6 +54,21 @@ issued **only** when 150 valid unique WAV files and both manifests exist.
 
 The AMI extract is 37.1 MB for 50 source clips; this pipeline selects 25.
 The LAION source repository holds 100 audio clips; this pipeline selects 25.
+
+**Benchmark provenance correction:** The Trelis/AMI two-speaker dataset is
+*not* a single unmodified room-microphone recording. It selects two speakers'
+independent headset utterances from original four-person AMI meetings, places
+them on their original timeline, and sums them into a two-speaker virtual
+meeting. The speech and overlap timing come from real conversations, but the
+mixing scenario is constructed. Never equate this benchmark with an on-site
+far-field microphone test. See the upstream dataset card.
+
+**Evaluation caution:** The pre-2026-11-03 speaker-content scorer ignored
+tokens shorter than three characters and therefore undercounted real meeting
+acknowledgements ("I", "no", "OK", "uh"). The fixed scorer includes these
+words. Regenerate the dashboard after updating the code; any earlier overlap
+recall scores should be recomputed.
+
 FLEURS validation Parquet files can exceed **200 MB per language**. Plan for
 several GB of transient source downloads and extra E-drive space. Downloads
 may run for a long time; this script intentionally avoids automatically
