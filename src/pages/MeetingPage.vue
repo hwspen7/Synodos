@@ -627,6 +627,7 @@ function connect(autostart = false): void {
       if (clientSeq !== mySeq) return
       partialText.value = text
       partialLanguage.value = detectedLanguage
+      if (text) void scrollIfNeeded()
     },
     onAudioAnalysis: (result) => {
       if (clientSeq !== mySeq) return
@@ -640,7 +641,8 @@ function connect(autostart = false): void {
     },
     onTranscript: (msg) => {
       if (clientSeq !== mySeq) return
-      partialText.value = ''
+      // Speaker/translation updates are snapshots, not draft-finalization
+      // signals. Only an explicit empty partial should remove live text.
       applyTranscript(msg)
     },
     onState: (ms) => {
@@ -680,6 +682,8 @@ function connect(autostart = false): void {
       if (clientSeq !== mySeq) return
       client = null
       recording.value = false
+      partialText.value = ''
+      partialLanguage.value = ''
       clearAudioDeliveryWatchdog()
       void recorder?.stop().catch(() => {})
       recorder = null
@@ -942,10 +946,6 @@ onBeforeUnmount(() => stopInternal())
     <p v-if="untranslatedCount > 0" class="hint-text warn-text" role="status">
       {{ untranslatedCount }} segment(s) have no available translation; original text is shown.
     </p>
-    <section v-if="partialText" class="meeting-controls" aria-live="polite">
-      <strong>Live preview ({{ partialLanguage }})</strong>
-      <span>{{ partialText }}</span>
-    </section>
     <div v-if="recordingList.length && showAdvancedControls" class="meeting-controls">
       <strong>Saved WAV recordings ({{ recordingList.length }})</strong>
       <div v-for="(item, index) in recordingList" :key="item.name" class="recorded-audio-item">
@@ -962,7 +962,7 @@ onBeforeUnmount(() => stopInternal())
           <span class="transcript-count">{{ paragraphs.length }} turns</span>
         </div>
     <main ref="transcriptEl" class="transcript" @scroll="onTranscriptScroll">
-      <div v-if="segments.length === 0" class="empty-state">
+      <div v-if="segments.length === 0 && !partialText" class="empty-state">
         <div class="empty-icon"><AppIcon name="mic" :size="26" /></div>
         <h3>{{ recording ? 'Listening...' : 'No transcript yet' }}</h3>
         <p v-if="!recording">Start recording and speak for several seconds. Short recordings are finalized when stopped.</p>
@@ -1007,6 +1007,19 @@ onBeforeUnmount(() => stopInternal())
           </details>
         </article>
       </template>
+      <article v-if="partialText" class="paragraph transcript-live-preview"
+        aria-live="polite" aria-label="Provisional live caption">
+        <div class="para-head">
+          <span class="speaker-dot transcript-preview-dot" aria-hidden="true"></span>
+          <span class="speaker-name">Live caption · not confirmed</span>
+          <span v-if="partialLanguage && partialLanguage !== 'und'"
+            class="seg-count">{{ partialLanguage.toUpperCase() }}</span>
+        </div>
+        <div class="transcript-utterance-lines">
+          <p v-for="(sentence, index) in splitDisplaySentences(partialText)"
+            :key="index" class="para-text transcript-sentence">{{ sentence }}</p>
+        </div>
+      </article>
     </main>
       </div>
       <aside v-if="showReviewPanel" class="meeting-review-panel" aria-label="Review and analysis">
