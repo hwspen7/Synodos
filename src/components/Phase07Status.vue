@@ -7,6 +7,8 @@ const props = defineProps<{
   bufferedMs: number
   recording: boolean
   asrEngine: string
+  asrModel?: string
+  diarizationMode?: string
 }>()
 
 const backlog = computed(() => Math.max(0, props.bufferedMs) / 1000)
@@ -31,13 +33,17 @@ const changes = computed(() => {
 <template>
   <section class="phase07-status" aria-label="Recording quality diagnostics">
     <span class="phase07-tag">PHASE 07</span>
-    <span>ASR {{ asrEngine || 'unknown' }}</span>
+    <span :title="asrModel || ''">ASR {{ asrEngine || 'unknown' }}</span>
+    <span>Speakers {{ diarizationMode || 'cluster' }}</span>
     <span :class="['phase07-backlog', `is-${backlogStatus}`]" role="status">
       Audio backlog {{ backlog.toFixed(1) }}s
     </span>
     <span>Languages {{ languages.length ? languages.join(', ') : 'pending' }}</span>
     <span>Speaker changes {{ changes }}</span>
     <span v-if="unknownSpeakers">Unidentified {{ unknownSpeakers }}</span>
+    <span v-if="diarizationMode === 'single'" class="phase07-caution">
+      Single-speaker mode is enabled. Additional speakers cannot be detected.
+    </span>
     <span v-if="recording && backlogStatus === 'high'" class="phase07-caution">
       Processing is behind the microphone stream
     </span>
