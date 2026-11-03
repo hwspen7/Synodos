@@ -9,10 +9,10 @@ class TranscriptCompositionTests(unittest.TestCase):
         self.assertEqual(join_transcript_text("Good morning.", "Everyone."), "Good morning. Everyone.")
 
     def test_chinese_adjacency(self):
-        self.assertEqual(join_transcript_text("大家", "好。"), "大家好。")
+        self.assertEqual(join_transcript_text("\u5927\u5bb6", "\u597d\u3002"), "\u5927\u5bb6\u597d\u3002")
 
     def test_japanese_adjacency(self):
-        self.assertEqual(join_transcript_text("こんにちは", "世界"), "こんにちは世界")
+        self.assertEqual(join_transcript_text("\u3053\u3093\u306b\u3061\u306f", "\u4e16\u754c"), "\u3053\u3093\u306b\u3061\u306f\u4e16\u754c")
 
     def test_punctuation(self):
         self.assertEqual(join_transcript_text("Hello", ", world"), "Hello, world")
