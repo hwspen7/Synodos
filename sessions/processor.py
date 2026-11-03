@@ -103,7 +103,6 @@ class SessionProcessor(threading.Thread):
         self.translate_target = self._speech_settings.translate_to
         self._preview_tracker = PreviewTracker()
         if self._speech_settings.engine != "legacy":
-            import os
             # Avoid repeatedly committing fragments from tiny ASR windows.
             # Render a provisional caption after the configured preview interval.
             # Confirmed commits still require the longer acoustic context below.
