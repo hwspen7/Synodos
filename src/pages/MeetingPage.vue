@@ -378,7 +378,7 @@ async function stop(): Promise<void> {
 
 function stopInternal(): void {
   recording.value = false
-  void recorder?.stop()
+  void recorder?.stop().catch(() => {})
   recorder = null
   micLevel.value = 0
   micSilent.value = false
@@ -391,7 +391,7 @@ function connect(autostart = false): void {
   // Dispose the previous socket before attempting a new connection.
   const previous = client
   client = null
-  void recorder?.stop()
+  void recorder?.stop().catch(() => {})
   recorder = null
   previous?.close()
   error.value = ''
@@ -460,7 +460,7 @@ function connect(autostart = false): void {
       if (clientSeq !== mySeq) return
       client = null
       recording.value = false
-      void recorder?.stop()
+      void recorder?.stop().catch(() => {})
       recorder = null
       if (reason === 'closed') {
         status.value = 'idle'
