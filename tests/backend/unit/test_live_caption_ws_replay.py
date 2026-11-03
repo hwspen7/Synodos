@@ -8,11 +8,31 @@ import numpy as np
 
 from api.socket_transport import AudioFrameSequence
 from tools.live_caption_ws_replay import (
-    DEFAULT_WS_URL, capture_event, new_capture, pcm_packet, summarize_timing,
+    DEFAULT_WS_URL, _clock_wait_seconds, capture_event, new_capture, pcm_packet, summarize_timing,
 )
 
 
 class LiveCaptionWsReplayTests(unittest.TestCase):
+    def test_absolute_clock_prevents_31_minute_frame_sleep_accumulation(self):
+        # Simulated Windows scheduling incurs 5 ms of wakeup oversleep
+        # on EVERY frame. Absolute media deadlines must not accumulate it.
+        start = 100.0
+        now = start
+        sample_rate = 16000
+        frame_samples = 3200
+        frames = 9447
+        for i in range(1, frames + 1):
+            # Sending / event-loop bookkeeping costs 1 ms per frame.
+            now += 0.001
+            sleep = _clock_wait_seconds(
+                start, i * frame_samples, sample_rate, 1.0, now)
+            now += sleep + 0.005
+        expected = frames * frame_samples / sample_rate
+        self.assertLess(now - start - expected, 0.006)
+        self.assertEqual(_clock_wait_seconds(0, 3200, 16000, 1, 0.3), 0)
+        with self.assertRaises(ValueError):
+            _clock_wait_seconds(0, 3200, 0, 1, 0)
+
     def test_default_replay_disables_unrequested_translation(self):
         """Standalone ASR replay must match browser's No translation option."""
         params = parse_qs(urlparse(DEFAULT_WS_URL).query,
