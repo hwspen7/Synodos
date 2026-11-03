@@ -18,6 +18,9 @@ class WhisperEngine:
     def _get_model(self):
         with self._load_lock:
             if self._model is None:
+                if self.device != "cpu":
+                    from speech.cuda_runtime import prepare_windows_cuda_runtime
+                    prepare_windows_cuda_runtime()
                 from faster_whisper import WhisperModel
                 self._model = WhisperModel(self.model_id, device=self.device, compute_type=self.compute_type)
             return self._model

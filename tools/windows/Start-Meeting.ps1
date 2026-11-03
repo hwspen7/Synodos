@@ -34,6 +34,15 @@ function Set-BackendEnvironment {
     $env:MEETING_ASR_LANGUAGE = 'en'
     $env:MEETING_TRANSLATE_TO = 'en'
     $env:MEETING_PREWARM_ASR = '1'
+    # Prefer CUDA DLLs bundled with the installed PyTorch wheel.
+    # Windows CTranslate2 may not find them unless their folder is on PATH.
+    $torchCudaLib = Join-Path $RepoRoot '.venv\Lib\site-packages\torch\lib'
+    if (Test-Path -LiteralPath (Join-Path $torchCudaLib 'cublas64_12.dll')) {
+        $env:PATH = "$torchCudaLib;$env:PATH"
+        Write-Host "Configured CUDA 12 DLL search path: $torchCudaLib"
+    } else {
+        Write-Warning 'PyTorch CUDA 12 cuBLAS DLL not found in the local environment. Whisper GPU inference requires CUDA 12 cuBLAS and cuDNN 9.'
+    }
     $env:MEETING_RECORD_AUDIO = '1'
     $env:APP_ENABLE_METRICS = '1'
 }

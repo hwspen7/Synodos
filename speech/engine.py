@@ -58,3 +58,13 @@ def prewarm_multilingual(config: SpeechSettings | None = None) -> None:
                 _ENGINES[key] = QwenEngine(config.model, config.device if config.device != "auto" else "cuda:0", aligner=aligner)
         backend = _ENGINES[key]
     backend._get_model()
+    if config.engine == "whisper" and config.device.lower().startswith("cuda"):
+        # GPU dependencies are often loaded lazily on the first actual
+        # transcription. Fail during startup rather than appearing healthy
+        # and silently producing no text during a live recording.
+        probe = np.zeros(3 * 16000, dtype=np.float32)
+        chunks, _ = backend._get_model().transcribe(
+            probe, language="en", vad_filter=False, beam_size=1,
+            word_timestamps=False, condition_on_previous_text=False,
+        )
+        list(chunks)
