@@ -16,6 +16,8 @@ export interface RealtimeClientOptions {
 export class RealtimeClient {
   private ws: WebSocket | null = null
   private settled = false
+  private sentSamples = 0
+  private audioCongested = false
   private readonly options: RealtimeClientOptions
 
   constructor(options: RealtimeClientOptions) {
@@ -31,6 +33,8 @@ export class RealtimeClient {
     const ws = new WebSocket(this.options.url)
     this.ws = ws
     this.settled = false
+    this.sentSamples = 0
+    this.audioCongested = false
     ws.binaryType = 'arraybuffer'
 
     ws.onmessage = (event: MessageEvent) => {
@@ -86,6 +90,7 @@ export class RealtimeClient {
     if (ws?.readyState === WebSocket.OPEN) {
       // Stop and report congestion rather than silently dropping microphone audio.
       if (ws.bufferedAmount + chunk.byteLength > 1024 * 1024) {
+        this.audioCongested = true
         this.options.onError?.('Audio transport congested. Recording stopped to prevent silent data loss.')
         ws.close(1011, 'Audio transport backpressure')
         return
@@ -94,13 +99,14 @@ export class RealtimeClient {
       const copy = new Uint8Array(chunk.byteLength)
       copy.set(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength))
       ws.send(copy.buffer)
+      this.sentSamples += chunk.length
     }
   }
 
   sendStop(): void {
     const ws = this.ws
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'stop' }))
+    if (ws?.readyState === WebSocket.OPEN && !this.audioCongested) {
+      ws.send(JSON.stringify({ type: 'stop', expected_samples: this.sentSamples }))
     }
   }
 
