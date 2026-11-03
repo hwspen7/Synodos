@@ -46,6 +46,7 @@ from speech.commit_guard import is_temporal_duplicate
 from phase07.recovery import autosave_seconds
 from sessions.outbox import enqueue_message
 from sessions.translation_tasks import submit_translation
+from sessions.speaker_tasks import submit_speaker_analysis
 from sessions.speaker_fallback import (
     UNIDENTIFIED_CLUSTER, fallback_speaker_id, normalized_embedding,
 )
@@ -133,6 +134,8 @@ class SessionProcessor(threading.Thread):
         self._phase07_last_autosave = time.monotonic()
         self._phase07_saved_segment_id = 0
         self._translation_tasks: dict[int, Future] = {}
+        self._speaker_tasks: dict[int, Future] = {}
+        self._async_ready = threading.Event()
 
         # Handle transcripts and speaker assignments.
         self.speaker_store = speaker_store
@@ -175,11 +178,22 @@ class SessionProcessor(threading.Thread):
                 if self._drain_save_requests():
                     continue
                 if not self.buffer.wait_until(
-                    self._process_threshold_s, self._stop_event, self._save_requested
+                    self._process_threshold_s, self._stop_event,
+                    self._save_requested, self._async_ready,
                 ):
                     break
                 if self._stop_event.is_set():
                     break
+                if self._async_ready.is_set():
+                    self._async_ready.clear()
+                    speaker_updated = self._collect_speakers()
+                    self._collect_translations()
+                    if speaker_updated:
+                        self._recluster()
+                        self._last_reclustered_segment_id = self._next_segment_id - 1
+                    if self.segments:
+                        self._rebuild_and_push()
+                    continue
                 if self._save_requested.is_set():
                     continue
                 try:
@@ -193,7 +207,8 @@ class SessionProcessor(threading.Thread):
                     # Handle transcripts and speaker assignments.
                     current = self.buffer.seconds()
                     # Avoid repeated full-buffer model inference for each 0.5s of silence.
-                    self.buffer.wait_until(current + 1.5, self._stop_event, self._save_requested)
+                    self.buffer.wait_until(current + 1.5, self._stop_event,
+                                           self._save_requested, self._async_ready)
             # Handle transcripts and speaker assignments.
             self._finalize()
         except Exception:
@@ -211,8 +226,20 @@ class SessionProcessor(threading.Thread):
             except Exception:
                 logger.exception("session %s final transcription failed", self.session_id)
                 self._put({"type": "error", "message": "Final transcription failed; confirmed text may be incomplete"})
+        speaker_updated = self._collect_speakers(wait_seconds=5.0)
+        if speaker_updated:
+            try:
+                self._recluster()
+                self._last_reclustered_segment_id = self._next_segment_id - 1
+            except Exception:
+                logger.exception("Final speaker clustering failed")
+                self._fallback_labels()
         self._collect_translations(wait_seconds=2.0)
         self._rebuild_and_push()
+        if self._speaker_tasks:
+            self._put({"type": "feature_warning", "feature": "diarization",
+                       "message": "Speaker analysis unfinished; uncertain speakers were kept unidentified"})
+            self._speaker_tasks.clear()
         if self._translation_tasks:
             self._put({"type": "feature_warning", "feature": "translation",
                        "message": "Some translations were not completed before meeting shutdown"})
