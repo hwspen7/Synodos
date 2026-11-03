@@ -55,6 +55,12 @@ class WhisperEngine:
         }
         if terms.strip():
             kwargs["hotwords"] = terms[:1500]
+        # Controlled experiment only: preserve verified segment text when
+        # its forced word alignment fails acoustic support checks.
+        # Disabled by default until all-language and overlap regression gates.
+        preserve_disputed = os.environ.get(
+            "MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT", "0"
+        ).strip().lower() in ("1", "true", "yes")
         with self._infer_lock:
             speech_regions = get_speech_timestamps(samples, options, sampling_rate=16000)
             if os.environ.get("MEETING_WHISPER_DUAL_VAD", "0").strip().lower() in ("1", "true", "yes"):
@@ -72,7 +78,7 @@ class WhisperEngine:
                 recognized = recognize_windows(
                     samples, speech_regions,
                     lambda chunk, **kw: self._get_model().transcribe(chunk, **kw),
-                    window_kwargs,
+                    window_kwargs, preserve_disputed_text=preserve_disputed,
                 )
                 return dataclass_replace(
                     recognized,
@@ -84,7 +90,8 @@ class WhisperEngine:
         detected = (language if language not in ("auto", "und", "")
                     else getattr(info, "language", None) or "und")
         utterances = verify_utterances(
-            pieces, speech_regions, round(len(samples) * 1000 / 16000), detected
+            pieces, speech_regions, round(len(samples) * 1000 / 16000), detected,
+            preserve_disputed_text=preserve_disputed,
         )
         return Recognition(split_utterances(utterances), detected,
                            getattr(info, "language_probability", None), "whisper",
