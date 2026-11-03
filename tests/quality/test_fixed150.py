@@ -23,6 +23,7 @@ from tools.fixed150_ablation import choose_cases, likely_failure
 from tools.fixed150_reference_audit import source_flags, evaluate as audit_references, FOCUS_15
 from tools.fixed150_system_audit import summarize as summarize_system_ablation
 from tools.fixed150_system_triage import inspect as inspect_system_triage
+from tools.fixed150_stage_audit import select_impacted, measure as measure_stage
 from speech.audio_windows import speech_windows
 from speech.text_format import join_transcript_text
 from tools.fixed150_dashboard import (
@@ -214,6 +215,33 @@ class Fixed150Contracts(unittest.TestCase):
         self.assertIn("WINDOW_SEAM_WITHIN_DETECTED_SPEECH", top["flags"])
         with self.assertRaises(ValueError):
             inspect_system_triage({"schema": "bad", "cases": {}})
+
+    def test_stage_audit_selects_only_verified_impacted_originals(self):
+        cases = [
+            {"id": f"fixed150-{i:03d}", "kind": "single",
+             "language": "pt" if i == 48 else "en",
+             "sha256": f"digest{i}"}
+            for i in range(1, 101)
+        ]
+        report = {
+            "schema": "meeting-fixed150-system-ablation-v1",
+            "cases": {
+                case["id"]: {
+                    "id": case["id"],
+                    "sha256": case["sha256"],
+                    "production_windowed": {
+                        "cer": .798 if case["id"] == "fixed150-048" else .10,
+                    },
+                    "direct_whisper": {"cer": .284 if case["id"] == "fixed150-048" else .10},
+                } for case in cases
+            },
+        }
+        found = select_impacted({"cases": cases}, report)
+        self.assertEqual([x["id"] for x in found], ["fixed150-048"])
+        report["cases"]["fixed150-048"]["sha256"] = "corrupt"
+        with self.assertRaises(ValueError):
+            select_impacted({"cases": cases}, report)
+        self.assertEqual(measure_stage("abc", "abc", "en")["cer"], 0)
 
     def test_continuous_speech_is_hard_cut_at_18_seconds(self):
         samples = 40000 * 16
