@@ -518,6 +518,20 @@ def main() -> int:
     parser.add_argument("--source", choices=("singles", "multi", "all"), default="singles")
     parser.add_argument("--verify", action="store_true")
     args = parser.parse_args()
+    if not args.verify and args.source == "multi":
+        # Public dual-channel audio is a staged collection, not a scored lock.
+        # Never read gated DAI metadata or fabricate reference transcripts.
+        from tools.fixed195_public_multi import prepare as prepare_public_multi
+        prepare_public_multi(args.root)
+        return 0
+    if not args.verify and args.source == "all":
+        # Preserve the 130 singles and gather all currently open authentic
+        # conversations. Full Fixed195 still requires independently verified
+        # speaker-attributed transcripts and the remaining languages.
+        prepare(args.root, "singles", False, args.old_root, args.previous_root)
+        from tools.fixed195_public_multi import prepare as prepare_public_multi
+        prepare_public_multi(args.root)
+        return 0
     complete = prepare(args.root, args.source, args.verify,
                        args.old_root, args.previous_root)
     return 0 if complete or args.source == "singles" else 2
