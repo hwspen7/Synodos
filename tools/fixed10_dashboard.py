@@ -20,8 +20,13 @@ import json
 import math
 from pathlib import Path
 import re
+import sys
 import statistics
 import unicodedata
+
+# Direct script execution starts with tools/ in sys.path; add the repo root so
+# the integrated diarization scorer can be imported reliably on Windows.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 def _tokens(value: str) -> Counter:
