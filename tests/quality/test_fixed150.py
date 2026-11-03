@@ -20,6 +20,7 @@ from phase07.quality import score_pair, aggregate
 from speech.qwen import qwen_language_name, LANGUAGES
 from speech.language import normalize_language
 from tools.fixed150_ablation import choose_cases, likely_failure
+from tools.fixed150_reference_audit import source_flags, evaluate as audit_references, FOCUS_15
 from tools.fixed150_dashboard import (
     summarize_multis, summarize_singles, token_recall, token_bag,
 )
@@ -122,6 +123,45 @@ class Fixed150Contracts(unittest.TestCase):
                       likely_failure(.8, .2, .2, "ko", "ko"))
         self.assertIn("AUTO_LANGUAGE_OR_DECODING",
                       likely_failure(.8, .8, .1, "en", "ko"))
+
+    def test_korean_45sec_reference_audit_flags_missing_coverage_risk(self):
+        ref = ("네 안녕하세요 외국에서 카드를 사용하고 싶은데 "
+               "미국에 있을 때 사용이 가능한지 확인해 줄 수 있나 해서요")
+        issues = source_flags(45.0, ref)
+        self.assertIn("LONG_AUDIO_SHORT_REFERENCE", issues)
+        self.assertIn("LOW_REFERENCE_CHARACTER_DENSITY", issues)
+        self.assertFalse(source_flags(6.0, ref))
+
+    def test_annotation_audit_keeps_flagged_samples_in_raw_denominator(self):
+        sources = [
+            {"id": f"fixed150-{i:03d}", "kind": "single",
+             "language": "ko" if i == 36 else "en",
+             "duration_s": 45.0 if i == 36 else 6.0,
+             "reference": "가" * 43 if i == 36 else "hello how are you"}
+            for i in range(1, 101)
+        ]
+        rows = [
+            {"index": i, "reference_characters": 43 if i == 35 else 14,
+             "character_edits": 91 if i == 35 else 0,
+             "cer": 91 / 43 if i == 35 else 0}
+            for i in range(100)
+        ]
+        report = audit_references(
+            {"cases": sources},
+            {"infer": True, "samples": 100, "engines": {
+                "whisper": {"samples": rows}}},
+            ("ko", "en"),
+        )
+        self.assertEqual(report["selected_samples"], 100)
+        self.assertGreater(report["raw_selected_cer"], 0)
+        ko = next(x for x in report["per_language"] if x["language"] == "ko")
+        self.assertEqual(ko["flagged_for_review"], 1)
+        self.assertIsNone(ko["sensitivity_cer_excluding_flagged"])
+        self.assertFalse(report["release_certified"])
+
+    def test_reference_audit_default_scope_is_15(self):
+        self.assertEqual(len(FOCUS_15), 15)
+        self.assertEqual(len(set(FOCUS_15)), 15)
 
     def test_exact_diverse_allocations(self):
         self.assertEqual(len(MIND_LOCALES) * len(MIND_ROWS), 56)
