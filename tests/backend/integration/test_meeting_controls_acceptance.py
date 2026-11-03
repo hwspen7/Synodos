@@ -75,6 +75,20 @@ class ManualSpeakerAcceptanceTests(unittest.TestCase):
         self.assertTrue(snapshot["segments"][0]["speaker_override"])
         self.assertEqual(snapshot["segments"][0]["speaker_override_name"], "Alex")
 
+    def test_manual_text_review_flag_survives_meeting_resume(self):
+        settings = Settings()
+        state = sample_state("review-flag")
+        correct_segment(state, 7, "Hello there", 0)
+        processor = SessionProcessor(
+            "manual-text", AudioBuffer(settings.sample_rate, max_seconds=30),
+            settings, object(), asyncio.Queue(),
+        )
+        processor.load_state(state)
+        snapshot = processor.snapshot_state()
+        self.assertEqual(snapshot["segments"][0]["text"], "Hello there")
+        self.assertEqual(snapshot["segments"][0]["revision"], 1)
+        self.assertTrue(snapshot["segments"][0]["manually_corrected"])
+
     def test_text_and_speaker_edits_preserve_separate_revisions(self):
         state = sample_state("manual-revisions")
         assign_segment_speaker(state, 7, "participant-1", "Alex", 0)
