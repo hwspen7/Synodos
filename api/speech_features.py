@@ -147,7 +147,7 @@ async def list_recordings(meeting_id: str) -> dict:
         }
     return {"recordings": [describe(p) for p in sorted(
         folder.glob("*.wav"), key=lambda p: p.stat().st_mtime, reverse=True,
-    )]} if folder.is_dir() else []}
+    )]} if folder.is_dir() else {"recordings": []}
 
 
 @router.get("/meetings/{meeting_id}/recordings/{filename}")
