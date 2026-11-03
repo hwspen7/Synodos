@@ -133,5 +133,40 @@ class WavListingAcceptanceTests(unittest.TestCase):
             self.assertTrue(entry["modified_at"])
 
 
+
+
+class OfflineMeetingSettingsTests(unittest.TestCase):
+    def test_settings_api_does_not_erase_existing_transcript(self):
+        from unittest.mock import patch
+        from api import meetings as meeting_routes
+        from storage.speakers import SpeakerStore
+        from storage.hotwords import HotwordStore
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            store = MeetingStore(root / "meetings")
+            sid = store.create(title="Settings test")["id"]
+            state = sample_state(sid)
+            store.save_state(state)
+
+            speakers = SpeakerStore(root / "speakers")
+            enrolled = speakers.create("Alex")
+            hotwords = HotwordStore(root / "hotwords")
+            with patch.object(meeting_routes, "meeting_store", store), \
+                 patch.object(meeting_routes, "speaker_store", speakers), \
+                 patch.object(meeting_routes, "hotword_store", hotwords):
+                payload = meeting_routes.MeetingSettingsPayload(
+                    participant_ids=[enrolled["id"]],
+                    language="en", translate_to="zh", record_audio=True,
+                    vad_threshold=4.0, rec_threshold=1.5,
+                )
+                result = asyncio.run(meeting_routes.update_meeting_settings(sid, payload))
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(store.get_meeting(sid)["ui_settings"]["translate_to"], "zh")
+            self.assertEqual(store.get_meeting(sid)["participant_ids"], [enrolled["id"]])
+            self.assertEqual(store.load_state(sid)["segments"][0]["text"], "Hello")
+
+
 if __name__ == "__main__":
     unittest.main()
