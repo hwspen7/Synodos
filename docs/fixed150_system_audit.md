@@ -61,3 +61,44 @@ transcript or source reference is stored; the originals are never modified.
 
 Do not globally disable per-window language detection until code-switched
 and overlapping speech are validated with strict timestamp de-duplication.
+
+## Stage-level ablation result: 8 impacted originals
+
+The 2026-11-03 user-run stage audit showed that switching internal Whisper
+VAD off is **not** uniformly better. In Thai case 071, raw CER improved
+from 26.45% (internal VAD on) to 8.26% (off), but Thai case 069 worsened
+from 25.27% (on) to 56.99% (off). Polish 043 and Portuguese 047 improved
+when turning it off. Stage-level word verification worsened a previously
+perfect Thai case 072 from 0% raw CER to 11.69%, regardless of the
+internal-VAD setting, and Portuguese 045 worsened from 3.28% to 9.02%.
+
+The code therefore **does not** turn internal VAD off globally.
+
+The shared text guard has a narrow optional experiment. If the full
+transcription segment passes acoustic and decoding checks, but its word
+timestamps do not reliably align with speech intervals, this mode retains
+the whole segment text with segment-level timestamp quality, rather than
+deleting some words. It does not fabricate word timestamps, ignores no
+diagnostic checks, and leaves the production default strict:
+
+    MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT=0
+
+A reproducible regression test validates that unsupported speech and
+high no-speech-probability segments remain rejected.
+
+To test the policy without changing the deployed default, run the updated
+stage audit on the *same* eight impacted originals:
+
+    .\.venv\Scripts\python.exe tools\fixed150_stage_audit.py --scope all
+
+This now writes to a **new** checkpoint:
+benchmark/fixed150/stage_guard_ablation.json.
+
+Per VAD setting, the report compares three results for each recording:
+raw Whisper output, original strict text verification, and opt-in
+evidence-preserving verification. Only the original 8 affected clips are
+tested, so these metrics cannot prove an overall improvement. They are
+used to decide whether to run a full 100-original and mixed-language
+regression, which must precede enabling the opt-in production flag.
+
+Do not overwrite the original stage_audit.json or frozen source manifest.
