@@ -96,6 +96,65 @@ def choose_caption_speaker(
                            count * frame_ms, "acoustic_primary")
 
 
+def choose_caption_speaker_from_turns(
+    turns, start_ms: int, end_ms: int, *,
+    min_fraction: float = 0.25,
+    min_margin: float = 0.10,
+) -> SpeakerDecision:
+    """Choose the dominant official diarization turn for one caption.
+
+    Official turn IDs are the final source of truth. Unlike raw sigmoid
+    channels this cannot introduce model channels suppressed by Nemotron's
+    official speaker-turn postprocessing. Each speaker's intersecting
+    intervals are unioned before measuring covered clock time.
+    """
+    if (type(start_ms) is not int or type(end_ms) is not int
+            or start_ms < 0 or end_ms <= start_ms
+            or not 0 <= min_fraction <= 1
+            or not 0 <= min_margin <= 1):
+        raise ValueError("Invalid official-turn caption projection")
+    if not isinstance(turns, (list, tuple)):
+        raise ValueError("Expected finalized Nemotron turns")
+    covered: dict[int, list[tuple[int, int]]] = {}
+    for turn in turns:
+        if not isinstance(turn, dict):
+            raise ValueError("Invalid official Nemotron turn")
+        speaker = turn.get("speaker_id")
+        a = turn.get("start_ms")
+        b = turn.get("end_ms")
+        if (type(speaker) is not int or not 1 <= speaker <= MAX_SPEAKERS
+                or type(a) is not int or type(b) is not int
+                or a < 0 or b <= a):
+            raise ValueError("Invalid official speaker interval")
+        left, right = max(a, start_ms), min(b, end_ms)
+        if right > left:
+            covered.setdefault(speaker, []).append((left, right))
+    if not covered:
+        return SpeakerDecision(None, 0., 0., 0., 0.,
+                               end_ms - start_ms, "official_turn_no_speech")
+
+    shares = {}
+    for speaker, fragments in covered.items():
+        merged = []
+        for a, b in sorted(fragments):
+            if merged and a <= merged[-1][1]:
+                merged[-1][1] = max(b, merged[-1][1])
+            else:
+                merged.append([a, b])
+        shares[speaker] = sum(b - a for a, b in merged) / (end_ms - start_ms)
+    ranked = sorted(shares.items(), key=lambda x: (-x[1], x[0]))
+    top, score = ranked[0]
+    second = ranked[1][1] if len(ranked) > 1 else 0.
+    margin = score - second
+    if score < min_fraction or margin < min_margin:
+        return SpeakerDecision(None, round(score, 5), round(second, 5),
+                               round(margin, 5), round(score, 5),
+                               end_ms - start_ms, "official_turn_ambiguous")
+    return SpeakerDecision(top, round(score, 5), round(second, 5),
+                           round(margin, 5), round(score, 5),
+                           end_ms - start_ms, "official_turn_primary")
+
+
 def activity_turns(
     activity, *, frame_ms: int = FRAME_MS,
     threshold: float = 0.5,
