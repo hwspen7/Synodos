@@ -262,3 +262,57 @@ model performance from deterministic fixtures.
 Passing CI demonstrates only adapter and benchmark plumbing. It does not
 mean the NVIDIA or SpeechBrain weights were installed or that either model
 improves real-world speaker accuracy. The live defaults remain untouched.
+
+## First real verification comparison on Fixed195 isolated speaker channels
+
+The public Fixed195 dialogue collector stores two speaker-isolated audio
+channels alongside each mixed WAV in
+benchmark/fixed195/public_multi_unscored.jsonl. These are useful for a
+**same-recording diagnostic** even though the mixtures are explicitly
+\`is_scoreable_diarization=false\` and have no human timestamp references.
+Do not make or claim a DER result from those unscored mixtures.
+
+First ensure the private source file exists locally (it is gitignored):
+
+    Test-Path benchmark/fixed195/public_multi_unscored.jsonl
+
+Then generate checksum-verified, nonoverlapping 5-second samples for each
+channel. The tool checks both stored stem SHA-256 hashes and audio geometry,
+selects two suitably active windows per channel, and produces two same-
+speaker and two different-speaker pairs per recording. No transcript text,
+model prediction, or speaker identity is imported or committed.
+
+    python -m tools.speaker_stage1_pairs --root benchmark/fixed195 --output benchmark/fixed195/speaker_stage1_manifest.json
+
+To inspect just the English test case first, use a different output path,
+and the optional \`--case-id fixed195-en-m01\`. Generated clips are private
+and written to benchmark/fixed195/speaker_stage1_samples/. All filenames
+are exclusive-create, so the tool refuses to overwrite an earlier trial.
+
+The selection uses signal energy, **not speech classification**. Listen
+to the selected snippets to ensure each contains one individual and no
+dominant cross-channel bleed, music, or other interference. Skip the test
+if this cannot be confirmed. The same recording provides same-person
+samples in identical acoustic conditions, which can make apparent EER
+unrealistically good. It cannot establish cross-session identification.
+
+Run the two embedding models **sequentially**, with their separate Python
+environments and the same unchanged manifest:
+
+    python -m tools.speaker_stage1_compare --mode verification --verification-backend camplus --root benchmark/fixed195 --manifest benchmark/fixed195/speaker_stage1_manifest.json --output benchmark/fixed195/stage1_camplus_diag.json
+
+    .venv-speaker-ecapa\Scripts\python.exe -m tools.speaker_stage1_compare --mode verification --verification-backend ecapa --ecapa-device cuda --root benchmark/fixed195 --manifest benchmark/fixed195/speaker_stage1_manifest.json --output benchmark/fixed195/stage1_ecapa_diag.json
+
+    python -m tools.speaker_stage1_merge --camplus-report benchmark/fixed195/stage1_camplus_diag.json --ecapa-report benchmark/fixed195/stage1_ecapa_diag.json --output benchmark/fixed195/stage1_paired_diag.json
+
+Results include EER and AUC if both positive and negative trials succeeded.
+Without predeclared thresholds, FAR and FRR remain null. The merged report
+retains \`verification_provenance.cross_session_identity_evaluable=false\`,
+and model promotion remains disabled.
+
+For real speaker-memory acceptance, replace the diagnostic corpus with
+consented enrollment and test material from **different recording
+sessions**, with varied microphones, languages, levels of noise and
+unknown-speaker rejection. Human-confirmed identity labels are mandatory.
+A separate development split is needed before selecting an operating
+threshold, and test speakers must not leak into threshold calibration.
