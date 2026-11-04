@@ -5,7 +5,9 @@ import json
 from pathlib import Path
 import sys
 
-from speech.offline_speaker import _pipeline, normalize_turns
+from speech.offline_speaker import (
+    _pipeline, normalize_turns,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -20,11 +22,19 @@ def main(argv: list[str] | None = None) -> int:
     try:
         model = _pipeline()
         outcome = model(str(file))
-        annotation = getattr(outcome, "exclusive_speaker_diarization", None)
+        # Preserve full diarization, including 2+ simultaneous speakers.
+        # The exclusive view remains separately available for word alignment.
+        annotation = getattr(outcome, "speaker_diarization", None)
         if annotation is None:
-            annotation = getattr(outcome, "speaker_diarization", outcome)
+            annotation = getattr(outcome, "exclusive_speaker_diarization", outcome)
         turns = normalize_turns(annotation)
-        print(json.dumps({"speaker_turns": turns}, ensure_ascii=True))
+        exclusive = getattr(outcome, "exclusive_speaker_diarization", None)
+        print(json.dumps({
+            "speaker_turns": turns,
+            "exclusive_speaker_turns": (
+                normalize_turns(exclusive) if exclusive is not None else None
+            ),
+        }, ensure_ascii=True))
         return 0
     except Exception as exc:
         # Print no traceback, file contents or access tokens in the API job.
