@@ -731,6 +731,7 @@ class SessionProcessor(threading.Thread):
 
         # Handle transcripts and speaker assignments.
         phase07_asr_started = time.monotonic()
+        current_content_trace = None
         if self._speech_settings.engine == "legacy":
             sentences = self.models.transcribe_sentences(audio, hotword=self._hotword_str or None)
         else:
@@ -768,9 +769,20 @@ class SessionProcessor(threading.Thread):
                     ):
                         stage[name] = max(0, int(trace.get(name) or 0))
                     self._asr_stage_trace.append(stage)
+                    current_content_trace = stage
         telemetry.observe_asr_cycle(buffer_s, time.monotonic() - phase07_asr_started)
         unconfirmed = []
         local_end = 0
+        # Per-inference-cycle provenance for content conservation. Repeated
+        # retries are counted per cycle and never called "unique words".
+        commit_receipt = {
+            "verified_candidates": len(sentences),
+            "held": 0,
+            "invalid_timestamps": 0,
+            "duplicate_skipped": 0,
+            "published_new": 0,
+            "published_from_recovery": 0,
+        }
         for sentence in sentences:
             start_ms = int(sentence["start"])
             end_ms = int(sentence["end"])
@@ -785,13 +797,16 @@ class SessionProcessor(threading.Thread):
             )
             if should_hold:
                 unconfirmed.append(sentence)
+                commit_receipt["held"] += 1
                 continue
 
             s_g = start_offset + int(start_ms * sr / 1000)
             e_g = start_offset + int(end_ms * sr / 1000)
             if e_g <= s_g or start_ms < 0 or end_ms > buffer_s * 1000 + 250:
+                commit_receipt["invalid_timestamps"] += 1
                 continue
             if is_temporal_duplicate(s_g, e_g, text, self.segments):
+                commit_receipt["duplicate_skipped"] += 1
                 metrics.increment("asr_temporal_duplicate_skipped")
                 local_end = max(local_end, e_g - start_offset)
                 continue
@@ -836,6 +851,9 @@ class SessionProcessor(threading.Thread):
                 ),
             }
             self.segments.append(record)
+            commit_receipt["published_new"] += 1
+            if record["recognition_origin"] == "gap_recovery":
+                commit_receipt["published_from_recovery"] += 1
             self._next_segment_id += 1
             if (self._ecapa_shadow is not None and len(seg_audio) >= sr * 2):
                 # Keep a small, temporary audio sample until CAM++ assigns
@@ -859,6 +877,14 @@ class SessionProcessor(threading.Thread):
                         self.session_id[:8], record["id"], s_g / sr, e_g / sr)
             metrics.increment("asr_segments_confirmed")
             local_end = max(local_end, e_g - start_offset)
+
+        if current_content_trace is not None:
+            if sum(commit_receipt[key] for key in (
+                "held", "invalid_timestamps", "duplicate_skipped",
+                "published_new",
+            )) != commit_receipt["verified_candidates"]:
+                raise AssertionError("ASR candidate accounting not conserved")
+            current_content_trace["commit_receipt"] = commit_receipt
 
         if self._speech_settings.engine != "legacy" and not self._speech_settings.native_streaming:
             if final:
