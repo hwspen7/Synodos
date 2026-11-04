@@ -23,7 +23,9 @@ def compare_ablation_inventory(inventory: dict, *, root: Path) -> dict:
         "word_timestamp_bounds",
     }
     rows = inventory.get("candidate_trials")
-    if not isinstance(rows, list) or {v.get("variant") for v in rows} != modes:
+    if (not isinstance(rows, list) or len(rows) != 5
+            or any(not isinstance(v, dict) for v in rows)
+            or {v.get("variant") for v in rows} != modes):
         raise ValueError("Exactly five distinct frozen Phase 1A modes required")
     full = []
     source_hash = reference_hash = None
