@@ -20,6 +20,7 @@ from tools.ami_nemotron_live_score import _validated_independent, _solo_only
 from tools.ami_shadow10_score import score_case
 from tools.phase09_speaker_benchmark import evaluate
 from tools.speaker_stage1_compare import diarization_details, _reference_turns, baseline_turns
+from speech.asr_stage_trace import merged_intervals
 
 REFERENCE_COMMIT = "9527b7c64846fb38316a610f32e9d3466bd6d8b7"
 REFERENCE_SOURCE = "nttcslab-sp/diar-forced-alignment"
@@ -92,6 +93,40 @@ def fetch_forced_rttm(root: Path, meeting: str) -> tuple[str, str, Path]:
     return raw.decode("utf-8"), sha256(raw).hexdigest(), dest
 
 
+def acoustic_turns_within_caption_clock(
+    independent: list[dict], replay: dict, *, duration_ms: int,
+) -> list[dict]:
+    """Constrain raw acoustic activity to clocks with a final subtitle.
+
+    Diagnostic counterfactual only. This does not restore missing text or
+    assert that the transcript contains the right words.
+    """
+    timeline = (replay.get("final_cluster_diagnostics") or {}).get(
+        "anonymous_timeline"
+    )
+    if not isinstance(timeline, dict) or timeline.get("truncated") is not False:
+        raise ValueError("Complete published caption timeline required")
+    rows = timeline.get("segments")
+    if (not isinstance(rows, list)
+            or timeline.get("total_segments") != len(rows)):
+        raise ValueError("Incomplete published caption timeline")
+    clock = merged_intervals(
+        ((row["start_ms"], row["end_ms"]) for row in rows),
+        duration_ms=duration_ms,
+    )
+    clipped = []
+    for speaker in independent:
+        for a, b in clock:
+            start = max(a, speaker["start_ms"])
+            end = min(b, speaker["end_ms"])
+            if end > start:
+                clipped.append({
+                    "start_ms": start, "end_ms": end,
+                    "speaker_id": speaker["speaker_id"],
+                })
+    return clipped
+
+
 def alternate_score(root: Path, meeting: str, replay_path: Path) -> dict:
     if meeting not in {name for name, _ in SELECTED}:
         raise ValueError("Meeting not in frozen AMI inventory")
@@ -125,6 +160,12 @@ def alternate_score(root: Path, meeting: str, replay_path: Path) -> dict:
         reference, caption_prediction, caption_measured,
     )
     caption_measured.pop("speaker_mapping", None)
+    masked_prediction = acoustic_turns_within_caption_clock(
+        prediction, replay, duration_ms=DURATION_MS,
+    )
+    masked = evaluate(reference, masked_prediction, step_ms=100)
+    masked_details = diarization_details(reference, masked_prediction, masked)
+    masked.pop("speaker_mapping", None)
     solo = _solo_only(reference, prediction, duration_ms=DURATION_MS)
     return {
         "schema": "meeting-ami-forced-reference-diagnostic-v1",
@@ -142,6 +183,16 @@ def alternate_score(root: Path, meeting: str, replay_path: Path) -> dict:
         "original_only_words_caption_der": original["metrics"]["der"],
         "forced_aligned_independent_der": measured["der"],
         "forced_aligned_independent_metrics": {**measured, **details},
+        "forced_aligned_caption_clock_masked_acoustic_der": masked["der"],
+        "forced_aligned_caption_clock_masked_acoustic_metrics": {
+            **masked, **masked_details,
+        },
+        "caption_clock_masked_acoustic_note": (
+            "Diagnostic counterfactual: independent Nemotron speech turns "
+            "restricted to the union of final caption time windows, "
+            "including unknown-speaker captions. It is NOT published-caption "
+            "DER, a valid text recovery, or a replacement for live results."
+        ),
         "forced_aligned_caption_der": caption_measured["der"],
         "forced_aligned_caption_metrics": {
             **caption_measured, **caption_details,
