@@ -163,7 +163,11 @@ def diarization_details(reference: list[dict], predicted: list[dict],
 
 def _score_diarization(reference: list[dict], predicted: list[dict]) -> dict:
     result = evaluate(reference, predicted)
-    return {**result, **diarization_details(reference, predicted, result)}
+    details = diarization_details(reference, predicted, result)
+    # Human reference speaker names are private. The matching map is only
+    # needed transiently for scoring and must not be exported to reports.
+    result.pop("speaker_mapping", None)
+    return {**result, **details}
 
 
 def _summarize_diarization(rows: list[dict]) -> dict:
