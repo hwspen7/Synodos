@@ -77,6 +77,35 @@ class Fixed195Phase1TextGateTests(unittest.TestCase):
         self.assertEqual(result["overall"]["empty_predictions"], 1)
         self.assertGreater(result["overall"]["character_deletion_rate"], 0)
 
+    def test_stale_fingerprint_explains_safe_new_output_path(self):
+        cases, results = fixtures()
+        with tempfile.TemporaryDirectory() as root:
+            directory = Path(root)
+            report = directory / "content_review_singles.json"
+            report.write_text(json.dumps({
+                "schema": "meeting-fixed195-content-review-v1",
+                "fingerprint": "from_old_source_code",
+                "mode": "singles", "model": "large-v3",
+                "single_results": results,
+            }), encoding="utf-8")
+            original_bytes = report.read_bytes()
+            with (
+                patch(
+                    "tools.phase1_fixed195_text_gate.validate_singles",
+                    return_value=cases,
+                ),
+                patch(
+                    "tools.phase1_fixed195_text_gate.fingerprint",
+                    return_value="current_source_code",
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    ValueError, "content_review_singles_NEW.json",
+                ):
+                    score_frozen_singles(directory, report)
+            # The historical report must remain unchanged.
+            self.assertEqual(report.read_bytes(), original_bytes)
+
     def test_incomplete_batch_fails_closed(self):
         cases, results = fixtures()
         del results[cases[5]["id"]]
