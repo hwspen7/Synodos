@@ -44,6 +44,7 @@ def prepare_diarization(root: Path) -> dict:
     baseline = {
         "source_audio": r"benchmark\fixed195\audio\clip.wav",
         "source_audio_duration_s": 2.0,
+        "source_audio_sha256": audio["sha256"],
         "delivery_matched": True,
         "server_closed": True,
         "errors": [],
@@ -207,6 +208,24 @@ class SpeakerStageOneTests(unittest.TestCase):
         self.assertEqual(result["der"], 0.5)
         self.assertEqual(result["overlap_all_speakers_recall"], 0)
         self.assertEqual(result["speaker_count_absolute_error"], 1)
+
+    def test_different_wav_bytes_with_same_name_are_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            case = prepare_diarization(root)
+            baseline_file = root / "baseline.json"
+            baseline = json.loads(baseline_file.read_text(encoding="utf-8"))
+            baseline["source_audio_sha256"] = "0" * 64
+            baseline_file.write_text(
+                json.dumps(baseline), encoding="utf-8"
+            )
+            case["camplus_replay"]["sha256"] = sha256(
+                baseline_file.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(ValueError, "checksum"):
+                compare_diarization(
+                    [case], root, nemotron=DummyDiarizer()
+                )
 
     def test_missing_or_invalid_gold_and_checksum_are_rejected(self):
         with tempfile.TemporaryDirectory() as td:
