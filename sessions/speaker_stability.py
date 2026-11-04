@@ -414,6 +414,10 @@ def anonymous_speaker_timeline(
             "published_speaker_id": sid if type(sid) is int and sid > 0 else None,
             "embedding_available": item.get("emb") is not None,
             "speaker_uncertain": bool(item.get("speaker_uncertain", False)),
+            # Provenance only, not recognized words or recovered identity.
+            # Distinct final caption segment IDs let the ASR retry auditor
+            # distinguish published segments from repeated cycle candidates.
+            "recovery_origin": item.get("recognition_origin") == "gap_recovery",
             "speaker_evidence_status": str(
                 item.get("speaker_evidence_status") or "not_recorded"
             ),
