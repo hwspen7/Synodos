@@ -10,6 +10,7 @@ param(
     [ValidateSet("cpu", "cuda")][string]$Device = "cuda",
     [string]$PyannoteModelPath = "",
     [string]$DiarizenModelPath = "",
+    [string]$DiarizenEmbeddingModelPath = "",
     [switch]$AllowModelDownload
 )
 $ErrorActionPreference = "Stop"
@@ -26,6 +27,17 @@ function Resolve-Python([string]$Value) {
         throw "Python not found: $path"
     }
     return (Resolve-Path -LiteralPath $path).Path
+}
+# Keep model downloads and temporary files off the Windows system drive.
+$cacheBase = Join-Path $repo "benchmark\fixed195\.runtime_cache"
+foreach ($key in @("HF_HOME","HF_HUB_CACHE","HF_XET_CACHE","TORCH_HOME",
+                   "MODELSCOPE_CACHE","PIP_CACHE_DIR","TEMP","TMP","TMPDIR")) {
+    $old = [Environment]::GetEnvironmentVariable($key, "Process")
+    if (-not $old -or -not $old.StartsWith("E:\", [StringComparison]::OrdinalIgnoreCase)) {
+        $dest = Join-Path $cacheBase $key.ToLowerInvariant()
+        New-Item -ItemType Directory -Force -Path $dest | Out-Null
+        [Environment]::SetEnvironmentVariable($key, $dest, "Process")
+    }
 }
 $PythonExe = Resolve-Python $PythonExe
 $PyannotePython = Resolve-Python $PyannotePython
@@ -82,6 +94,9 @@ foreach ($meeting in $meetings) {
             $modelPath = if ($model -eq "pyannote") { $PyannoteModelPath }
                          else { $DiarizenModelPath }
             if ($modelPath) { $args += @("--model-id",$modelPath) }
+            if ($model -eq "diarizen" -and $DiarizenEmbeddingModelPath) {
+                $args += @("--diarizen-embedding-model",$DiarizenEmbeddingModelPath)
+            }
             if ($AllowModelDownload.IsPresent) { $args += "--allow-model-download" }
         }
         Write-Host "Phase 1B: $meeting / $model"
