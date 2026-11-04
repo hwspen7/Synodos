@@ -1,3 +1,53 @@
+# Current diarization policy — restored stable baseline (November 2026)
+
+The current recommended backend setting is `MEETING_DIARIZATION_MODE=cluster`.
+The default audio-to-text path is unchanged. Voice identification is an
+optional, best-effort annotation on confirmed text, **not** a prerequisite
+for publishing subtitles.
+
+- Keep the existing global acoustic cluster backend. Never specify an
+  oracle speaker count just to make a two-person test pass.
+- Preserve the existing 120-second horizon for embedding-backed, non-uncertain
+  historical speaker labels through
+  `MEETING_SPEAKER_LABEL_REVISABLE_S=120`. Recent labels may still be
+  corrected by new evidence; manual overrides remain authoritative.
+- When speaker embedding is absent or unusable, publish the recognized
+  text with `Unidentified Speaker`; do not discard a sentence or
+  manufacture an identity based on neighboring labels.
+- Retire the `cluster_anchors` and `cluster_sticky` experiments. An
+  obsolete Windows environment value now resolves safely to `cluster`,
+  and WebSocket `ready.diarization_mode` reports the effective mode.
+  The explicit `centroid` and `single` options are retained only for
+  compatibility / controlled tests; neither is recommended as default.
+- Keep `CLUSTER_MERGE_THR=0.78`, `MEETING_PREVIEW_INTERVAL_S=2.5`,
+  and `MEETING_MIN_COMMIT_CONTEXT_S=7.0` unless independently evaluated.
+  This restoration does **not** claim diarization DER or Zoom-equivalent
+  recognition quality.
+
+On a Windows backend shell, stop the previous server and explicitly set:
+
+```powershell
+$env:MEETING_DIARIZATION_MODE = "cluster"
+$env:MEETING_SPEAKER_LABEL_REVISABLE_S = "120"
+$env:CLUSTER_MERGE_THR = "0.78"
+$env:MEETING_PREVIEW_INTERVAL_S = "2.5"
+$env:MEETING_MIN_COMMIT_CONTEXT_S = "7.0"
+.\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+Run a one-loop, 75-second replay before treating the rollback as verified
+locally. Check `server_ready.diarization_mode` equals `cluster`, all
+PCM samples arrive, `flags`/`errors` are empty, and captions remain
+complete. Distinct labels and relabel churn remain diagnostic, not
+ground-truth speaker accuracy. Don't run additional speaker-architecture
+experiments without labeled turns and a core transcription impact.
+
+**Historical notes below are archived diagnostics, not active run
+instructions.** Their use of `cluster_sticky` or `cluster_anchors`
+describes now-retired experiments.
+
+---
+
 # Live subtitle reliability: first production-safe improvement
 
 The Fixed195 single-speaker reference-backed baseline (130 completed cases,
