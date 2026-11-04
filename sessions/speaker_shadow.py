@@ -247,6 +247,11 @@ class EcapaShadowSession:
                         self._idle.set()
                 self._jobs.task_done()
 
+    def note_rate_limited(self) -> None:
+        """Count candidate samples skipped by the 10-second sampling cadence."""
+        with self._lock:
+            self._counts["rate_limited"] += 1
+
     def note_no_active_window(self) -> None:
         """Count ASR-confirmed turns too quiet or sparse for shadow analysis."""
         with self._lock:
@@ -272,6 +277,7 @@ class EcapaShadowSession:
                 "skipped_invalid_audio": self._counts["invalid_audio"],
                 "skipped_low_energy": self._counts["low_energy"],
                 "skipped_no_active_window": self._counts["no_active_window"],
+                "skipped_sampling_rate_limit": self._counts["rate_limited"],
                 "errors": self._counts["errors"],
                 "worker_available": self._available,
                 "remaining": self._jobs.qsize(),
