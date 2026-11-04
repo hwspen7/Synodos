@@ -43,3 +43,5 @@ class Recognition:
     confidence: float | None = None
     engine: str = "legacy"
     speech_detected: bool | None = None
+    speech_intervals_ms: tuple[tuple[int, int], ...] = ()
+    recovery_diagnostics: dict | None = None
