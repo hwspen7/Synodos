@@ -71,6 +71,9 @@ class WhisperEngine:
         # forced word alignment is incomplete. This avoids deleting genuine
         # meeting content merely because word timestamps disagree.
         quality_candidate = quality_candidate_enabled()
+        prefer_word_bounds = os.getenv(
+            "MEETING_CAPTION_WORD_BOUNDS", "0"
+        ).strip().lower() in ("1", "true", "yes")
         preserve_disputed = quality_candidate or os.environ.get(
             "MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT", "0"
         ).strip().lower() in ("1", "true", "yes")
@@ -125,6 +128,7 @@ class WhisperEngine:
                     lambda chunk, **kw: self._get_model().transcribe(chunk, **kw),
                     window_kwargs,
                     preserve_disputed_text=preserve_disputed,
+                    prefer_word_bounds=prefer_word_bounds,
                 )
                 primary = recognized.utterances
                 detected = recognized.language
@@ -146,6 +150,7 @@ class WhisperEngine:
                     pieces, speech_regions,
                     round(len(samples) * 1000 / 16000), detected,
                     preserve_disputed_text=preserve_disputed,
+                    prefer_word_bounds=prefer_word_bounds,
                 )
                 if trace_enabled:
                     duration_ms = round(len(samples) * 1000 / 16000)
