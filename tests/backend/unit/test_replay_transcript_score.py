@@ -48,7 +48,7 @@ class ReferenceScoringTests(unittest.TestCase):
             "Really, what a coincidence. We laughed!")
         self.assertEqual(result["cer"], 0)
         self.assertEqual(result["wer"], 0)
-        self.assertEqual(result["reference_words"], 7)
+        self.assertEqual(result["reference_words"], 6)
         self.assertNotIn("coincidence", str(result))
 
     def test_missing_word_and_extra_word_count_as_edits(self):
