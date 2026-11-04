@@ -128,9 +128,15 @@ def assign_acoustic_anchor_clusters(
         return {"anchor_segments": 0, "short_assigned": 0,
                 "unassigned": len(candidate_indices), "raw_clusters": 0}
 
-    raw_labels = np.asarray(
-        cluster_model(np.stack([vectors[i] for i in anchors])),
-    ).reshape(-1)
+    # Some spectral clustering backends require at least two observations.
+    # One trusted voice prototype is enough for provisional one-cluster
+    # matching without invoking their eigensolver on a 1xD matrix.
+    raw_labels = (
+        np.array([0], dtype=int) if len(anchors) == 1
+        else np.asarray(
+            cluster_model(np.stack([vectors[i] for i in anchors])),
+        ).reshape(-1)
+    )
     if len(raw_labels) != len(anchors):
         raise ValueError("Speaker cluster model returned wrong label count")
     cluster_sums: dict[int, np.ndarray] = {}
