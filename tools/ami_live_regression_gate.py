@@ -76,11 +76,28 @@ def compare_live_audits(baseline: dict, candidate: dict) -> dict:
             values["missed_speaker_time"]["delta"] <= 0.005,
         "false_alarm_not_worse_by_over_0p5pp":
             values["false_alarm_time"]["delta"] <= 0.005,
+        "confusion_not_worse_by_over_0p5pp":
+            values["confusion_time"]["delta"] <= 0.005,
         "no_caption_clock_time_not_worse_by_over_0p5s":
             values["no_caption_clock_seconds"]["delta"] <= 0.5,
         "without_transcript_speaker_time_not_worse_by_over_0p5s":
             values["without_transcript_speaker_seconds"]["delta"] <= 0.5,
     }
+    # Speaker-count and overlap guardrails apply when both paired audits
+    # report the corresponding reference-backed measurements.
+    for metric, comparison in (
+        ("speaker_count_absolute_error", "not_increase"),
+        ("overlap_all_speakers_recall", "not_decrease"),
+    ):
+        before = baseline.get("metrics", {}).get(metric)
+        after = candidate.get("metrics", {}).get(metric)
+        if (isinstance(before, (int, float)) and not isinstance(before, bool)
+                and isinstance(after, (int, float)) and not isinstance(after, bool)):
+            gates[metric + "_not_worse"] = (
+                after <= before if comparison == "not_increase"
+                else after >= before
+            )
+
     # A permissive non-regression pass is not a quality improvement. Require
     # independently meaningful reductions before describing a candidate as
     # better on this frozen diarization/coverage benchmark.
@@ -119,12 +136,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", required=True, type=Path)
     parser.add_argument("--candidate", required=True, type=Path)
+    parser.add_argument(
+        "--require-improvement", action="store_true",
+        help="Exit nonzero unless measured DER and subtitle coverage improve",
+    )
     args = parser.parse_args()
     baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
     candidate = json.loads(args.candidate.read_text(encoding="utf-8"))
     result = compare_live_audits(baseline, candidate)
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if result["non_regression_pass"] else 1
+    accepted = (
+        result["diarization_coverage_improvement_pass"]
+        if args.require_improvement else result["non_regression_pass"]
+    )
+    return 0 if accepted else 1
 
 
 if __name__ == "__main__":
