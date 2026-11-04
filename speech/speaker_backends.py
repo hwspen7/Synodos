@@ -192,6 +192,12 @@ class Nemotron3Diarization:
                 ).to(self.device)
                 model.eval()
             except (ImportError, OSError, RuntimeError) as exc:
+                if "librosa" in str(exc).lower():
+                    raise SpeakerModelUnavailable(
+                        "Nemotron 3 audio processor requires librosa. "
+                        "Install it in the isolated Nemotron environment "
+                        "using requirements-speaker-nemotron.txt."
+                    ) from exc
                 raise SpeakerModelUnavailable(
                     "Nemotron 3 requires a compatible Transformers release, "
                     "PyTorch and downloaded NVIDIA model weights. Install "
