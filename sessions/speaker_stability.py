@@ -291,6 +291,72 @@ def diagnose_cluster_merge_thresholds(
     }
 
 
+def diagnose_fresh_cluster_candidates(
+    records: Iterable[Mapping[str, object]],
+    thresholds: tuple[float, ...] = (0.60, 0.68, 0.72, 0.76, 0.80),
+) -> dict[str, object]:
+    """Actually re-cluster available voiceprints; do not merge only raw groups.
+
+    Hypothetical counts are NOT identities or a DER measurement. In
+    particular, one person with noisy embeddings may form many clusters.
+    This diagnostic runs only when explicitly enabled at session closure.
+    """
+    import numpy as np
+    from collections import Counter
+    from speech.adaptive_cluster import MAX_EMBEDDINGS, complete_link_clusters
+
+    vectors = []
+    for record in records:
+        if record.get("emb") is None or record.get("speaker_override"):
+            continue
+        try:
+            vec = np.asarray(record["emb"], dtype=np.float32).reshape(-1)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not vec.size or not np.isfinite(vec).all():
+            continue
+        if vectors and vec.shape != vectors[0].shape:
+            continue
+        vectors.append(vec)
+    if not vectors or len(vectors) > MAX_EMBEDDINGS:
+        return {
+            "available": False,
+            "reason": "missing_or_over_256_voiceprints",
+            "eligible_embeddings": len(vectors),
+        }
+    array = np.stack(vectors)
+    candidates = []
+    for threshold in thresholds:
+        try:
+            labels = complete_link_clusters(array, threshold=threshold)
+            sizes = Counter(map(int, labels))
+            candidates.append({
+                "cosine_threshold": float(threshold),
+                "candidate_cluster_count": len(sizes),
+                "clusters_with_two_or_more_samples": sum(
+                    size >= 2 for size in sizes.values()
+                ),
+                "singleton_clusters": sum(size == 1 for size in sizes.values()),
+                "largest_cluster_size": max(sizes.values()),
+            })
+        except ValueError:
+            candidates.append({
+                "cosine_threshold": float(threshold),
+                "candidate_cluster_count": None,
+                "reason": "invalid_or_excessive_fragmentation",
+            })
+    return {
+        "available": True,
+        "eligible_embeddings": len(vectors),
+        "candidate_reclustering": candidates,
+        "warning": (
+            "Actual complete-link reclustering of original voiceprints, "
+            "NOT a speaker identity claim, speaker-count ground truth or "
+            "calibrated improvement. Compare against human RTTM first."
+        ),
+    }
+
+
 def anonymous_speaker_timeline(
     records: Iterable[Mapping[str, object]],
     sample_rate: int,
