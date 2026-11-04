@@ -2,13 +2,18 @@
 from __future__ import annotations
 
 import unittest
+import json
+from pathlib import Path
+import tempfile
 
 from speech.supported_languages import (
     PHASE1_LANGUAGE_CODES, PHASE1_LANGUAGE_SET,
     is_phase1_language, spoken_language, translation_target,
 )
 from speech.config import SpeechSettings
-from tools.phase1_ten_language_gate import evaluate_ten_language_selection
+from tools.phase1_ten_language_gate import (
+    evaluate_ten_language_selection, resolve_original_asr_results,
+)
 
 
 def archive():
@@ -135,6 +140,54 @@ class Phase1LanguagePolicyTests(unittest.TestCase):
         result = evaluate_ten_language_selection(original)
         self.assertFalse(result["pass"])
         self.assertFalse(result["per_language"]["hi"]["pass"])
+
+    def test_latest_summary_resolves_only_its_exact_original(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            raw = root / "content_review_singles_20261104-160000.json"
+            summary = root / "content_review_singles_20261104-160000_summary.json"
+            raw.write_text(json.dumps({
+                "schema": "meeting-fixed195-content-review-v1",
+                "mode": "singles",
+                "single_results": {"fixture": {}},
+            }), encoding="utf-8")
+            summary.write_text(json.dumps({
+                "schema": "meeting-fixed195-content-review-v1-summary",
+                "mode": "singles",
+                "singles": {"overall": {"completed": 130}},
+            }), encoding="utf-8")
+            self.assertEqual(resolve_original_asr_results(raw), raw)
+            self.assertEqual(resolve_original_asr_results(summary), raw)
+            self.assertEqual(json.loads(raw.read_text(encoding="utf-8"))[
+                "single_results"], {"fixture": {}})
+
+    def test_summary_without_original_is_rejected_without_fabricating_scores(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            summary = root / "content_review_singles_20261104_summary.json"
+            summary.write_text(json.dumps({
+                "schema": "meeting-fixed195-content-review-v1-summary",
+                "mode": "singles",
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(FileNotFoundError, "matching original"):
+                resolve_original_asr_results(summary)
+            raw = root / "content_review_singles_20261104.json"
+            raw.write_text(json.dumps({
+                "schema": "meeting-fixed195-content-review-v1-summary",
+                "mode": "singles",
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "not a complete"):
+                resolve_original_asr_results(summary)
+
+    def test_unrelated_or_tampered_summary_is_not_silently_reinterpreted(self):
+        with tempfile.TemporaryDirectory() as folder:
+            summary = Path(folder) / "content_review_singles_summary.json"
+            summary.write_text(json.dumps({
+                "schema": "meeting-phase1-ten-language-text-gate-v1",
+                "mode": "singles",
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "not a valid"):
+                resolve_original_asr_results(summary)
 
     def test_incomplete_source_archive_cannot_masquerade_as_ten_language(self):
         original = archive()
