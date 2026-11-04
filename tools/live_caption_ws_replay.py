@@ -348,6 +348,8 @@ def capture_event(state: dict, message: dict, elapsed_ms: float,
         state["independent_diarization"] = message.get(
             "independent_diarization")
         state["asr_coverage_trace"] = message.get("asr_coverage_trace")
+        state["content_overlap_audit"] = message.get(
+            "content_overlap_audit")
         return True
     elif kind == "error":
         state["errors"].append(str(message.get("message", ""))[:500])
@@ -384,6 +386,7 @@ def new_capture(
         "speaker_shadow_diagnostics": None,
         "independent_diarization": None,
         "asr_coverage_trace": None,
+        "content_overlap_audit": None,
         "audio_delivery_matched": None,
         "audio_received_samples": None,
     }
@@ -590,6 +593,7 @@ async def replay(args) -> dict:
         "speaker_shadow_diagnostics": counters["speaker_shadow_diagnostics"],
         "independent_diarization": counters["independent_diarization"],
         "asr_coverage_trace": counters["asr_coverage_trace"],
+        "content_overlap_audit": counters["content_overlap_audit"],
         "flags": counters["flags"],
         "errors": counters["errors"],
         "voiceprint_accuracy": None,
