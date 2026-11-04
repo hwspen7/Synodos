@@ -39,11 +39,30 @@ def score_frozen_singles(
         raise ValueError("Exactly 130 pinned human-reference cases required")
     state = json.loads(results_path.read_text(encoding="utf-8"))
     expected = fingerprint(cases, model, device, precision, "singles")
-    if (state.get("schema") != "meeting-fixed195-content-review-v1"
-            or state.get("fingerprint") != expected
-            or state.get("mode") != "singles"
-            or state.get("model") != model):
-        raise ValueError("ASR result code/audio/model fingerprint mismatch")
+    if state.get("schema") != "meeting-fixed195-content-review-v1":
+        raise ValueError(
+            "ASR report schema mismatch: a complete Fixed195 single-speaker "
+            "content review is required"
+        )
+    if state.get("mode") != "singles" or state.get("model") != model:
+        raise ValueError(
+            "ASR report mode/model mismatch: expected mode=singles "
+            f"and model={model}; found mode={state.get('mode')!r}, "
+            f"model={state.get('model')!r}"
+        )
+    if state.get("fingerprint") != expected:
+        raise ValueError(
+            "ASR result code/audio/model fingerprint mismatch. "
+            "An earlier content_review_singles.json cannot certify the "
+            "current source, frozen references, or model configuration. "
+            "Re-run tools.fixed195_content_review --mode singles "
+            "--model large-v3 --device cuda --compute-type float16 "
+            "--output benchmark/fixed195/content_review_singles_NEW.json, "
+            "then pass that new file with --results. "
+            "Do not overwrite the historical report or bypass fingerprint "
+            f"verification. Stored={state.get('fingerprint')!r} "
+            f"Expected={expected!r}."
+        )
     results = state.get("single_results")
     if not isinstance(results, dict) or set(results) != {
         item["id"] for item in cases
