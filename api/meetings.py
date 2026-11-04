@@ -5,7 +5,8 @@ import shutil
 from pathlib import Path
 from speech.config import load_settings
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from speech.supported_languages import spoken_language, translation_target
 from fastapi import APIRouter, HTTPException, Query, Response
 from core.runtime import meeting_store, meeting_sessions, sessions, speaker_store, hotword_store
 from api.session_lifecycle import meeting_connection_lock, stop_and_join
