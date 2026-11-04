@@ -59,6 +59,33 @@ of the working environment if package resolution changes the ASR stack.
 Downloading model weights requires network access to Hugging Face. The
 model may not support every Windows/driver/PyTorch combination.
 
+## Recommended: one-command isolated Windows acceptance
+
+The repository includes `tools/run_nemotron_ami.ps1`. It selects its own
+port (8012), checks the Python interpreter, runs the targeted unit tests,
+preflights cached model weights/CUDA, starts a private backend, replays the
+frozen source, checks full-stream Nemotron DER and the ASR gap audit, writes
+private files, and stops **only its own server process**:
+
+```powershell
+cd E:\Meeting-Fixed10-Test
+& .\tools\run_nemotron_ami.ps1 -PythonExe ".\.venv\Scripts\python.exe"
+```
+
+If scripts are blocked by PowerShell execution policy, use a one-process
+invocation of the reviewed repository script rather than changing global
+policy:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\run_nemotron_ami.ps1 -PythonExe ".\.venv\Scripts\python.exe"
+```
+
+If your verified interpreter is not under `.venv`, pass its real full path.
+The script leaves V6 evidence and existing backends untouched. It returns a
+nonzero exit code on any failed check or if standard Nemotron DER is >=10%.
+
+## Alternative: two separate PowerShell terminals
+
 ## First terminal: launch real live server
 
 Restart the backend after setting variables:
