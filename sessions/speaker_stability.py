@@ -429,6 +429,27 @@ def anonymous_speaker_timeline(
                 if isinstance(item.get("speaker_activity_intervals_ms", []), list)
                 else []
             ),
+            "caption_projection_status": str(
+                item.get("caption_projection_status") or "disabled"
+            ),
+            # Only time/anonymous identity, never recognized words.
+            "caption_projection_turns": [
+                {
+                    "start_ms": cue["start_ms"],
+                    "end_ms": cue["end_ms"],
+                    "speaker_id": cue["speaker_id"],
+                    "word_count": cue["word_count"],
+                }
+                for cue in item.get("caption_cues", [])
+                if isinstance(cue, dict)
+                and all(key in cue for key in (
+                    "start_ms", "end_ms", "speaker_id", "word_count",
+                ))
+            ],
+            "overlap_intervals_ms": [
+                dict(span) for span in item.get("overlap_intervals_ms", [])
+                if isinstance(span, dict)
+            ],
         })
     return {
         "total_segments": len(items),
