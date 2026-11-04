@@ -5,7 +5,8 @@
 param(
     [string]$PythonExe = ".\.venv\Scripts\python.exe",
     [int]$Port = 8012,
-    [switch]$SkipUnitTests
+    [switch]$SkipUnitTests,
+    [switch]$WordBounds
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,7 +46,8 @@ if (-not $SkipUnitTests) {
         "tests.quality.test_nemotron_processor_fusion",
         "tests.quality.test_ami_nemotron_live_score",
         "tests.quality.test_asr_stage_trace",
-        "tests.quality.test_asr_priority_vs_nemotron"
+        "tests.quality.test_asr_priority_vs_nemotron",
+        "tests.quality.test_caption_word_bounds_and_official_turns"
     )
     foreach ($module in $modules) {
         & $PythonExe -m unittest $module -v
@@ -83,6 +85,7 @@ $env:MEETING_WHISPER_GAP_RECOVERY = "0"
 $env:MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT = "0"
 $env:MEETING_ASR_COVERAGE_RETENTION = "0"
 $env:MEETING_WHISPER_DUAL_VAD = "0"
+$env:MEETING_CAPTION_WORD_BOUNDS = if ($WordBounds.IsPresent) { "1" } else { "0" }
 
 # Preflight model weights, Transformers API and CUDA compatibility before
 # starting a timed microphone replay. The subprocess caches weights locally.
