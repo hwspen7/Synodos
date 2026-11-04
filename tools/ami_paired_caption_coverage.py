@@ -131,7 +131,19 @@ def paired_report(
     change = framewise_caption_change(
         reference, _caption_intervals(before), _caption_intervals(after),
     )
-    cycles = ((after.get("asr_coverage_trace") or {}).get("cycles") or [])
+    cycle_trace = after.get("asr_coverage_trace") or {}
+    cycles = cycle_trace.get("cycles")
+    if (not isinstance(cycles, list)
+            or cycle_trace.get("truncated") is not False):
+        cycles = None
+    timeline = after["final_cluster_diagnostics"]["anonymous_timeline"]
+    final_rows = timeline["segments"]
+    has_origin = all("recovery_origin" in row for row in final_rows)
+    published_recovered_ids = (
+        len({row["segment_id"] for row in final_rows
+             if row.get("recovery_origin") is True})
+        if has_origin else None
+    )
     return {
         "schema": "meeting-ami-paired-caption-coverage-v1",
         "meeting": meeting,
@@ -141,17 +153,22 @@ def paired_report(
         "baseline_replay_sha256": sha256(baseline_path.read_bytes()).hexdigest(),
         "candidate_replay_sha256": sha256(candidate_path.read_bytes()).hexdigest(),
         "coverage": change,
-        "candidate_recovery_attempts_across_cycles": sum(
-            int(c.get("recovery_attempted") or 0) for c in cycles
+        "candidate_recovery_attempts_across_cycles": (
+            sum(int(c.get("recovery_attempted") or 0) for c in cycles)
+            if cycles is not None else None
         ),
-        "candidate_recovery_confirmations_across_cycles": sum(
-            int(c.get("recovery_confirmed") or 0) for c in cycles
+        "candidate_recovery_confirmations_across_cycles": (
+            sum(int(c.get("recovery_confirmed") or 0) for c in cycles)
+            if cycles is not None else None
         ),
+        "candidate_distinct_published_recovery_segments": published_recovered_ids,
         "note": (
             "Counts are reference-speech CLOCK seconds on 100ms frames. "
             "Gain and loss may coexist; net gain alone hides churn. "
-            "Retry confirmations are per-cycle candidates, not distinct "
-            "published captions, verified recovered words, or CER. "
+            "Retry confirmations are per-cycle candidates; published "
+            "recovery segments are distinct final segment IDs only when "
+            "explicit provenance is present (null for older replays). "
+            "Neither count is verified recovered words or CER. "
             "This tool does not alter the frozen only_words DER gate."
         ),
     }
