@@ -326,3 +326,68 @@ must include overlaps and mixed-speaker sentences.
 This anonymous timeline and the merge sweep are opt-in diagnostics.
 The default production clustering, speech recognition and provisional
 subtitle cadence remain unchanged.
+
+
+## November 2026 short-recording A/B and anchor-only cluster experiment
+
+The user ran the original English two-person 75-second WAV **once** with
+the default \`cluster\` mode. At finalization all 27 confirmed segments
+had a usable speaker embedding, FunASR produced exactly two raw
+clusters, the UI showed two positive IDs, and there were no final
+cluster-to-ID conflicts. However, *during* the short meeting there
+were 35 positive-ID-to-positive-ID changes (57 speaker updates total).
+Correct final speaker *count* is not proof of correct speaker-turn
+identity. Ground-truth reference alignment remains necessary.
+
+In contrast, four repeats of the same 75-second audio had 10 final
+raw clusters and eight published IDs under \`cluster_sticky\`, suggesting
+that growth of acoustic evidence changes FunASR's cluster structure.
+The code path for the acoustic clustering is identical between
+\`cluster\` and \`cluster_sticky\`, but this is a separate run with a
+different experimental presentation policy. The difference cannot be
+called a causal proof or a speaker diarization quality score.
+
+To test the hypothesis that very short/mixed voice windows seed
+spurious acoustic clusters, a new **opt-in** backend mode
+\`MEETING_DIARIZATION_MODE=cluster_anchors\` now:
+
+1. Groups only embedding-backed, non-uncertain speech segments of at
+   least \`MEETING_ANCHOR_MIN_DURATION_S\` (default 1.2 seconds) with
+   the existing FunASR clustering backend. It handles a single
+   trusted long segment without invoking the spectral eigensolver.
+2. Assigns a shorter or uncertain segment to an existing raw cluster
+   only if its embedding has at least cosine similarity
+   \`MEETING_ANCHOR_SHORT_SIMILARITY\` (default 0.72) and has an
+   unambiguous best-match margin
+   \`MEETING_ANCHOR_SHORT_MARGIN\` (default 0.08).
+3. Keeps the segment's transcript but marks the speaker unidentified
+   when acoustic evidence is missing or ambiguous. Short audio
+   **cannot create an additional speaker ID** by itself.
+4. Uses the same existing historical ID mapping. Existing
+   \`cluster\`, \`centroid\`, and \`cluster_sticky\` modes are unchanged.
+
+This is an experimental acoustic identity-creation policy, not a
+validated solution; its primary quality trade-off is a potential
+increase in unidentified short speech. In synthetic tests two anchor
+speakers stay separated, tiny outliers cannot seed new speaker
+clusters, and uncertain short speech is left unidentified. These
+tests do not estimate live DER or actual speaker correctness.
+
+Run an A/B with **one** 75-second loop first, then four loops only if
+the single-loop outcome does not break identity count or coverage:
+
+    $env:MEETING_DIARIZATION_MODE = "cluster_anchors"
+    $env:MEETING_DIARIZATION_DIAGNOSTICS = "1"
+    $env:MEETING_PREVIEW_INTERVAL_S = "2.5"
+    .\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
+
+    .\.venv\Scripts\python.exe tools\live_caption_ws_replay.py --audio benchmark\fixed195\audio\fixed195-en-m01.wav --loops 1 --speed 1 --output benchmark\fixed195\live_caption_anchors_1loop.json
+
+Compare \`final_assigned_speaker_count\`,
+\`final_unidentified_segment_count\`,
+\`final_cluster_diagnostics.raw_cluster_count\`,
+\`labeled_to_different_labeled\` transitions, \`flags\`,
+\`errors\` and the anonymous speaker timeline against a human speaker
+reference where possible. **Do not simply select the mode with the
+smallest number of speaker IDs.** Leave default production mode at
+\`cluster\` until validated.
