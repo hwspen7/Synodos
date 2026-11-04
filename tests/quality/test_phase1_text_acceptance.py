@@ -207,7 +207,6 @@ class TextAcceptanceTests(unittest.TestCase):
             {"server_closed": False},
             {"audio_received_samples": 159000},
             {"flags": ["confirmed_segment_disappearance"]},
-            {"reference_scoring": None},
         ):
             with self.subTest(modification=modification):
                 replay = successful_replay()
@@ -218,6 +217,14 @@ class TextAcceptanceTests(unittest.TestCase):
                     human_reference_verified=True,
                 )
                 self.assertFalse(result["pass"])
+        replay = successful_replay()
+        replay["reference_scoring"] = None
+        with self.assertRaisesRegex(ValueError, "Missing reference-backed CER"):
+            evaluate_phase1_text(
+                replay, expected_audio_sha256=AUDIO,
+                expected_reference_sha256=REFERENCE,
+                human_reference_verified=True,
+            )
 
 
 if __name__ == "__main__":
