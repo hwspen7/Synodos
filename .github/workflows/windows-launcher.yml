@@ -9,6 +9,8 @@ on:
       - 'tools/run_nemotron_ami.ps1'
       - 'tools/run_phase1_engineering.ps1'
       - 'tools/diagnose_github_actions.ps1'
+      - 'tools/resolve_private_ci_path.ps1'
+      - 'tests/windows/test_ci_report_path.ps1'
       - 'tools/run_phase1_closure.ps1'
       - '.github/workflows/windows-launcher.yml'
   pull_request:
@@ -18,6 +20,8 @@ on:
       - 'tools/run_nemotron_ami.ps1'
       - 'tools/run_phase1_engineering.ps1'
       - 'tools/diagnose_github_actions.ps1'
+      - 'tools/resolve_private_ci_path.ps1'
+      - 'tests/windows/test_ci_report_path.ps1'
       - '.github/workflows/windows-launcher.yml'
 
 jobs:
@@ -35,6 +39,7 @@ jobs:
             'tools/run_nemotron_ami.ps1',
             'tools/run_phase1_engineering.ps1',
             'tools/diagnose_github_actions.ps1',
+            'tools/resolve_private_ci_path.ps1',
             'tools/run_phase1_closure.ps1'
           )
           foreach ($script in $scripts) {
@@ -54,3 +59,6 @@ jobs:
       - name: Verify process identity guards
         shell: powershell
         run: .\tests\windows\test_launcher_safety.ps1
+      - name: Verify CI evidence path handling (rooted and relative)
+        shell: powershell
+        run: .\tests\windows\test_ci_report_path.ps1
