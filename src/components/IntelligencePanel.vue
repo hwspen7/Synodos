@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
+import { PHASE1_LANGUAGES } from '@/config/phase1Languages'
 
 type Mode = 'meeting' | 'research' | 'classroom' | 'interview' | 'standup' | 'sales'
 type View = 'overview' | 'knowledge' | 'translation' | 'media'
@@ -574,8 +575,7 @@ onBeforeUnmount(() => { if (pollId) clearInterval(pollId) })
         <div class="content-card translation-card">
           <div class="translation-toolbar"><label class="switch-label"><input v-model="translationEnabled" type="checkbox" /> <span>Enable translation</span></label>
             <label class="select-label">Target language <select v-model="language" class="ui-select" aria-label="Translation language">
-              <option value="zh">Chinese</option><option value="en">English</option><option value="ja">Japanese</option>
-              <option value="fr">French</option><option value="es">Spanish</option><option value="ko">Korean</option><option value="de">German</option>
+              <option v-for="[code, name] in PHASE1_LANGUAGES" :key="code" :value="code">{{ name }}</option>
             </select></label>
             <button type="button" class="ui-btn ui-btn-solid" :disabled="!translationEnabled || !!busyKind || !translationRows.length" @click="queueTranslations">Translate new segments</button>
           </div>
