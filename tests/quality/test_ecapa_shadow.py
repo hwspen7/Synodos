@@ -15,7 +15,7 @@ import numpy as np
 from audio.buffer import AudioBuffer
 from core.config import Settings
 from sessions.processor import SessionProcessor
-from sessions.speaker_shadow import create_shadow_session
+from sessions.speaker_shadow import create_shadow_session, select_shadow_window
 from speech.ecapa_shadow_worker import ShadowCentroids, decode_audio
 
 
@@ -69,6 +69,64 @@ class ShadowTests(unittest.TestCase):
         finally:
             shadow.close()
         self.assertFalse(shadow.submit(1, audio))
+
+    def test_quiet_speech_later_in_turn_is_selected_not_first_six_seconds(self):
+        audio = np.zeros(16000 * 12, dtype=np.float32)
+        audio[16000 * 7:16000 * 11] = 0.003
+        excerpt = select_shadow_window(audio)
+        self.assertIsNotNone(excerpt)
+        self.assertEqual(len(excerpt), 16000 * 3)
+        self.assertGreater(float(np.sqrt(np.mean(excerpt * excerpt))), 0.001)
+        self.assertLess(float(np.sqrt(np.mean(excerpt * excerpt))), 0.008)
+
+        with patch.dict(os.environ, {"MEETING_ECAPA_SHADOW": "1"}):
+            shadow = create_shadow_session()
+        self.assertIsNotNone(shadow)
+        shadow._thread = object()  # No real model process in contract tests.
+        try:
+            self.assertTrue(shadow.submit(2, excerpt))
+            report = shadow.status()
+            self.assertEqual(report["accepted_quiet_speech"], 1)
+            self.assertEqual(report["observed_camplus_speaker_count"], 1)
+            self.assertEqual(report["skipped_low_energy"], 0)
+        finally:
+            shadow.close()
+
+    def test_true_silence_and_impulses_are_not_selected(self):
+        self.assertIsNone(
+            select_shadow_window(np.zeros(16000 * 8, dtype=np.float32))
+        )
+        transient = np.zeros(16000 * 6, dtype=np.float32)
+        transient[:1600] = 0.04
+        self.assertIsNone(select_shadow_window(transient))
+        self.assertIsNone(select_shadow_window(
+            np.ones(16000 * 2, dtype=np.float32) * float("nan")
+        ))
+
+    def test_processor_uses_active_excerpt_not_silent_opening(self):
+        settings = Settings()
+        processor = SessionProcessor(
+            "shadow-active", AudioBuffer(16000, max_seconds=30),
+            settings, object(), asyncio.Queue(),
+        )
+        spy = FakeShadow()
+        processor._ecapa_shadow = spy
+        raw = np.zeros(16000 * 12, dtype=np.float32)
+        raw[16000 * 7:16000 * 11] = .003
+        processor._ecapa_shadow_audio = {1: raw}
+        processor.segments = [{
+            "id": 1, "start_sample": 0, "end_sample": len(raw),
+            "text": "audio segment", "language": "en",
+            "emb": vector(0), "cluster": 0, "speaker_id": 1,
+            "speaker_name": "Speaker 1", "speaker_uncertain": False,
+        }]
+        processor._rebuild_and_push()
+        self.assertEqual(len(spy.accepted), 1)
+        self.assertEqual(len(spy.accepted[0][1]), 48000)
+        self.assertGreater(float(np.sqrt(np.mean(
+            spy.accepted[0][1] ** 2
+        ))), 0.001)
+        self.assertEqual(processor.segments[0]["speaker_id"], 1)
 
     def test_pcm16_protocol_validates_sample_rate_and_shape(self):
         pcm = np.full(32000, 8000, dtype="<i2").tobytes()
