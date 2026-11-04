@@ -61,6 +61,40 @@ class SpeakerCandidateTests(unittest.TestCase):
             _, receipt = model._cluster_embeddings_with_info(samples)
             self.assertEqual(receipt["strategy_requested"], "bootstrap")
 
+    def test_short_acoustic_handoff_remains_opt_in(self):
+        from speech.turn_split import split_by_acoustic_turns
+
+        audio = np.concatenate([
+            np.full(20000, 0.1, dtype=np.float32),
+            np.full(20000, 0.2, dtype=np.float32),
+        ])
+        source = {
+            "start": 0, "end": 2500, "text": "Hello world",
+            "words": [
+                {"start_ms": 0, "end_ms": 1250, "text": "Hello"},
+                {"start_ms": 1250, "end_ms": 2500, "text": "world"},
+            ],
+        }
+
+        def embed(window):
+            return np.array(
+                [1.0, 0.0] if float(np.mean(window)) < 0.15
+                else [0.5, np.sqrt(0.75)],
+            )
+
+        with patch.dict(os.environ, {}, clear=True):
+            reference = split_by_acoustic_turns(source, audio, embed)
+        with patch.dict(os.environ, {
+            "MEETING_SPEAKER_QUALITY_CANDIDATE": "1",
+        }, clear=True):
+            candidate = split_by_acoustic_turns(source, audio, embed)
+
+        self.assertEqual(len(reference), 1)
+        self.assertEqual(len(candidate), 2)
+        self.assertEqual([part["text"] for part in candidate], [
+            "Hello", "world",
+        ])
+
     def _finalizer(self):
         processor = object.__new__(SessionProcessor)
         processor.buffer = SimpleNamespace(total_samples=lambda: 0)
