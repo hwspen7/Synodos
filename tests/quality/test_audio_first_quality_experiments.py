@@ -11,6 +11,7 @@ import numpy as np
 from speech.contracts import Utterance
 from speech.coverage_retention import choose_safe_drop
 from speech.gap_recovery import recover_missing_voice, uncovered_voice_intervals
+from speech.quality_guard import verify_utterances
 from tools.ami_quality_experiments import (
     CONTROL_ENV, PROFILES, profile_environment, validate_profiles,
 )
@@ -101,6 +102,28 @@ class ShortVoiceRecoveryTests(unittest.TestCase):
         )
         self.assertEqual(baseline_drop, 2500 * 16)
         self.assertEqual(candidate_drop, (400 - 180) * 16)
+
+    def test_short_vad_backed_acknowledgement_preserved_in_candidate(self):
+        segment = SimpleNamespace(
+            start=0.1, end=0.45, text="Yep.", words=[],
+            no_speech_prob=0.01, avg_logprob=-0.1,
+            compression_ratio=1.1,
+        )
+        regions = vad(200, 340)
+        self.assertEqual(verify_utterances([segment], regions, 1000, "en"), ())
+        candidate = verify_utterances(
+            [segment], regions, 1000, "en", short_voice_support_ms=100,
+        )
+        self.assertEqual([item.text for item in candidate], ["Yep."])
+        # A long piece containing only a tiny voiced blip stays rejected.
+        long_piece = SimpleNamespace(
+            start=0.0, end=6.0, text="Possible hallucination", words=[],
+            no_speech_prob=0.05, avg_logprob=-0.1,
+            compression_ratio=1.1,
+        )
+        self.assertEqual(verify_utterances(
+            [long_piece], regions, 7000, "en", short_voice_support_ms=100,
+        ), ())
 
     def test_bad_short_gap_thresholds_rejected(self):
         with self.assertRaises(ValueError):
