@@ -146,6 +146,12 @@ class SessionProcessor(threading.Thread):
         # complete. A bounded retry is followed by an explicit gap record.
         self._coverage_hold_attempts: dict[int, int] = {}
         self._speech_coverage_gaps: list[dict] = []
+        self._recovery_diagnostics_total = {
+            "asr_cycles": 0,
+            "recovery_attempted": 0,
+            "recovery_confirmed": 0,
+            "recovery_failed": 0,
+        }
         self._last_reclustered_segment_id = 0
         self._last_clustering_receipt: dict = {
             "strategy_executed": "not_run",
@@ -325,6 +331,12 @@ class SessionProcessor(threading.Thread):
                     summary["anonymous_timeline"] = anonymous_speaker_timeline(
                         self.segments, self.settings.sample_rate
                     )
+                    summary["asr_recovery_diagnostics"] = {
+                        **self._recovery_diagnostics_total,
+                        "untranscribed_voice_gap_count": len(
+                            self._speech_coverage_gaps
+                        ),
+                    }
                     closed_payload["diarization_diagnostics"] = summary
                 except Exception:
                     logger.exception("Optional diarization diagnostics failed")
@@ -603,6 +615,12 @@ class SessionProcessor(threading.Thread):
                 config=self._speech_settings,
             )
             sentences = [piece.as_legacy() for piece in recognition.utterances]
+            self._recovery_diagnostics_total["asr_cycles"] += 1
+            recovery = getattr(recognition, "recovery_diagnostics", None) or {}
+            for key in ("recovery_attempted", "recovery_confirmed", "recovery_failed"):
+                value = recovery.get(key, 0)
+                if type(value) is int and value >= 0:
+                    self._recovery_diagnostics_total[key] += value
         telemetry.observe_asr_cycle(buffer_s, time.monotonic() - phase07_asr_started)
         unconfirmed = []
         local_end = 0
@@ -779,6 +797,9 @@ class SessionProcessor(threading.Thread):
                     speech_intervals_ms=voice_ranges,
                     utterances=tuple(observed),
                     attempts=self._coverage_hold_attempts,
+                    min_uncovered_ms=int(os.getenv(
+                        "MEETING_ASR_RETAIN_MIN_GAP_MS", "1000",
+                    )),
                     final=final,
                 )
                 for gap in exhausted:
