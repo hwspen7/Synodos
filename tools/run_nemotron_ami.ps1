@@ -119,6 +119,7 @@ if (-not $SkipUnitTests) {
         "tests.quality.test_ami_content_first_projection",
         "tests.quality.test_overlap_content_risk",
         "tests.quality.test_phase1_language_policy",
+        "tests.quality.test_ami_human_text_reference",
         "tests.quality.test_phase1_text_acceptance"
     )
     foreach ($module in $modules) {
