@@ -9,6 +9,8 @@ param(
     [switch]$WordBounds,
     [switch]$BypassWindowVad,
     [switch]$RecoverVadGaps,
+    [switch]$ContentFirst,
+    [switch]$PreserveVerifiedText,
     [switch]$RequirePublishedForcedUnder10
 )
 
@@ -20,10 +22,12 @@ Set-Location $repoRoot
 $candidates = @(
     $WordBounds.IsPresent,
     $BypassWindowVad.IsPresent,
-    $RecoverVadGaps.IsPresent
+    $RecoverVadGaps.IsPresent,
+    $ContentFirst.IsPresent,
+    $PreserveVerifiedText.IsPresent
 ) | Where-Object { $_ }
 if (@($candidates).Count -gt 1) {
-    throw "Choose only ONE ASR candidate: -WordBounds, -BypassWindowVad, or -RecoverVadGaps."
+    throw "Choose only ONE candidate: -WordBounds, -BypassWindowVad, -RecoverVadGaps, -ContentFirst, or -PreserveVerifiedText."
 }
 
 # Preserve existing E-drive model caches; redirect any unspecified/C-drive
@@ -84,7 +88,9 @@ if (-not $SkipUnitTests) {
         "tests.quality.test_caption_word_bounds_and_official_turns",
         "tests.quality.test_ami_nemotron_reference_diagnostic",
         "tests.quality.test_whisper_window_vad_ablation",
-        "tests.quality.test_caption_acoustic_alignment"
+        "tests.quality.test_caption_acoustic_alignment",
+        "tests.quality.test_content_first_projection",
+        "tests.quality.test_ami_content_first_projection"
     )
     foreach ($module in $modules) {
         & $PythonExe -m unittest $module -v
@@ -122,7 +128,8 @@ $env:MEETING_ASR_QUALITY_CANDIDATE = "0"
 $env:MEETING_SPEAKER_QUALITY_CANDIDATE = "0"
 $env:MEETING_WHISPER_GAP_RECOVERY = if ($RecoverVadGaps.IsPresent) { "1" } else { "0" }
 $env:MEETING_WHISPER_WINDOW_VAD_BYPASS = if ($BypassWindowVad.IsPresent) { "1" } else { "0" }
-$env:MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT = "0"
+$env:MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT = if ($PreserveVerifiedText.IsPresent) { "1" } else { "0" }
+$env:MEETING_CONTENT_FIRST_FUSION = if ($ContentFirst.IsPresent) { "1" } else { "0" }
 $env:MEETING_ASR_COVERAGE_RETENTION = "0"
 $env:MEETING_WHISPER_DUAL_VAD = "0"
 $env:MEETING_CAPTION_WORD_BOUNDS = if ($WordBounds.IsPresent) { "1" } else { "0" }
@@ -242,6 +249,12 @@ try {
         Write-Host ("Word-aligned caption bounds active: {0}" -f $WordBounds.IsPresent)
         Write-Host ("Inner Whisper window VAD bypassed: {0}" -f $BypassWindowVad.IsPresent)
         Write-Host ("Bounded VAD-gap ASR retries: {0}" -f $RecoverVadGaps.IsPresent)
+        Write-Host ("Word-conserving speaker projection active: {0}" -f $ContentFirst.IsPresent)
+        Write-Host ("Preserve VAD-supported unaligned ASR text: {0}" -f $PreserveVerifiedText.IsPresent)
+        Write-Host ("Verified speaker-switch display splits: {0}" -f $d.display_speaker_cue_splits)
+        if ($null -ne $d.forced_aligned_display_projection_metrics) {
+            Write-Host ("UI-projected speaker cue DER (NOT canonical caption DER): {0:P3}" -f ([double]$d.forced_aligned_display_projection_metrics.der))
+        }
         Write-Host ("Forced-reference no-caption clock seconds: {0}" -f $g.reference_clock_no_caption_seconds)
         Write-Host ("Forced-reference VAD-without-raw-model seconds: {0}" -f $g.gap_causes_seconds.vad_without_raw_model_timestamp)
         Write-Host ("ASR recovery attempted / confirmed: {0} / {1}" -f $g.recovery_counts.recovery_attempted, $g.recovery_counts.recovery_confirmed)
