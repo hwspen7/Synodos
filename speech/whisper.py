@@ -134,6 +134,7 @@ class WhisperEngine:
                     pieces, speech_regions,
                     round(len(samples) * 1000 / 16000), detected,
                     preserve_disputed_text=preserve_disputed,
+                    short_voice_support_ms=short_voice_support_ms,
                 )
 
             # Anonymous acoustic evidence before the optional second pass.
