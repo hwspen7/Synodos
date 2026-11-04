@@ -27,6 +27,14 @@ gaps, nor promote unverified words into live text. Its outputs are confidential
 review hypotheses, not an ASR accuracy claim. The existing production
 Whisper and speaker models remain unchanged.
 
+A fail-closed optional CAM++/ECAPA agreement utility exists in
+`sessions/identity_consensus.py`. It only returns an agreed candidate
+when separately enrolled and separately scored networks propose the
+same person; disjoint or unavailable candidate evidence remains
+unidentified. The existing live system does **not** run both models
+simultaneously, and this utility is not a claimed dual-model
+quality improvement.
+
 Phase 2 extends the enrolled speaker library with embedding-model provenance,
 human-verified review status, auditable text/speaker revisions and a separate
 cross-meeting identity suggestion. Automatic similarity remains an uncalibrated
