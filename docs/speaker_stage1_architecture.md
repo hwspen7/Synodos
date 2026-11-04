@@ -269,7 +269,7 @@ The public Fixed195 dialogue collector stores two speaker-isolated audio
 channels alongside each mixed WAV in
 benchmark/fixed195/public_multi_unscored.jsonl. These are useful for a
 **same-recording diagnostic** even though the mixtures are explicitly
-\`is_scoreable_diarization=false\` and have no human timestamp references.
+`is_scoreable_diarization=false` and have no human timestamp references.
 Do not make or claim a DER result from those unscored mixtures.
 
 First ensure the private source file exists locally (it is gitignored):
@@ -285,7 +285,7 @@ model prediction, or speaker identity is imported or committed.
     python -m tools.speaker_stage1_pairs --root benchmark/fixed195 --output benchmark/fixed195/speaker_stage1_manifest.json
 
 To inspect just the English test case first, use a different output path,
-and the optional \`--case-id fixed195-en-m01\`. Generated clips are private
+and the optional `--case-id fixed195-en-m01`. Generated clips are private
 and written to benchmark/fixed195/speaker_stage1_samples/. All filenames
 are exclusive-create, so the tool refuses to overwrite an earlier trial.
 
@@ -307,7 +307,7 @@ environments and the same unchanged manifest:
 
 Results include EER and AUC if both positive and negative trials succeeded.
 Without predeclared thresholds, FAR and FRR remain null. The merged report
-retains \`verification_provenance.cross_session_identity_evaluable=false\`,
+retains `verification_provenance.cross_session_identity_evaluable=false`,
 and model promotion remains disabled.
 
 For real speaker-memory acceptance, replace the diagnostic corpus with
