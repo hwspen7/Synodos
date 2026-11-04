@@ -330,6 +330,17 @@ class NemotronRealtimeWorker:
         with self._lock:
             return self._state == "completed"
 
+    def final_turns_snapshot(self) -> list[dict] | None:
+        """Return a complete, official speaker-turn result or no result.
+
+        None means inference is still pending/failed. An empty list means a
+        successfully completed session with no detected speech.
+        """
+        with self._lock:
+            if self._state != "completed":
+                return None
+            return [dict(row) for row in self._turns]
+
     def activity_snapshot(self) -> np.ndarray | None:
         with self._lock:
             if self._state not in ("running", "completed"):
