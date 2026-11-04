@@ -113,6 +113,7 @@ async def add_speaker_from_meeting(speaker_id: str, payload: Optional[dict] = No
     by_id = {int(s["id"]): s for s in segs}
     sr = int(state.get("sample_rate", 16000))
 
+    verified = (payload or {}).get("human_verified") is True
     vectors: list[dict] = []
     missing: list[int] = []
     for sid in segment_ids:
@@ -120,6 +121,11 @@ async def add_speaker_from_meeting(speaker_id: str, payload: Optional[dict] = No
         if seg is None:
             missing.append(sid)
             continue
+        if verified and seg.get("speaker_profile_id") != speaker_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Human-verified enrollment requires a saved manual speaker correction to the same profile"
+            )
         raw_embedding = seg.get("emb")
         if raw_embedding is None:
             missing.append(sid)
@@ -139,6 +145,10 @@ async def add_speaker_from_meeting(speaker_id: str, payload: Optional[dict] = No
                 "segment_ids": [sid],
                 "text": seg.get("text", ""),
                 "short": duration_s < settings.min_speaker_audio_s,
+                "human_verified": verified,
+                "verification_source": (
+                    "manual_profile_correction" if verified else None
+                ),
             }
         )
     if not vectors:
