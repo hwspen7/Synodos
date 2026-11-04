@@ -584,3 +584,56 @@ a separate identity-accuracy score. The ten selected AMI excerpts are
 not necessarily speaker-disjoint, so do not infer cross-meeting
 verification accuracy without an explicit independent enrollment/test
 protocol.
+
+## AMI TS3003b observed DER and late acoustic fallback repair
+
+The operator's unchanged 240-second AMI TS3003b replay scored
+DER=0.41225, missed speaker-time=0.35329, false alarm=0.01520,
+confusion=0.04376, on 217.1 reference speaker-seconds (100ms frames,
+no collar). There are four AMI-annotated speakers but only two published
+positive speaker IDs. All 18 unidentified transcript segments overlap
+reference speech and lack embeddings. Most are marked uncertain; this
+does **not** prove that each was recoverable or that the true missing
+speaker identities can be inferred automatically. The baseline has
+zero full-overlap-speaker recall on this clip.
+
+One live reconciliation flaw was identified: _collect_acoustic()
+previously gave up whenever no *new* acoustic window arrived. A
+segment whose asynchronous speaker task finished after its corresponding
+acoustic windows had already arrived could remain unidentified.
+The live processor now retries missing speaker embeddings against
+existing window evidence on subsequent collection passes, retaining
+the acoustic coverage and consistency checks. It does not assign a
+label from nearby words or override a manually set speaker.
+
+The AMI scorer additionally returns missed_speaker_time_breakdown:
+
+- unidentified_transcript_s: annotated speaker-time with an unassigned
+  visible transcript segment and no positive speaker label
+- without_transcript_s: annotated speaker-time with no visible transcript
+  segment and no positive speaker label
+- simultaneous_speaker_shortfall_s: annotated speaker-time where the
+  reference contains more simultaneous speakers than positive
+  predicted labels
+
+These categories add to the scorer's missed reference speaker-time.
+They describe **where** errors occur, not automatically **why**.
+
+### Two separate checks
+
+**Offline diagnostic re-score:** No new server replay needed to add the
+breakdown to the already frozen v3 report; use a distinct output path:
+
+    python -m tools.ami_shadow10_score --root benchmark/fixed195/ami_shadow10 --meeting TS3003b --replay benchmark/fixed195/ami_shadow10/replay_TS3003b_v3.json --output benchmark/fixed195/ami_shadow10/audit_TS3003b_v3_breakdown.json
+
+**Live behavior comparison:** Restart the backend with the same
+MEETING_DIARIZATION_DIAGNOSTICS=1 and MEETING_ECAPA_SHADOW=1 settings,
+then replay the same WAV at normal speed with a different filename:
+
+    python -m tools.live_caption_ws_replay --audio benchmark/fixed195/ami_shadow10/audio/ami-TS3003b-1500-1740.wav --loops 1 --speed 1.0 --output benchmark/fixed195/ami_shadow10/replay_TS3003b_v4.json
+    python -m tools.ami_shadow10_score --root benchmark/fixed195/ami_shadow10 --meeting TS3003b --replay benchmark/fixed195/ami_shadow10/replay_TS3003b_v4.json --output benchmark/fixed195/ami_shadow10/audit_TS3003b_v4.json
+
+Compare the v3 and v4 complete metrics, not just the 18 unidentified
+segments; the specific acoustic reconciliation change may not fix
+speaker-count collapse or simultaneous speech. Avoid claiming an
+improvement until actual same-input, reference-backed scores are in hand.
