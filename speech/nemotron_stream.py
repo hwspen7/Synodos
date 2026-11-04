@@ -195,6 +195,7 @@ class NemotronRealtimeWorker:
         self._activity = np.empty((0, 8), dtype=np.float32)
         self._turns: list[dict] = []
         self._stop_sent = False
+        self._finish_requested = threading.Event()
 
     def start(self):
         self._thread.start()
@@ -257,9 +258,12 @@ class NemotronRealtimeWorker:
             with self._lock:
                 self._state = "running"
             while True:
-                frame = self._queue.get()
-                if frame is None:
-                    break
+                try:
+                    frame = self._queue.get(timeout=0.2)
+                except Empty:
+                    if self._finish_requested.is_set():
+                        break
+                    continue
                 with self._lock:
                     failed = self._state == "failed"
                 if failed:
@@ -270,6 +274,8 @@ class NemotronRealtimeWorker:
                     self._activity = stream.activity()
                 if self._on_update is not None:
                     self._on_update()
+                if self._finish_requested.is_set() and self._queue.empty():
+                    break
             with self._lock:
                 failed = self._state == "failed"
             if failed:
@@ -293,20 +299,19 @@ class NemotronRealtimeWorker:
                 self._error = f"{type(exc).__name__}: {str(exc)[:160]}"
                 self._state = "failed"
 
+    def request_finish(self) -> None:
+        """Nonblocking shutdown signal, including when the PCM queue is full."""
+        with self._lock:
+            self._stop_sent = True
+        self._finish_requested.set()
+
     def finish(self, timeout: float = 90.0) -> bool:
         if not self._thread.ident:
             with self._lock:
                 self._state = "failed"
                 self._error = "Nemotron worker not started"
             return False
-        with self._lock:
-            self._stop_sent = True
-        try:
-            self._queue.put(None, timeout=5.0)
-        except Full:
-            with self._lock:
-                self._state = "failed"
-                self._error = "Nemotron queue did not drain before shutdown"
+        self.request_finish()
         self._thread.join(timeout)
         if self._thread.is_alive():
             with self._lock:
