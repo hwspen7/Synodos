@@ -79,6 +79,45 @@ class PairedAmiGateTests(unittest.TestCase):
             result["gates"]["without_transcript_speaker_time_not_worse_by_over_0p5s"]
         )
 
+    def test_no_change_is_not_quality_improvement(self):
+        base = audit()
+        candidate = copy.deepcopy(base)
+        candidate["replay_sha256"] = "another-real-run"
+        result = compare_live_audits(base, candidate)
+        self.assertTrue(result["non_regression_pass"])
+        self.assertFalse(result["diarization_coverage_improvement_pass"])
+
+    def test_small_der_gain_with_missing_captions_is_not_improvement(self):
+        base = audit()
+        candidate = copy.deepcopy(base)
+        candidate["replay_sha256"] = "small-der-gain"
+        candidate["metrics"]["der"] = 0.402
+        candidate["reference_speech_without_captions"][
+            "reference_speech_without_captions_seconds"
+        ] = 31.0
+        result = compare_live_audits(base, candidate)
+        self.assertFalse(result["diarization_coverage_improvement_pass"])
+
+    def test_substantive_paired_gains_meet_diarization_coverage_gate(self):
+        base = audit()
+        candidate = copy.deepcopy(base)
+        candidate["replay_sha256"] = "genuine-measured-gain"
+        candidate["metrics"].update({
+            "der": 0.39,
+            "missed_speaker_time": 0.327,
+            "false_alarm_time": 0.015,
+            "confusion_time": 0.048,
+        })
+        candidate["missed_speaker_time_breakdown"][
+            "without_transcript_s"
+        ] = 28.0
+        candidate["reference_speech_without_captions"][
+            "reference_speech_without_captions_seconds"
+        ] = 28.5
+        result = compare_live_audits(base, candidate)
+        self.assertTrue(result["diarization_coverage_improvement_pass"])
+        self.assertTrue(result["non_regression_pass"])
+
     def test_matching_metrics_without_matching_audio_are_rejected(self):
         before, after = audit(), audit()
         after["source_audio_sha256"] = "another-audio"
