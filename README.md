@@ -39,6 +39,12 @@ prove real meeting DER/CER or GitHub Actions success; no model quality
 improvement is claimed until the frozen audio and independent references
 have been replayed and checked.
 
+The complete optional Phase 1A/Phase 1B/Phase 2 research protocol (three
+speaker diarization models, independent Qwen3-ASR gap review, held-out
+speaker verification, E-drive model isolation, and Phase 3 release gates)
+is documented in [the full Phase 1/2 upgrade guide](docs/phase12_research_release.md).
+These experiments are opt-in and require independently prepared datasets.
+
 ## Capabilities
 
 - Live microphone capture with 16 kHz mono PCM streaming over WebSocket.
