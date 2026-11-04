@@ -62,11 +62,33 @@ def parse_ami_word_xml(
         raw = str(element.text or "").strip()
         if not raw or re.fullmatch(r"<[^>]+>", raw):
             continue
-        begin_s = float(element.attrib["starttime"])
-        finish_s = float(element.attrib["endtime"])
-        if (not math.isfinite(begin_s) or not math.isfinite(finish_s)
-                or finish_s <= begin_s):
-            raise ValueError("Non-finite or invalid AMI word timestamp")
+        # AMI/NXT includes zero-duration orthographic events. Keeping the
+        # lexical token preserves the human reference without inventing time.
+        # Do not repair reversed or non-finite intervals silently.
+        attrs = element.attrib
+        try:
+            begin_s = float(attrs["starttime"])
+            finish_s = float(attrs["endtime"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Missing/invalid AMI lexical timestamp for {speaker}: "
+                f"{raw!r} ({attrs.get('starttime')!r}, "
+                f"{attrs.get('endtime')!r})"
+            ) from exc
+        if not math.isfinite(begin_s) or not math.isfinite(finish_s):
+            raise ValueError(
+                f"Non-finite AMI word timestamp for {speaker}: {raw!r} "
+                f"({begin_s!r}, {finish_s!r})"
+            )
+        if finish_s < begin_s:
+            # Malformed tokens entirely outside the frozen crop do not
+            # affect its reference, but in-range lexical words are fatal.
+            if max(begin_s, finish_s) < start_s or min(begin_s, finish_s) > end_s:
+                continue
+            raise ValueError(
+                f"Reversed AMI word timestamp for {speaker}: {raw!r} "
+                f"({begin_s}, {finish_s})"
+            )
         if begin_s < start_s or finish_s > end_s:
             continue
         result.append(HumanWord(speaker, begin_s, finish_s, raw))
@@ -133,6 +155,14 @@ def words_from_official_archive(
             key: len(rows) for key, rows in sorted(by_speaker.items())
         },
         "overlapping_word_entries": overlaps,
+        "zero_duration_word_entries": sum(
+            word.start_s == word.end_s for word in words
+        ),
+        "timing_note": (
+            "Zero-duration lexical annotations were retained verbatim "
+            "rather than assigned fabricated durations. Inspect the "
+            "official XML and mixed audio before human verification."
+        ),
         "overlap_note": (
             "Overlapping lexical annotations are not necessarily intelligible "
             "from the mixed microphone audio. Global CER/WER against this "
