@@ -95,6 +95,20 @@ class Session:
             self.processor.set_loop(loop)
             if state is not None:
                 self.processor.load_state(state)
+                if self.independent_diarization is not None:
+                    # AOSC is valid within one continuous PCM connection.
+                    # A reconnect starts a new anonymous speaker namespace
+                    # rather than falsely reusing the previous cache's IDs.
+                    self.processor._independent_pcm_origin_samples = (
+                        self.buffer.start_offset()
+                    )
+                    self.processor._independent_id_offset = max(
+                        (int(item.get("speaker_id", -1))
+                         for item in state.get("segments", [])
+                         if type(item.get("speaker_id")) is int
+                         and item["speaker_id"] > 0),
+                        default=0,
+                    )
             self.processor.load_participants()
             self.processor.load_hotwords()
             self.processor.rebuild_labels()
