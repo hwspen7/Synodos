@@ -19,19 +19,26 @@ def prepare(root: Path, *, diagnostics: bool = True):
     meeting, offset = "TS3003b", dict(SELECTED)["TS3003b"]
     (root / "cases").mkdir(parents=True)
     (root / "audio").mkdir(parents=True)
+    (root / "rttm").mkdir(parents=True)
     source = root / "audio" / "ami-TS3003b-1500-1740.wav"
     source.write_bytes(b"synthetic test only; load_wav mocked")
     ref = [
         {"start_ms": 0, "end_ms": 100000, "speaker": "A"},
         {"start_ms": 100000, "end_ms": 180000, "speaker": "B"},
     ]
+    rttm = root / "rttm" / (meeting + ".rttm")
+    rttm.write_text(
+        f"SPEAKER {meeting} 1 {offset}.0 100.0 <NA> <NA> A <NA> <NA>\n"
+        f"SPEAKER {meeting} 1 {offset + 100}.0 80.0 <NA> <NA> B <NA> <NA>\n",
+        encoding="utf-8",
+    )
     case = {
         "id": f"ami-{meeting}-{offset}",
         "source_meeting": meeting, "start_seconds": offset,
         "end_seconds": offset + 240,
         "audio": str(source.relative_to(root)).replace("\\", "/"),
         "sha256": checksum(source), "reference_turns": ref,
-        "reference_source_sha256": "a" * 64,
+        "reference_source_sha256": checksum(rttm),
         "reference_kind": "human-derived only_words",
     }
     (root / "cases" / (meeting + ".json")).write_text(
@@ -77,7 +84,7 @@ class AmiShadowScoreTests(unittest.TestCase):
             {"start_ms": 500, "end_ms": 1500, "speaker": "B"},
             {"start_ms": 2000, "end_ms": 2800, "speaker": "A"},
         ]
-        self.assertEqual(reference_union_overlap(250, 2300, reference), 1350)
+        self.assertEqual(reference_union_overlap(250, 2300, reference), 1550)
         self.assertEqual(reference_union_overlap(1500, 1900, reference), 0)
 
     @patch("tools.ami_shadow10_score.load_wav")
@@ -123,6 +130,17 @@ class AmiShadowScoreTests(unittest.TestCase):
             data["source_audio_sha256"] = "0" * 64
             replay_path.write_text(json.dumps(data))
             with self.assertRaisesRegex(ValueError, "frozen AMI WAV"):
+                score_case(root, "TS3003b", replay_path)
+
+    @patch("tools.ami_shadow10_score.load_wav")
+    def test_tampered_reference_rttm_is_rejected(self, fake_audio):
+        fake_audio.return_value = np.zeros(240 * 16000, dtype=np.float32)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            replay_path = prepare(root)
+            rttm = root / "rttm" / "TS3003b.rttm"
+            rttm.write_text(rttm.read_text() + "tampered\n")
+            with self.assertRaisesRegex(ValueError, "RTTM"):
                 score_case(root, "TS3003b", replay_path)
 
     @patch("tools.ami_shadow10_score.load_wav")
