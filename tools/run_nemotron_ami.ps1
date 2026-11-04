@@ -372,6 +372,8 @@ try {
         }
     }
 } catch {
-    Write-Error $_
-    exit 1
+    # A terminating error must propagate through the Phase 1/2 orchestration.
+    # Merely setting LASTEXITCODE can allow a parent .ps1 to treat a failed
+    # replay as successful when it was invoked with the call operator.
+    throw
 }
