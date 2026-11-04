@@ -83,6 +83,7 @@ def verify_utterances(
     *,
     sample_rate: int = 16000,
     preserve_disputed_text: bool = False,
+    short_voice_support_ms: int = 160,
 ) -> tuple[Utterance, ...]:
     """Reject unsupported chunks and omit words positioned in nonspeech areas.
 
@@ -96,6 +97,8 @@ def verify_utterances(
     Segment-level evidence checks and decoding diagnostic rejection remain
     mandatory. The production default is unchanged pending real A/B testing.
     """
+    if not 80 <= short_voice_support_ms <= 160:
+        raise ValueError("Short voice support must be within 80..160 ms")
     if duration_ms <= 0:
         return ()
     intervals = speech_intervals(vad_regions, duration_ms, sample_rate)
@@ -114,7 +117,10 @@ def verify_utterances(
         end = min(end, duration_ms)
         duration = end - start
         evidence = voice_ms(start, end, intervals)
-        if evidence < 160 or evidence / duration < (0.35 if duration >= 2500 else 0.25):
+        # Only relax support for truly short, well-localized utterances;
+        # never relax the minimum evidence for long hallucinated segments.
+        support_floor = short_voice_support_ms if duration <= 900 else 160
+        if evidence < support_floor or evidence / duration < (0.35 if duration >= 2500 else 0.25):
             continue
         source_words = tuple(getattr(piece, "words", None) or ())
         words = _word_items(piece, duration_ms)
