@@ -441,3 +441,60 @@ Compare \`final_assigned_speaker_count\`,
 reference where possible. **Do not simply select the mode with the
 smallest number of speaker IDs.** Leave default production mode at
 \`cluster\` until validated.
+
+
+## Core backend turn boundary improvement — November 2026
+
+The main Whisper speech recognition settings, default \`cluster\` speaker
+mode, existing 120-second historical speaker label policy and caption
+confirmation window have not changed.
+
+The existing \`split_by_acoustic_turns\` helper now inspects roughly
+1.0-second acoustic windows for an intra-utterance speaker handoff.
+Earlier 1.4-second windows could not examine two distinct voices within
+a roughly 2.0–2.7 second ASR span. A stricter 0.45 similarity gate
+applies to the shorter windows to reduce false changes from normal
+variation in one voice. At most eight embeddings are calculated for
+one confirmed phrase, as before.
+
+- Turn splits require authentic, ordered word timestamps and a complete
+  source-text match, including every word and punctuation mark. If word
+  alignment is missing or even slightly inconsistent, the full original
+  confirmed phrase is retained. Never guess a speaker change timestamp.
+- When an acoustic change is found, the confirmed phrase may become
+  multiple accurately timed subtitle records. Embeddings are calculated
+  conservatively from voice-consistent window evidence. Very short or
+  ambiguous speech retains the unidentified speaker label rather than
+  guessing another person's identity.
+- The original source text remains the authority: no punctuation, words
+  or speech content may be invented or omitted during acoustic splitting.
+- Experimental \`centroid\` and rejected \`cluster_sticky\` /
+  \`cluster_anchors\` diarization paths are **not** re-enabled.
+- With opt-in \`MEETING_DIARIZATION_DIAGNOSTICS=1\`, final WebSocket
+  diagnostics and the replay JSON include
+  \`final_cluster_diagnostics.acoustic_turn_splits\`, the number of extra
+  transcript records created by confirmed acoustic turn splits. This is
+  a diagnostic count, **not** speaker identification accuracy or DER.
+
+Test one 75-second replay, after updating and restarting the backend:
+
+\`\`\`powershell
+$env:MEETING_DIARIZATION_MODE = "cluster"
+$env:MEETING_DIARIZATION_DIAGNOSTICS = "1"
+$env:MEETING_PREVIEW_INTERVAL_S = "2.5"
+.\\.venv\\Scripts\\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
+\`\`\`
+
+\`\`\`powershell
+.\\.venv\\Scripts\\python.exe tools\\live_caption_ws_replay.py --audio benchmark\\fixed195\\audio\\fixed195-en-m01.wav --loops 1 --speed 1 --output benchmark\\fixed195\\live_caption_short_turns.json
+$r = Get-Content benchmark\\fixed195\\live_caption_short_turns.json -Raw | ConvertFrom-Json
+$r.final_cluster_diagnostics.acoustic_turn_splits
+$r | Select-Object final_confirmed_segments, final_unidentified_segment_count, speaker_reassignment_types, delivery_matched, flags, errors
+\`\`\`
+
+The expected improvement is recognition of actual quick speaker changes
+*when reliable timed words exist*, with no lost source text or transport
+regression. Synthetic regression tests validate a 2.4-second two-person
+utterance, absent/inconsistent word alignment, acoustic continuity,
+mixed voice evidence and snapshot preservation. Real speaker-turn
+accuracy and ASR completeness still require reference-labeled audio.
