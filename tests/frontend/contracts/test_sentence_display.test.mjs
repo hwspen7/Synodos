@@ -2,21 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import ts from 'typescript'
+import { splitDisplaySentences as split } from '../../../src/transcript/display.ts'
 
-// Exercise the actual production Vue sentence formatter, not a duplicate
-// implementation that might conceal a UI regression.
+// Validate the formatter actually used by the Vue transcript template.
 const vue = readFileSync(join(process.cwd(), 'src/pages/MeetingPage.vue'), 'utf8')
-const start = vue.indexOf('function splitDisplaySentences(')
-const end = vue.indexOf('\nfunction endsFinishedThought(', start)
-assert.ok(start > 0 && end > start, 'The production formatter must be present')
-const source = vue.slice(start, end) + '\nexports.splitDisplaySentences = splitDisplaySentences'
-const compiled = ts.transpileModule(source, {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText
-const module = { exports: {} }
-new Function('exports', compiled)(module.exports)
-const split = module.exports.splitDisplaySentences
+assert.match(vue, /import \{ splitDisplaySentences \} from '@\/transcript\/display'/)
+assert.match(vue, /splitDisplaySentences\(para\.text\)/)
 
 test('user report displays six separate sentences rather than one block', () => {
   const input = "Really, what a coincidence. We laughed a lot. Absolutely. Hey, how are you? Hey, what's man? How are you doing?"
