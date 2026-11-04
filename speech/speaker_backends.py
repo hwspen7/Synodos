@@ -1,9 +1,10 @@
 """Optional, replaceable speaker-model adapters.
 
 Identity verification (embeddings) and who-spoke-when diarization are different
-tasks. These adapters are *comparison-only*: production still uses CAM++ and
-the existing cluster backend unless a later, evidence-backed migration is
-explicitly approved. No model loads or downloads during module import.
+tasks. Offline adapters remain usable for controlled comparisons. The live
+Nemotron streaming worker is a separate, explicitly opt-in path; production
+still defaults to CAM++ pending evidence-backed acceptance.
+No model loads or downloads during module import.
 """
 from __future__ import annotations
 
