@@ -743,7 +743,9 @@ class SessionProcessor(threading.Thread):
         # bounded number of complete inference opportunities. An ASR failure
         # cannot silently authorize dropping earlier speech just because
         # later speech was decoded successfully.
-        if self._speech_settings.engine != "legacy":
+        if (self._speech_settings.engine != "legacy"
+                and os.getenv("MEETING_ASR_COVERAGE_RETENTION", "0").strip().lower()
+                in ("1", "true", "yes")):
             voice_ranges = tuple(getattr(
                 recognition, "speech_intervals_ms", (),
             ))
@@ -790,7 +792,9 @@ class SessionProcessor(threading.Thread):
                 self.buffer.drop_before(local_end)
         elif (not final and not sentences
               and self._speech_settings.engine != "legacy"
-              and recognition.speech_detected is True):
+              and recognition.speech_detected is True
+              and os.getenv("MEETING_ASR_SPEECH_BACKPRESSURE_GUARD", "0")
+                  .strip().lower() in ("1", "true", "yes")):
             # If a model repeatedly hears speech but decodes no words,
             # never let the rolling buffer fill until WebSocket shutdown.
             # Keep the newest context; older undecodable voice is explicitly
