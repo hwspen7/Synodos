@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
+import argparse
+import json
 import re
 import unicodedata
 
@@ -137,3 +139,36 @@ def write_private_transcript(path: Path, text: str) -> None:
             "Refusing to overwrite an existing local transcript audit file")
     with target.open("x", encoding="utf-8") as stream:
         stream.write(text + "\n")
+
+
+
+def main() -> int:
+    """Score the exact saved local replay text without replaying the WAV."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--hypothesis-text", type=Path, required=True,
+                        help="Opt-in private ASR transcript exported by replay")
+    parser.add_argument("--reference-text", type=Path, required=True,
+                        help="Independently checked human transcription of same WAV")
+    parser.add_argument("--output", type=Path,
+                        help="Optional local aggregate-only JSON report")
+    args = parser.parse_args()
+    if args.hypothesis_text.resolve() == args.reference_text.resolve():
+        parser.error("Hypothesis and independent reference must be different files")
+    reference = args.reference_text.read_text(encoding="utf-8-sig")
+    hypothesis = args.hypothesis_text.read_text(encoding="utf-8-sig")
+    metrics = score_reference(reference, hypothesis)
+    report = {
+        "schema": "meeting-live-caption-local-text-score-v1",
+        **metrics,
+        "reference_verified_by_user": "not_checked_by_tool",
+    }
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2)
+                               + "\n", encoding="utf-8")
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
