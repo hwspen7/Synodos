@@ -94,6 +94,32 @@ class AMIManualWordReferenceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "lacks multiple"):
                 words_from_official_archive(archive)
 
+    def test_zero_duration_lexical_word_is_preserved_without_fake_timing(self):
+        xml = speaker_xml([
+            ("1500.10", "1500.10", "Okay"),
+            ("1500.20", "1500.30", "yes"),
+        ])
+        words = parse_ami_word_xml(xml, speaker="A")
+        self.assertEqual([w.text for w in words], ["Okay", "yes"])
+        self.assertEqual(words[0].end_s - words[0].start_s, 0)
+
+    def test_reversed_in_crop_time_fails_with_source_context(self):
+        with self.assertRaisesRegex(ValueError, "Reversed AMI word timestamp.*A"):
+            parse_ami_word_xml(
+                speaker_xml([("1501.0", "1500.5", "word")]),
+                speaker="A",
+            )
+
+    def test_reversed_outside_crop_is_excluded(self):
+        words = parse_ami_word_xml(
+            speaker_xml([
+                ("1401.0", "1400.0", "outside"),
+                ("1501.0", "1501.4", "inside"),
+            ]),
+            speaker="A",
+        )
+        self.assertEqual([w.text for w in words], ["inside"])
+
     def test_malformed_timestamp_and_speaker_rejected(self):
         with self.assertRaisesRegex(ValueError, "timestamp"):
             parse_ami_word_xml(
