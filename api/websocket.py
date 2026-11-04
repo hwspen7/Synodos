@@ -11,6 +11,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from core.runtime import settings, sessions, meeting_sessions, meeting_store, speaker_store, hotword_store
 from sessions.session import Session
 from speech.config import load_settings
+from speech.supported_languages import spoken_language, translation_target
 from speech.diarization import resolve_diarization_mode
 from speech.quality_profile import quality_candidate_enabled, speaker_candidate_enabled
 from speech.recording import RecordingWriter, RecordingQuotaExceeded
