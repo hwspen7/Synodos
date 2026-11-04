@@ -18,3 +18,9 @@ def quality_candidate_enabled() -> bool:
     return os.getenv("MEETING_ASR_QUALITY_CANDIDATE", "0").strip().lower() in (
         "1", "true", "yes"
     )
+
+def speaker_candidate_enabled() -> bool:
+    """Opt in to short-probe corroboration and experimental reclustering."""
+    return os.getenv("MEETING_SPEAKER_QUALITY_CANDIDATE", "0").strip().lower() in (
+        "1", "true", "yes"
+    )
