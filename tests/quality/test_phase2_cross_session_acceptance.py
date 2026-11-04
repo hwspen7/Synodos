@@ -15,7 +15,12 @@ def trials(prefix, *, model="camplus"):
                 "id": f"{prefix}_{i}_{int(same)}",
                 "session_a": f"{prefix}a",
                 "session_b": f"{prefix}b" if i % 2 else f"{prefix}c",
-                "person_group": f"{prefix}-person-group",
+                "speaker_a": f"{prefix}-subject-1",
+                "speaker_b": (
+                    f"{prefix}-subject-1" if same else f"{prefix}-subject-2"
+                ),
+                "clip_a": f"{prefix}-clip-a-{i}-{int(same)}",
+                "clip_b": f"{prefix}-clip-b-{i}-{int(same)}",
                 "embedding_model": model,
                 "human_labeled": True,
                 "same_person": same,
@@ -47,9 +52,23 @@ class Phase2CrossSessionTests(unittest.TestCase):
 
     def test_development_holdout_person_overlap_fails(self):
         dev, heldout = trials("dev"), trials("heldout")
-        heldout["trials"][0]["person_group"] = "dev-person-group"
+        heldout["trials"][0]["speaker_a"] = "dev-subject-1"
+        heldout["trials"][0]["speaker_b"] = "dev-subject-1"
         with self.assertRaisesRegex(ValueError, "disjoint"):
             evaluate(dev, heldout)
+
+    def test_duplicate_clip_pairs_rejected(self):
+        sample = trials("repeated")
+        sample["trials"][1]["clip_a"] = sample["trials"][0]["clip_a"]
+        sample["trials"][1]["clip_b"] = sample["trials"][0]["clip_b"]
+        with self.assertRaisesRegex(ValueError, "Duplicate source clips"):
+            validate_trials(sample)
+
+    def test_impostor_mislabeled_as_genuine_is_rejected(self):
+        sample = trials("bad")
+        sample["trials"][1]["same_person"] = True
+        with self.assertRaisesRegex(ValueError, "Invalid trial"):
+            validate_trials(sample)
 
     def test_rejects_unlabeled_same_session_and_model_mixing(self):
         bad = trials("cohort")
