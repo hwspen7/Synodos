@@ -12,7 +12,7 @@ import numpy as np
 from tools.ami_shadow10_prepare import SELECTED, checksum
 from tools.ami_shadow10_score import (
     score_case, reference_union_overlap, unidentified_segments,
-    missed_speaker_time_breakdown,
+    missed_speaker_time_breakdown, reference_speech_without_captions,
 )
 
 
@@ -121,6 +121,24 @@ class AmiShadowScoreTests(unittest.TestCase):
             )
             self.assertNotIn("speaker_mapping", result["metrics"])
             self.assertNotIn("text", json.dumps(result))
+
+    def test_locate_reference_speech_gaps_without_fabricating_words(self):
+        reference = [{"start_ms": 0, "end_ms": 3000, "speaker": "A"}]
+        timeline = {"segments": [
+            {"start_ms": 0, "end_ms": 1000, "published_speaker_id": 1},
+            {"start_ms": 1700, "end_ms": 3000, "published_speaker_id": -1},
+        ]}
+        gaps = reference_speech_without_captions(
+            timeline, reference, 3000,
+        )
+        self.assertEqual(gaps["gap_count"], 1)
+        self.assertEqual(
+            gaps["reference_speech_without_captions_seconds"], 0.7
+        )
+        self.assertEqual(gaps["longest_gaps"][0], {
+            "start_ms": 1000, "end_ms": 1700, "duration_ms": 700,
+        })
+        self.assertTrue(gaps["requires_audio_review"])
 
     def test_missed_speaker_time_breakdown_separates_three_causes(self):
         timeline = {"segments": [
