@@ -738,8 +738,17 @@ class SessionProcessor(threading.Thread):
                 continue
             if self._acoustic_timeline.add(start, start + length, emb):
                 added = True
-        if not added:
-            return False
+        # A segment's asynchronous turn analysis can finish AFTER the
+        # acoustic windows that cover it. Reconcile against existing windows
+        # even when no new acoustic result arrived on this processor cycle.
+        return self._backfill_acoustic_missing()
+
+    def _backfill_acoustic_missing(self) -> bool:
+        """Use existing acoustics for unmatched segments after async work.
+
+        Keep the timeline's coverage/consistency checks unchanged. Never
+        replace a valid embedding, a manual correction or an in-flight turn.
+        """
         updated = False
         for segment in self.segments:
             if segment.get("emb") is not None or segment.get("speaker_override"):
