@@ -69,6 +69,9 @@ def unidentified_segments(timeline: dict, reference: list[dict],
             ),
             "embedding_available": bool(segment.get("embedding_available")),
             "speaker_uncertain": bool(segment.get("speaker_uncertain")),
+            "speaker_evidence_status": segment.get(
+                "speaker_evidence_status", "not_recorded"
+            ),
         })
     return {
         "count": len(unidentified),
@@ -169,6 +172,58 @@ def missed_speaker_time_breakdown(
     }
 
 
+def reference_speech_without_captions(
+    timeline: dict, reference: list[dict], duration_ms: int,
+    *, frame_step_ms: int = 100,
+) -> dict:
+    """Locate reference speech not covered by ANY live transcript interval.
+
+    This is ground-truth-only offline auditing, not a live VAD. Silence
+    or imperfect annotation boundaries may make individual gaps debatable.
+    """
+    if frame_step_ms != 100 or duration_ms <= 0:
+        raise ValueError("Only 100ms reference audit supported")
+    frames = []
+    for t in range(0, duration_ms, frame_step_ms):
+        reference_active = any(
+            row["start_ms"] <= t < row["end_ms"] for row in reference
+        )
+        caption_active = any(
+            row["start_ms"] <= t < row["end_ms"]
+            for row in timeline["segments"]
+        )
+        frames.append(reference_active and not caption_active)
+    intervals = []
+    start = None
+    for index in range(len(frames) + 1):
+        absent = frames[index] if index < len(frames) else False
+        if absent and start is None:
+            start = index * frame_step_ms
+        if not absent and start is not None:
+            end = index * frame_step_ms
+            intervals.append({
+                "start_ms": start, "end_ms": end,
+                "duration_ms": end - start,
+            })
+            start = None
+    return {
+        "gap_count": len(intervals),
+        "reference_speech_without_captions_seconds": round(
+            sum(i["duration_ms"] for i in intervals) / 1000, 2
+        ),
+        "longest_gaps": sorted(
+            intervals, key=lambda x: -x["duration_ms"],
+        )[:24],
+        "requires_audio_review": True,
+        "source": "human-annotation-derived AMI RTTM versus published captions",
+        "note": (
+            "Reference speech not covered by any transcript segment. "
+            "This does not prove a particular ASR/VAD failure or authorize "
+            "automatically inserting unverified words."
+        ),
+    }
+
+
 def score_case(root: Path, meeting: str, replay_path: Path) -> dict:
     root = root.resolve()
     replay_path = replay_path.resolve()
@@ -229,6 +284,9 @@ def score_case(root: Path, meeting: str, replay_path: Path) -> dict:
             or timeline["total_segments"] != replay.get("final_confirmed_segments")):
         raise ValueError("Published timeline count differs from final transcript")
     unknown = unidentified_segments(timeline, reference, duration_ms)
+    caption_gaps = reference_speech_without_captions(
+        timeline, reference, duration_ms,
+    )
     expected_unknown = replay.get("final_unidentified_segment_count")
     if type(expected_unknown) is not int or unknown["count"] != expected_unknown:
         raise ValueError("Unidentified timeline differs from final replay")
@@ -256,6 +314,7 @@ def score_case(root: Path, meeting: str, replay_path: Path) -> dict:
         "metrics": metrics,
         "missed_speaker_time_breakdown": missed_breakdown,
         "unidentified": unknown,
+        "reference_speech_without_captions": caption_gaps,
         "confirmed_segment_count": timeline["total_segments"],
         "shadow_diagnostics": replay.get("speaker_shadow_diagnostics"),
         "limitations": (
@@ -296,6 +355,11 @@ def main() -> int:
         "metrics": result["metrics"],
         "missed_speaker_time_breakdown": result["missed_speaker_time_breakdown"],
         "unidentified_count": result["unidentified"]["count"],
+        "reference_speech_without_captions_seconds": (
+            result["reference_speech_without_captions"][
+                "reference_speech_without_captions_seconds"
+            ]
+        ),
         "unidentified_with_reference_speech":
             result["unidentified"]["with_reference_speech"],
         "output": str(output),
