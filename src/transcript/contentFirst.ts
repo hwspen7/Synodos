@@ -7,7 +7,8 @@ import type { Segment } from '@/types'
 import { speakerColor } from '@/speaker/clustering'
 
 function plain(text: string): string {
-  return text.normalize('NFKC').trim()
+  // No Unicode compatibility rewriting: original graphemes are canonical.
+  return text.trim()
 }
 
 export function expandContentFirstSegments(
