@@ -31,12 +31,32 @@ def check(model: str, *, device: str = "cpu") -> dict:
         except metadata.PackageNotFoundError:
             installed[module] = "installed_version_unknown"
     cuda_available = None
+    cuda_build = None
+    torch_error = None
     if "torch" not in missing:
         try:
             import torch
+            cuda_build = getattr(torch.version, "cuda", None)
             cuda_available = bool(torch.cuda.is_available())
-        except (ImportError, OSError, RuntimeError):
+        except (ImportError, OSError, RuntimeError) as exc:
             cuda_available = False
+            torch_error = type(exc).__name__
+    if "torch" in missing:
+        cuda_diagnosis = "PyTorch is not installed"
+    elif torch_error:
+        cuda_diagnosis = "PyTorch cannot initialize; inspect its installation"
+    elif cuda_build is None:
+        cuda_diagnosis = (
+            "CPU-only PyTorch build; install a supported CUDA wheel from "
+            "https://pytorch.org/get-started/previous-versions/"
+        )
+    elif cuda_available is False:
+        cuda_diagnosis = (
+            "CUDA-enabled PyTorch is installed, but the NVIDIA driver or "
+            "GPU is unavailable; inspect nvidia-smi and driver compatibility"
+        )
+    else:
+        cuda_diagnosis = "CUDA available"
     compatible_transformers = None
     if model == "nemotron3" and "transformers" not in missing:
         try:
@@ -57,6 +77,9 @@ def check(model: str, *, device: str = "cpu") -> dict:
         "installed": installed,
         "missing": missing,
         "cuda_available": cuda_available,
+        "torch_cuda_build": cuda_build,
+        "torch_import_error": torch_error,
+        "cuda_diagnosis": cuda_diagnosis,
         "compatible_transformers": compatible_transformers,
         "dependencies_ready": ok,
         "model_weights_tested": False,
