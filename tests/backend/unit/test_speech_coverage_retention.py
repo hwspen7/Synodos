@@ -124,6 +124,50 @@ class SpeechCoverageRetentionTests(unittest.TestCase):
         other.load_state(processor.snapshot_state())
         self.assertEqual(len(other._speech_coverage_gaps), 1)
 
+    def test_long_unreadable_voice_does_not_overflow_stream_buffer(self):
+        class UndecodableModel:
+            def recognize_multilingual(self, audio, language, terms, config):
+                duration = round(len(audio) * 1000 / 16000)
+                return Recognition(
+                    (), "en", speech_detected=True,
+                    speech_intervals_ms=((0, duration),),
+                )
+            def embed(self, audio):
+                return None
+
+        settings = Settings()
+        sr = settings.sample_rate
+        buffer = AudioBuffer(sr, max_seconds=20)
+        model = UndecodableModel()
+        events = []
+        with patch("sessions.processor.load_settings",
+                   return_value=SpeechSettings(engine="whisper")):
+            proc = SessionProcessor(
+                "unreadable-audio", buffer, settings, model,
+                asyncio.Queue(),
+            )
+        proc._put = events.append
+        proc._schedule_acoustic = lambda *args: None
+        proc._collect_speakers = lambda *args, **kwargs: False
+        proc._collect_acoustic = lambda *args, **kwargs: False
+        proc._collect_translations = lambda *args, **kwargs: None
+        buffer.append(np.full(14 * sr, 0.03, dtype=np.float32))
+        self.assertFalse(proc._cycle(final=False))
+        self.assertGreater(buffer.start_offset(), 0)
+        self.assertLess(buffer.total_samples(), 14 * sr)
+        self.assertGreater(len(proc._speech_coverage_gaps), 0)
+        self.assertEqual(
+            proc._speech_coverage_gaps[0]["status"],
+            "voice_detected_transcript_unavailable",
+        )
+        self.assertGreater(
+            len([e for e in events if e["type"] == "speech_coverage"]), 0
+        )
+        # Continued input fits without silently stopping the session.
+        buffer.append(np.full(7 * sr, 0.03, dtype=np.float32))
+        self.assertLessEqual(buffer.total_samples(),
+                             buffer.capacity_samples())
+
     def test_legacy_provider_without_vad_contract_is_unchanged(self):
         end, gaps = choose_safe_drop(
             proposed_drop_samples=16000,
