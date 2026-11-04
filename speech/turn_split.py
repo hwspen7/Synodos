@@ -12,6 +12,7 @@ from collections.abc import Callable
 
 import numpy as np
 from speech.text_format import join_transcript_text
+from speech.quality_profile import speaker_candidate_enabled
 
 
 def _vector(raw: object) -> np.ndarray | None:
@@ -82,7 +83,11 @@ def split_by_acoustic_turns(
     # for short windows to avoid turning ordinary vocal variation into
     # extra speaker turns.
     short_windows = n_samples / (sample_rate * count) < 1.4
-    change_threshold = min(threshold, 0.45) if short_windows else threshold
+    # The opt-in speaker candidate tests a modestly more sensitive change
+    # point on short windows, but still requires lossless aligned words and
+    # independent acoustic embedding agreement before trusting identities.
+    short_gate = 0.54 if speaker_candidate_enabled() else 0.45
+    change_threshold = min(threshold, short_gate) if short_windows else threshold
     changes = [i for i in range(1, len(windows))
                if float(np.dot(windows[i-1][2], windows[i][2]))
                < change_threshold]
