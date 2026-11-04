@@ -152,6 +152,7 @@ class SessionProcessor(threading.Thread):
         self.ui_settings: dict = {}
         self._translation_tasks: dict[int, Future] = {}
         self._speaker_tasks: dict[int, Future] = {}
+        self._acoustic_turn_splits = 0
         self._acoustic_timeline = AcousticTimeline(sr)
         self._acoustic_tasks: dict[int, Future] = {}
         self._next_acoustic_sample = 0
@@ -258,6 +259,7 @@ class SessionProcessor(threading.Thread):
                 # closing an otherwise successfully processed meeting.
                 try:
                     summary = summarize_cluster_fragmentation(self.segments)
+                    summary["acoustic_turn_splits"] = self._acoustic_turn_splits
                     summary["configured_merge_threshold"] = (
                         self.settings.cluster_merge_thr
                     )
@@ -763,6 +765,10 @@ class SessionProcessor(threading.Thread):
                 self._enqueue_translation(original)
                 updated = True
                 continue
+            if len(pieces) > 1:
+                additional_turns = len(pieces) - 1
+                self._acoustic_turn_splits += additional_turns
+                metrics.increment("speaker_acoustic_turn_splits", additional_turns)
             source_words = original.get("words", [])
             source_language = original.get("language", "und")
             for index, piece in enumerate(pieces):
