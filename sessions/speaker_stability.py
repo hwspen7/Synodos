@@ -146,12 +146,23 @@ def summarize_cluster_fragmentation(
     speaker_to_raw: dict[int, set[int]] = {}
     labeled = set()
     without_embedding = 0
+    evidence_statuses: Counter[str] = Counter()
     for record in records:
         sid = record.get("speaker_id")
         if type(sid) is int and sid > 0:
             labeled.add(sid)
         if record.get("emb") is None:
             without_embedding += 1
+        reason = str(record.get("speaker_evidence_status") or "not_recorded")
+        if reason not in {
+            "direct_embedding", "pending_turn_analysis", "short_turn",
+            "speaker_task_backpressure_or_failure",
+            "turn_analysis_unavailable", "turn_voiceprint",
+            "turn_ambiguous", "turn_no_voiceprint", "acoustic_backfill",
+            "not_recorded",
+        }:
+            reason = "other"
+        evidence_statuses[reason] += 1
         raw = record.get("cluster")
         if type(raw) is not int or raw < 0:
             continue
@@ -182,6 +193,7 @@ def summarize_cluster_fragmentation(
         "raw_cluster_count": len(raw_to_speaker),
         "published_positive_speaker_count": len(labeled),
         "segments_without_embedding": without_embedding,
+        "speaker_evidence_status_counts": dict(evidence_statuses),
         "raw_clusters_with_multiple_published_labels": len(conflicts),
         "labeled_segments_in_conflicted_raw_clusters": sum(
             item["labeled_segments"] for item in conflicts
@@ -390,6 +402,9 @@ def anonymous_speaker_timeline(
             "published_speaker_id": sid if type(sid) is int and sid > 0 else None,
             "embedding_available": item.get("emb") is not None,
             "speaker_uncertain": bool(item.get("speaker_uncertain", False)),
+            "speaker_evidence_status": str(
+                item.get("speaker_evidence_status") or "not_recorded"
+            ),
         })
     return {
         "total_segments": len(items),
