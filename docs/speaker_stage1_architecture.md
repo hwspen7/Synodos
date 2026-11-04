@@ -653,11 +653,17 @@ are 100 ms, no-collar approximate scores, not industry certification.
   conservative complete-link speaker clustering for under 20 vectors.
   At 20 or more vectors it keeps the existing FunASR backend.
 * Set MEETING_SPEAKER_CLUSTER_STRATEGY=candidate for an explicitly
-  experimental full re-clustering of up to 256 embeddings. This does
-  NOT automatically choose the right speaker count. Set legacy to
-  restore the exact previous clustering path. The candidate uses
-  MEETING_SPEAKER_BOOTSTRAP_SIMILARITY=0.76 by default. It may create
-  too many identity groups on noisy or overlapping speech.
+  experimental bounded spherical clustering of 4-256 embeddings.
+  It evaluates 2-8 possible speaker groups using repeat-support
+  constraints and a penalized cosine-distance silhouette criterion.
+  This is **not** calibrated speaker count estimation and may still
+  return the wrong number. It replaces the previous overfragmenting
+  full-recording complete-link candidate. A failed/weak hypothesis
+  falls back to FunASR with an explicit execution receipt. Set
+  legacy to restore the exact previous path, or strict to reproduce
+  the historical 256-sample complete-link hypothesis. The separate
+  MEETING_SPEAKER_BOOTSTRAP_SIMILARITY=0.76 still controls the
+  under-20 bootstrap, not the spherical model selection.
 * The final anonymous diagnostics now include fresh_cluster_sweep,
   which genuinely re-clusters acoustic embeddings at several thresholds.
   The prior posthoc_merge_sweep could only MERGE existing clusters.
@@ -782,3 +788,70 @@ and DER both improve. The default is still 1.2 seconds.
 The new AMI reference audit also includes
 reference_speech_without_captions.longest_gaps. They are 100ms
 frame-derived *review intervals*, not automatically generated text.
+
+
+## V5 operator result and V6 candidate experiment
+
+The AMI TS3003b V5 replay supplied by the operator produced DER
+0.40673, missed speaker-time 0.34132, confusion 0.04790,
+false alarms 0.01750, and still only 2 published speakers against
+4 annotated voices. Unknown captions fell from 18 to 17, but full
+overlap recall remained 0. Reference speech without captions was
+29.0 seconds across 59 detected gaps. **This is not a successful
+speaker-count fix.**
+
+More revealing, the live final diagnostics included 88 eligible
+embeddings. Complete-link clustering produced 32 clusters at cosine
+threshold 0.60 (13 singletons). At thresholds 0.68-0.80 it exceeded
+the configured 32-cluster budget and was rejected. The V5
+candidate-mode implementation fell back to FunASR. As a result,
+"candidate requested" did not mean "candidate executed", and
+the final two-person result did not validate that experimental
+clusterer's quality. Raising the threshold would exacerbate
+the observed fragmentation.
+
+The next candidate mode runs bounded spherical k-means, evaluates
+K=2..8, requires at least 2 embeddings per proposed speaker,
+and uses an unsupervised silhouette-based ranking with a small
+complexity penalty. It **does not use the known AMI answer K=4**.
+The old strict complete-link diagnostic remains visible in
+fresh_cluster_sweep alongside a NEW spherical_candidate summary.
+Every final report now includes clustering_execution with
+strategy_requested, strategy_executed, cluster_count and an
+explicit fallback_reason. This is per-session, not a shared
+last-executed-model status.
+
+### Run V6 without overwriting V5
+
+First restart the backend with the same experiment settings used
+for V5. In particular, keep:
+
+    $env:MEETING_SPEAKER_CLUSTER_STRATEGY = "candidate"
+    $env:MEETING_SPEAKER_PROBE_MIN_S = "0.9"
+    $env:MEETING_SPEAKER_LABEL_REVISABLE_S = "0"
+    $env:MEETING_DIARIZATION_DIAGNOSTICS = "1"
+
+Keep the previously working E-drive ECAPA cache and Python
+environment configuration unchanged. In a second PowerShell:
+
+    cd E:\Meeting-Fixed10-Test
+    python -m unittest tests.quality.test_spherical_speaker_candidates tests.quality.test_speaker_clustering_receipt -v
+    python -m tools.live_caption_ws_replay --audio benchmark/fixed195/ami_shadow10/audio/ami-TS3003b-1500-1740.wav --loops 1 --speed 1.0 --output benchmark/fixed195/ami_shadow10/replay_TS3003b_v6.json
+    python -m tools.ami_shadow10_score --root benchmark/fixed195/ami_shadow10 --meeting TS3003b --replay benchmark/fixed195/ami_shadow10/replay_TS3003b_v6.json --output benchmark/fixed195/ami_shadow10/audit_TS3003b_v6.json
+
+Print the actual executed backend, selected speaker candidate
+and reference-backed scores:
+
+    $r = Get-Content benchmark/fixed195/ami_shadow10/replay_TS3003b_v6.json -Raw | ConvertFrom-Json
+    $r.final_cluster_diagnostics.clustering_execution | ConvertTo-Json -Depth 6
+    $r.final_cluster_diagnostics.fresh_cluster_sweep.spherical_candidate | ConvertTo-Json -Depth 6
+    $a = Get-Content benchmark/fixed195/ami_shadow10/audit_TS3003b_v6.json -Raw | ConvertFrom-Json
+    $a.metrics | ConvertTo-Json -Depth 4
+
+A real promotion decision requires lower DER without worsening
+speaker confusion and false alarms on unrelated meetings. Even
+a good silhouette is not human speaker count ground truth.
+The live transcript still cannot represent all three
+simultaneous speaker word streams; V6 is *not* a complete
+three-way separation fix and does not fabricate missing ASR
+words in the 29-second annotation gap.
