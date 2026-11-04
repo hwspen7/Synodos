@@ -117,6 +117,33 @@ class LiveFusionTests(unittest.TestCase):
             "Unidentified Speaker",
         )
 
+    def test_completed_track_missing_tail_does_not_invent_legacy_speaker(self):
+        class CompletedFakeAcoustics(FakeAcoustics):
+            def is_complete(self):
+                return True
+
+        processor = processor_for_test()
+        processor.independent_diarization = CompletedFakeAcoustics(
+            np.zeros((25, 8), dtype=np.float32),
+        )
+        self.assertTrue(processor._rebuild_and_push())
+        self.assertEqual(processor._independent_published[1], -1)
+        state = processor.snapshot_state()
+        self.assertEqual(state["segments"][0]["speaker_id"], -1)
+        self.assertEqual(
+            state["segments"][0]["speaker_diarization_source"],
+            "nemotron3_uncertain",
+        )
+
+    def test_resumed_uncertain_speaker_is_not_reclustered_to_legacy_id(self):
+        processor = processor_for_test()
+        processor._independent_pcm_origin_samples = 16000
+        processor.segments[0]["speaker_diarization_source"] = "nemotron3_uncertain"
+        processor.segments[0]["speaker_id"] = 17
+        self.assertTrue(processor._rebuild_and_push())
+        self.assertEqual(processor._independent_published[1], -1)
+        self.assertEqual(processor.snapshot_state()["segments"][0]["speaker_id"], -1)
+
     def test_unscored_activity_does_not_fabricate_speaker(self):
         processor = processor_for_test()
         processor.segments[0]["speaker_id"] = -1
