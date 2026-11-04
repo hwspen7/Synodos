@@ -157,7 +157,11 @@ def assign_acoustic_anchor_clusters(
 
     assigned = 0
     for index in candidate_indices:
-        if index not in vectors or index in anchors:
+        # The upstream acoustic turn-splitter explicitly marks possible
+        # mixed-speaker intervals uncertain; a high mean cosine match
+        # must not override that evidence of ambiguity.
+        if (index not in vectors or index in anchors
+                or records[index].get("speaker_uncertain", False)):
             continue
         similarities = sorted(
             ((float(np.dot(vectors[index], center)), label)
