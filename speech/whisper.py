@@ -8,6 +8,7 @@ from speech.contracts import Recognition
 from speech.quality_guard import verify_utterances, speech_intervals
 from speech.gap_recovery import recover_missing_voice
 from speech.utterance_units import split_utterances
+from speech.quality_profile import quality_candidate_enabled
 
 
 class WhisperEngine:
@@ -68,10 +69,11 @@ class WhisperEngine:
         # Preserve acoustically verified segment words when the model's
         # forced word alignment is incomplete. This avoids deleting genuine
         # meeting content merely because word timestamps disagree.
-        preserve_disputed = os.environ.get(
+        quality_candidate = quality_candidate_enabled()
+        preserve_disputed = quality_candidate or os.environ.get(
             "MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT", "0"
         ).strip().lower() in ("1", "true", "yes")
-        gap_recovery = os.environ.get(
+        gap_recovery = quality_candidate or os.environ.get(
             "MEETING_WHISPER_GAP_RECOVERY", "0"
         ).strip().lower() in ("1", "true", "yes")
         with self._infer_lock:
@@ -95,10 +97,16 @@ class WhisperEngine:
             )
             if window_lid:
                 from speech.multilingual_windows import recognize_windows
+                # The outer Silero VAD already bounds each speech window.
+                # Under the paired quality candidate, do not apply a second
+                # VAD crop inside each short Whisper decoder window.
+                window_kwargs = dict(kwargs, multilingual=True)
+                if quality_candidate:
+                    window_kwargs["vad_filter"] = False
                 recognized = recognize_windows(
                     samples, speech_regions,
                     lambda chunk, **kw: self._get_model().transcribe(chunk, **kw),
-                    dict(kwargs, multilingual=True),
+                    window_kwargs,
                     preserve_disputed_text=preserve_disputed,
                 )
                 primary = recognized.utterances
