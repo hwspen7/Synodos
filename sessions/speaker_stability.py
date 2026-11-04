@@ -198,3 +198,94 @@ def summarize_cluster_fragmentation(
         ),
         "top_conflicted_raw_clusters": conflicts[:8],
     }
+
+
+def diagnose_cluster_merge_thresholds(
+    records: Iterable[Mapping[str, object]],
+    thresholds: tuple[float, ...] = (0.55, 0.60, 0.65, 0.70, 0.74, 0.78),
+) -> dict[str, object]:
+    """Read-only acoustic cluster merge sensitivity at finalization.
+
+    Starting from the CURRENT raw clusters, greedily merge the most
+    cosine-similar cluster centroids at each candidate threshold. This
+    mimics FunASR's center-merging step, but does not rerun the preceding
+    spectral clustering or claim a DER or speaker-count improvement.
+    Never export embeddings or pairwise identity similarities.
+    """
+    import numpy as np
+
+    if any(not 0 < t <= 1 for t in thresholds):
+        raise ValueError("All candidate merge thresholds must be in (0, 1]")
+    sums: dict[int, np.ndarray] = {}
+    counts: dict[int, int] = {}
+    dim = None
+    for item in records:
+        raw, emb = item.get("cluster"), item.get("emb")
+        if type(raw) is not int or raw < 0 or emb is None:
+            continue
+        try:
+            vec = np.asarray(emb, dtype=np.float64).reshape(-1)
+        except (TypeError, ValueError):
+            continue
+        if not vec.size or not np.isfinite(vec).all():
+            continue
+        norm = float(np.linalg.norm(vec))
+        if not np.isfinite(norm) or norm <= 1e-8:
+            continue
+        if dim is None:
+            dim = vec.size
+        if vec.size != dim:
+            continue
+        sums[raw] = sums.get(raw, np.zeros(dim, dtype=np.float64)) + vec
+        counts[raw] = counts.get(raw, 0) + 1
+    if len(sums) > 128:
+        return {"sweep_available": False,
+                "reason": "more_than_128_raw_clusters"}
+    if not sums:
+        return {"sweep_available": False, "reason": "no_valid_embeddings"}
+
+    def simulate(threshold: float) -> int:
+        centers = {
+            key: (value.copy(), counts[key]) for key, value in sums.items()
+        }
+        while len(centers) > 1:
+            keys = sorted(centers)
+            best_pair = None
+            best_sim = threshold
+            for i, left in enumerate(keys):
+                a = centers[left][0]
+                na = float(np.linalg.norm(a))
+                if na <= 1e-8:
+                    continue
+                for right in keys[i + 1:]:
+                    b = centers[right][0]
+                    nb = float(np.linalg.norm(b))
+                    if nb <= 1e-8:
+                        continue
+                    sim = float(np.dot(a, b) / (na * nb))
+                    if sim >= best_sim:
+                        if sim > best_sim or best_pair is None:
+                            best_pair, best_sim = (left, right), sim
+            if best_pair is None:
+                break
+            left, right = best_pair
+            av, an = centers[left]
+            bv, bn = centers.pop(right)
+            centers[left] = (av + bv, an + bn)
+        return len(centers)
+
+    return {
+        "sweep_available": True,
+        "starting_raw_cluster_count": len(sums),
+        "candidate_merges": [
+            {
+                "cosine_threshold": round(float(t), 3),
+                "posthoc_cluster_count": simulate(float(t)),
+            } for t in thresholds
+        ],
+        "method_note": (
+            "Approximate post-hoc merges of CURRENT raw cluster centroids, "
+            "not a fresh FunASR spectral clustering run or an identity "
+            "accuracy measure."
+        ),
+    }
