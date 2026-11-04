@@ -76,6 +76,7 @@ def run_model(
     model: str, wav_path: Path, *, duration_ms: int,
     device: str = "cpu", model_id: str | None = None,
     allow_download: bool = False, pipeline: Any = None,
+    diarizen_embedding_model: str | None = None,
 ) -> tuple[list[dict], dict]:
     """Run the entire single-channel frozen WAV in one offline inference.
 
@@ -110,7 +111,23 @@ def run_model(
         else:
             try:
                 from diarizen.pipelines.inference import DiariZenPipeline
-                pipeline = DiariZenPipeline.from_pretrained(configured)
+                if Path(configured).is_dir():
+                    if (not diarizen_embedding_model or
+                            not Path(diarizen_embedding_model).is_file()):
+                        raise ModelSetupError(
+                            "Offline DiariZen weights also require the local "
+                            "Wespeaker embedding .bin file.")
+                    pipeline = DiariZenPipeline(
+                        diarizen_hub=Path(configured),
+                        embedding_model=str(Path(diarizen_embedding_model).resolve()),
+                    )
+                else:
+                    pipeline = DiariZenPipeline.from_pretrained(configured)
+                if hasattr(pipeline, "to"):
+                    import torch
+                    if device == "cuda" and not torch.cuda.is_available():
+                        raise ModelSetupError("CUDA unavailable for DiariZen")
+                    pipeline.to(torch.device(device))
             except (ImportError, OSError, RuntimeError) as exc:
                 raise ModelSetupError(
                     "DiariZen needs its separate Python/Torch environment; "
