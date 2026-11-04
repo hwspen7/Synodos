@@ -1,0 +1,7 @@
+# Optional NVIDIA Nemotron 3 offline diarization comparison environment.
+# Use a separate Python 3.12 venv and a supported CUDA torch build.
+# Not part of the live ASR runtime or production defaults.
+numpy>=1.26,<3
+transformers>=5.18,<6
+accelerate>=1,<2
+safetensors>=0.4
