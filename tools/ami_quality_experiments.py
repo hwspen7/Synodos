@@ -286,7 +286,8 @@ def main() -> int:
             print(f"{profile}: experiment FAILED: {error}", flush=True)
     gains = [
         row for row in results
-        if row.get("quality_gate", {}).get("measured_gain_on_this_case") is True
+        if row.get("profile") != "control"
+        and row.get("quality_gate", {}).get("measured_gain_on_this_case") is True
     ]
     gains.sort(key=lambda row: (
         row["metrics"]["der"], row["without_captions_s"],
@@ -298,6 +299,7 @@ def main() -> int:
         "baseline": str(baseline_path),
         "python_executable": sys.executable,
         "profiles": results,
+        "control": next((row for row in results if row.get("profile") == "control"), None),
         "qualifying_profiles": [item["profile"] for item in gains],
         "best_pilot_candidate": gains[0]["profile"] if gains else None,
         "production_promoted": False,
