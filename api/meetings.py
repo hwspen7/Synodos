@@ -12,7 +12,7 @@ from core.runtime import meeting_store, meeting_sessions, sessions, speaker_stor
 from api.session_lifecycle import meeting_connection_lock, stop_and_join
 
 from sessions.manual_review import (
-    UNSET, ReviewConflict, ReviewValidationError, apply_review,
+    ReviewConflict, ReviewValidationError, apply_review, original_asr_text,
 )
 from sessions.identity_matcher import match_enrolled_voice
 
@@ -179,7 +179,7 @@ async def review_saved_segment(
         if "speaker_profile_id" in payload:
             profile_id = payload["speaker_profile_id"]
             if profile_id is not None:
-                if not speaker_store.valid_id(profile_id):
+                if not isinstance(profile_id, str) or not speaker_store.valid_id(profile_id):
                     raise HTTPException(400, "invalid speaker profile id")
                 profiles = await asyncio.to_thread(
                     speaker_store.get_for_matching, [profile_id]
@@ -223,9 +223,7 @@ async def get_segment_revisions(meeting_id: str, segment_id: int) -> dict:
     return {
         "segment_id": segment_id,
         "revision": int(segment.get("revision", 0)),
-        "original_asr_text": segment.get(
-            "original_asr_text", segment.get("text", "")
-        ),
+        "original_asr_text": original_asr_text(segment),
         "corrections": list(segment.get("corrections") or []),
     }
 
