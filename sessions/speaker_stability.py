@@ -417,6 +417,14 @@ def anonymous_speaker_timeline(
             "speaker_evidence_status": str(
                 item.get("speaker_evidence_status") or "not_recorded"
             ),
+            # Non-destructive speaker activity. It is NOT the full ASR
+            # caption span and is not silently substituted into standard
+            # published-caption DER.
+            "speaker_activity_intervals_ms": (
+                item.get("speaker_activity_intervals_ms", [])
+                if isinstance(item.get("speaker_activity_intervals_ms", []), list)
+                else []
+            ),
         })
     return {
         "total_segments": len(items),
