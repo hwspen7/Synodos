@@ -213,6 +213,11 @@ def compare_diarization(cases: list[dict], root: Path, *,
         source_name = str(old.get("source_audio") or "").replace("\\", "/").split("/")[-1]
         if source_name != path.name:
             raise ValueError("Baseline replay source WAV does not match case")
+        if old.get("source_audio_sha256") != case["sha256"]:
+            raise ValueError(
+                "Baseline replay source WAV checksum missing or mismatched. "
+                "Regenerate the replay with current tools/live_caption_ws_replay.py"
+            )
         baseline_predictions = baseline_turns(old, duration_ms=duration_ms)
         outputs["camplus_live"].append({
             "id": case["id"],
