@@ -43,32 +43,42 @@ def complete_link_clusters(
         raise ValueError("Zero speaker embedding")
     vectors = array / norms[:, None]
     sims = np.clip(vectors @ vectors.T, -1.0, 1.0)
-    clusters: list[list[int]] = [[i] for i in range(n)]
-    while len(clusters) > 1:
+    # Lance-Williams complete linkage, O(N^3) arithmetic but O(N^2)
+    # storage and no per-comparison NumPy allocations.
+    np.fill_diagonal(sims, -np.inf)
+    members: dict[int, list[int]] = {i: [i] for i in range(n)}
+    active: set[int] = set(range(n))
+    while len(active) > 1:
+        indexes = sorted(active)
         best = None
-        best_sim = threshold
-        for i, left in enumerate(clusters):
-            for j in range(i + 1, len(clusters)):
-                # Complete linkage: one disagreeing/overlapping voice
-                # window cannot bridge acoustically distinct speakers.
-                score = float(np.min(sims[np.ix_(left, clusters[j])]))
-                if score >= best_sim:
-                    if score > best_sim or best is None:
+        best_score = threshold
+        for position, i in enumerate(indexes):
+            for j in indexes[position + 1:]:
+                score = float(sims[i, j])
+                if score >= best_score:
+                    if score > best_score or best is None:
                         best = (i, j)
-                        best_sim = score
+                        best_score = score
         if best is None:
             break
         i, j = best
-        clusters[i].extend(clusters.pop(j))
-        clusters[i].sort()
-    if len(clusters) > max_clusters:
+        members[i].extend(members.pop(j))
+        active.remove(j)
+        for k in active:
+            if k == i:
+                continue
+            new_score = min(float(sims[i, k]), float(sims[j, k]))
+            sims[i, k] = new_score
+            sims[k, i] = new_score
+        sims[i, j] = sims[j, i] = -np.inf
+    if len(members) > max_clusters:
         # Refuse to invent an over-capacity assignment; higher-level
         # caller can retain the established clustering unchanged.
         raise ValueError("Insufficient acoustic agreement for cluster budget")
-    clusters.sort(key=lambda group: min(group))
+    groups = sorted(members.values(), key=lambda group: min(group))
     labels = np.empty(n, dtype=np.int32)
-    for cluster_id, members in enumerate(clusters):
-        labels[members] = cluster_id
+    for cluster_id, group in enumerate(groups):
+        labels[group] = cluster_id
     return labels
 
 
