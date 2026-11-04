@@ -290,3 +290,39 @@ similar subclusters. It is NOT a new FunASR spectral clustering run and
 cannot prove whether the merged clusters correspond to real people. A
 configuration change is not justified until the speaker-turn assignment is
 checked against human-labeled reference intervals, including overlaps.
+
+
+## Short reference-aligned speaker turn inspection (75-second clip)
+
+The current posthoc merge sweep still produces four groups at a cosine
+threshold of 0.55 from the ten final raw groups. A smaller group count
+alone cannot establish correct assignment to the two real speakers.
+
+Use **one loop** of the original 75-second audio for speaker-turn
+verification, not four concatenated repeats. With the backend's
+\`MEETING_DIARIZATION_DIAGNOSTICS=1\` option set, the final
+\`diarization_diagnostics.anonymous_timeline\` contains chronological
+\`start_ms\`, \`end_ms\`, \`raw_cluster_id\`,
+\`published_speaker_id\`, \`embedding_available\` and
+\`speaker_uncertain\`. It exports at most 256 segments and reports
+truncation explicitly. No transcript content, names or embeddings are
+included in the report.
+
+    .\.venv\Scripts\python.exe tools\live_caption_ws_replay.py --audio benchmark\fixed195\audio\fixed195-en-m01.wav --loops 1 --speed 1 --output benchmark\fixed195\live_caption_turns_1loop.json
+
+    $r = Get-Content benchmark\fixed195\live_caption_turns_1loop.json -Raw | ConvertFrom-Json
+    $r.final_cluster_diagnostics.anonymous_timeline.segments |
+        Format-Table start_ms, end_ms, raw_cluster_id, published_speaker_id, embedding_available, speaker_uncertain -AutoSize
+
+Align those intervals against the pinned local speaker reference
+annotations, if available. The existing \`tools/fixed150_prepare.py\`
+stores time-coded two-speaker AMI \`reference_segments\` in the local
+\`benchmark/fixed150/lock.json\`; \`fixed195\` is not tracked in git,
+so DO NOT assume a particular reference layout exists for its WAV.
+Without reference turns, this output is a diagnostic timeline, not
+speaker identification accuracy or DER. The final talker-identity test
+must include overlaps and mixed-speaker sentences.
+
+This anonymous timeline and the merge sweep are opt-in diagnostics.
+The default production clustering, speech recognition and provisional
+subtitle cadence remain unchanged.
