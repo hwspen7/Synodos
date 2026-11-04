@@ -15,7 +15,8 @@ param(
     [string]$HumanReferenceText = "",
     [string]$ExpectedReferenceSha256 = "",
     [switch]$HumanReferenceVerified,
-    [switch]$RequirePublishedForcedUnder10
+    [switch]$RequirePublishedForcedUnder10,
+    [string]$OutputTag = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -130,7 +131,251 @@ if (-not $SkipUnitTests) {
     }
 }
 
-$timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+if ($OutputTag -and $OutputTag -notmatch '^[a-zA-Z0-9_-]{1,64}
+$replay = Join-Path $root "replay_TS3003b_nemotron_$timestamp.json"
+$score = Join-Path $root "audit_TS3003b_nemotron_$timestamp.json"
+$gaps = Join-Path $root "audit_TS3003b_asr_stages_$timestamp.json"
+$forced = Join-Path $root "audit_TS3003b_forced_comparison_$timestamp.json"
+$forcedGaps = Join-Path $root "audit_TS3003b_forced_asr_stages_$timestamp.json"
+$textGateReport = Join-Path $root "audit_TS3003b_phase1_human_text_$timestamp.json"
+$privateTranscript = Join-Path $root "transcript_TS3003b_live_$timestamp.txt"
+$privateSegmentAudit = Join-Path $root "transcript_TS3003b_segment_audit_$timestamp.json"
+$outLog = Join-Path $root "nemotron_server_$timestamp.stdout.log"
+$errLog = Join-Path $root "nemotron_server_$timestamp.stderr.log"
+
+# Set flags BEFORE spawning the private backend process. These are inherited
+# only by that process and do not modify a different terminal's environment.
+$env:MEETING_INDEPENDENT_DIARIZATION = "nemotron3"
+$env:MEETING_NEMOTRON_STREAM_MODE = "low_latency"
+$env:MEETING_NEMOTRON_DEVICE = "cuda"
+$env:MEETING_DIARIZATION_DIAGNOSTICS = "1"
+$env:MEETING_ASR_TRACE_STAGES = "1"
+$env:MEETING_ASR_ENGINE = "whisper"
+$env:MEETING_ASR_MODEL = "large-v3"
+$env:MEETING_WHISPER_WINDOW_LID = "1"
+$env:MEETING_WHISPER_SKIP_INTERNAL_VAD = "0"
+$env:MEETING_SPEAKER_CLUSTER_STRATEGY = "bootstrap"
+$env:MEETING_SPEAKER_PROBE_MIN_S = "1.2"
+$env:MEETING_MIN_COMMIT_CONTEXT_S = "7.0"
+$env:MEETING_ASR_SPEECH_BACKPRESSURE_GUARD = "0"
+$env:MEETING_ASR_QUALITY_CANDIDATE = "0"
+$env:MEETING_SPEAKER_QUALITY_CANDIDATE = "0"
+$env:MEETING_WHISPER_GAP_RECOVERY = if ($RecoverVadGaps.IsPresent) { "1" } else { "0" }
+$env:MEETING_WHISPER_WINDOW_VAD_BYPASS = if ($BypassWindowVad.IsPresent) { "1" } else { "0" }
+$env:MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT = if ($PreserveVerifiedText.IsPresent) { "1" } else { "0" }
+$env:MEETING_CONTENT_FIRST_FUSION = if ($ContentFirst.IsPresent) { "1" } else { "0" }
+$env:MEETING_ASR_COVERAGE_RETENTION = "0"
+$env:MEETING_WHISPER_DUAL_VAD = "0"
+$env:MEETING_CAPTION_WORD_BOUNDS = if ($WordBounds.IsPresent) { "1" } else { "0" }
+
+# Preflight model weights, Transformers API and CUDA compatibility before
+# starting a timed microphone replay. The subprocess caches weights locally.
+& $PythonExe -c "from speech.nemotron_stream import _model_resources; _model_resources('low_latency'); print('Nemotron model preflight passed')"
+if ($LASTEXITCODE -ne 0) {
+    throw "Nemotron dependencies, CUDA or model weights are unavailable."
+}
+
+$healthUrl = "http://127.0.0.1:$Port/api/health"
+try {
+    $alreadyRunning = $null
+    try {
+        $alreadyRunning = Invoke-RestMethod $healthUrl -TimeoutSec 2
+    } catch {
+        $alreadyRunning = $null
+    }
+    if ($null -ne $alreadyRunning) {
+        throw "Port $Port already hosts a service. Choose a different -Port; refusing to test an unknown backend."
+    }
+
+    $server = Start-Process -FilePath $PythonExe -WorkingDirectory $repoRoot `
+        -ArgumentList @("-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "$Port") `
+        -RedirectStandardOutput $outLog -RedirectStandardError $errLog -PassThru
+
+    try {
+        $ready = $false
+        for ($i = 0; $i -lt 90; $i++) {
+            Start-Sleep -Seconds 2
+            if ($server.HasExited) {
+                throw "Backend exited during startup. Inspect $errLog"
+            }
+            try {
+                $null = Invoke-RestMethod $healthUrl -TimeoutSec 2
+                $ready = $true
+                break
+            } catch {
+                # Cold model preload can extend startup time.
+            }
+        }
+        if (-not $ready) {
+            throw "Backend health endpoint did not become ready. Inspect $errLog"
+        }
+
+        $wsUrl = "ws://127.0.0.1:$Port/ws/audio?language=auto&record_audio=false&translate_to="
+        $replayArgs = @(
+            "-m", "tools.live_caption_ws_replay",
+            "--audio", $audio, "--loops", "1", "--speed", "1.0",
+            "--final-timeout", "240", "--url", $wsUrl,
+            "--output", $replay
+        )
+        if ($HumanReferenceText) {
+            $replayArgs += @("--reference-text", $HumanReferenceText)
+        }
+        if ($ExportPrivateTranscript.IsPresent) {
+            $replayArgs += @(
+                "--transcript-output", $privateTranscript,
+                "--segment-audit-output", $privateSegmentAudit
+            )
+        }
+        & $PythonExe @replayArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "Realtime replay failed. Inspect $errLog"
+        }
+        $r = Get-Content $replay -Raw | ConvertFrom-Json
+        if ($r.server_ready.independent_diarization -ne "nemotron3") {
+            throw "Wrong backend profile was used."
+        }
+        if ($r.delivery_matched -ne $true -or $r.server_closed -ne $true) {
+            throw "Replay was not completed cleanly."
+        }
+        if ($r.independent_diarization.complete -ne $true) {
+            throw "Nemotron failed: $($r.independent_diarization.error). Inspect $errLog"
+        }
+        if ($null -eq $r.final_cluster_diagnostics.anonymous_timeline) {
+            throw "Missing caption-derived RTTM diagnostics."
+        }
+
+        & $PythonExe -m tools.ami_nemotron_live_score `
+            --root $root --meeting TS3003b --replay $replay `
+            --baseline $baseline --output $score --require-under-20
+        $derExit = $LASTEXITCODE
+
+        & $PythonExe -m tools.ami_asr_stage_gap_audit `
+            --root $root --meeting TS3003b --replay $replay `
+            --output $gaps
+        if ($LASTEXITCODE -ne 0) {
+            throw "ASR stage gap audit failed."
+        }
+
+        # Always compute the paired forced-alignment diagnostic. The
+        # strict only_words gate above is intentionally NOT rewritten.
+        & $PythonExe -m tools.ami_nemotron_reference_diagnostic `
+            --root $root --meeting TS3003b --replay $replay `
+            --output $forced
+        if ($LASTEXITCODE -ne 0) {
+            throw "Forced-alignment comparison failed."
+        }
+
+        & $PythonExe -m tools.ami_asr_stage_gap_audit `
+            --root $root --meeting TS3003b --replay $replay `
+            --reference-protocol forced_aligned --output $forcedGaps
+        if ($LASTEXITCODE -ne 0) {
+            throw "Forced-alignment ASR-stage gap audit failed."
+        }
+
+        $d = Get-Content $forced -Raw | ConvertFrom-Json
+        $g = Get-Content $forcedGaps -Raw | ConvertFrom-Json
+        $overlap = $r.content_overlap_audit
+        $textGateExit = $null
+        if ($HumanReferenceText) {
+            $textArgs = @(
+                "-m", "tools.phase1_text_acceptance",
+                "--replay", $replay,
+                "--audio-sha256", [string]$r.source_audio_sha256,
+                "--reference-sha256", $humanReferenceHash,
+                "--output", $textGateReport
+            )
+            if ($HumanReferenceVerified.IsPresent) {
+                $textArgs += "--human-reference-verified"
+            }
+            & $PythonExe @textArgs
+            $textGateExit = $LASTEXITCODE
+        }
+        $independentForcedPass = (
+            [double]$d.forced_aligned_independent_der -lt 0.10
+        )
+        $publishedForcedPass = (
+            [double]$d.forced_aligned_caption_der -lt 0.10
+        )
+        $clockMasked = [double]$d.forced_aligned_caption_clock_masked_acoustic_der
+
+        Write-Host ""
+        Write-Host "Independent Nemotron report: $score"
+        Write-Host "ASR missing-caption report: $gaps"
+        Write-Host "Paired forced-reference comparison: $forced"
+        Write-Host "Forced-reference ASR-stage gaps: $forcedGaps"
+        Write-Host "Backend logs: $errLog"
+        if ($ExportPrivateTranscript.IsPresent) {
+            Write-Host "Private finalized transcript: $privateTranscript"
+            Write-Host "Private segment audit: $privateSegmentAudit"
+        }
+        Write-Host ("Original only_words independent DER: {0:P3}" -f ([double]$d.original_only_words_independent_der))
+        Write-Host ("Forced reference independent DER: {0:P3}" -f ([double]$d.forced_aligned_independent_der))
+        Write-Host ("Forced reference caption-clock counterfactual DER: {0:P3}" -f $clockMasked)
+        Write-Host ("Forced reference ACTUAL published-caption DER: {0:P3}" -f ([double]$d.forced_aligned_caption_der))
+        Write-Host ("Forced reference published speaker count: {0}" -f ([int]$d.forced_aligned_caption_metrics.predicted_speaker_count))
+        Write-Host ("Word-aligned caption bounds active: {0}" -f $WordBounds.IsPresent)
+        Write-Host ("Inner Whisper window VAD bypassed: {0}" -f $BypassWindowVad.IsPresent)
+        Write-Host ("Bounded VAD-gap ASR retries: {0}" -f $RecoverVadGaps.IsPresent)
+        Write-Host ("Word-conserving speaker projection active: {0}" -f $ContentFirst.IsPresent)
+        Write-Host ("Preserve VAD-supported unaligned ASR text: {0}" -f $PreserveVerifiedText.IsPresent)
+        Write-Host ("Verified speaker-switch display splits: {0}" -f $d.display_speaker_cue_splits)
+        if ($null -ne $d.forced_aligned_display_projection_metrics) {
+            Write-Host ("UI-projected speaker cue DER (NOT canonical caption DER): {0:P3}" -f ([double]$d.forced_aligned_display_projection_metrics.der))
+        }
+        Write-Host ("Forced-reference no-caption clock seconds: {0}" -f $g.reference_clock_no_caption_seconds)
+        Write-Host ("Forced-reference VAD-without-raw-model seconds: {0}" -f $g.gap_causes_seconds.vad_without_raw_model_timestamp)
+        Write-Host ("ASR recovery attempted / confirmed: {0} / {1}" -f $g.recovery_counts.recovery_attempted, $g.recovery_counts.recovery_confirmed)
+        if ($HumanReferenceText) {
+            Write-Host "Human-reference text acceptance report: $textGateReport"
+            Write-Host ("Human-reference character error rate: {0:P2}" -f ([double]$r.reference_scoring.cer))
+            Write-Host ("Human-reference character deletion rate: {0:P2}" -f ([double]$r.reference_scoring.reference_character_deletion_rate))
+            Write-Host ("Human-reference text gate passed: {0}" -f ($textGateExit -eq 0))
+        } else {
+            Write-Host "Human-reference CER/WER: NOT MEASURED; no verified transcript provided."
+        }
+        if ($null -ne $g.commit_totals_across_cycles) {
+            $c = $g.commit_totals_across_cycles
+            Write-Host ("ASR candidates / published / held / duplicates / invalid: {0} / {1} / {2} / {3} / {4}" -f $c.verified_candidates, $c.published_new, $c.held, $c.duplicate_skipped, $c.invalid_timestamps)
+        }
+        if ($null -ne $overlap) {
+            Write-Host ("Acoustic overlapping-voice clock (ms): {0}" -f $overlap.overlap_acoustic_clock_ms)
+            Write-Host ("Canonical overlapping voice underrepresented (ms): {0}" -f $overlap.overlap_clock_underrepresented_ms)
+            if ($null -ne $overlap.actual_ui_display_projection) {
+                Write-Host ("UI-projected overlapping voice underrepresented (ms, separate score): {0}" -f $overlap.actual_ui_display_projection.overlap_clock_underrepresented_ms)
+                Write-Host ("UI-projected overlapping voice with no caption (ms): {0}" -f $overlap.actual_ui_display_projection.overlap_clock_no_caption_ms)
+            }
+        }
+
+        if ($null -ne $textGateExit -and $textGateExit -ne 0) {
+            throw "Human-reference text gate did not pass; see $textGateReport."
+        }
+        if ($RequirePublishedForcedUnder10.IsPresent -and -not $publishedForcedPass) {
+            throw "Forced-reference PUBLISHED caption DER remains >=10%; NOT accepted."
+        }
+        if ($derExit -ne 0) {
+            throw "Frozen original only_words independent DER remains >=20%; NOT accepted. Forced-reference scores are separate diagnostics above."
+        }
+        Write-Host "Original only_words independent DER under 20% on this one frozen AMI sample."
+        if ($independentForcedPass) {
+            Write-Host "Forced-alignment independent DER also under 10% (different reference protocol)."
+        }
+        if (-not $publishedForcedPass) {
+            Write-Host "Final published-caption DER is NOT below 10% on the forced reference."
+        }
+        Write-Host "Further multi-meeting, multilingual, text-accuracy and latency validation is required."
+    } finally {
+        if ($null -ne $server -and -not $server.HasExited) {
+            Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
+} catch {
+    Write-Error $_
+    exit 1
+}
+) {
+    throw "OutputTag must be a safe local artifact identifier."
+}
+$timestamp = if ($OutputTag) { $OutputTag } else { Get-Date -Format "yyyyMMdd-HHmmss" }
 $replay = Join-Path $root "replay_TS3003b_nemotron_$timestamp.json"
 $score = Join-Path $root "audit_TS3003b_nemotron_$timestamp.json"
 $gaps = Join-Path $root "audit_TS3003b_asr_stages_$timestamp.json"
