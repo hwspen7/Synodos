@@ -12,6 +12,7 @@ from core.runtime import settings, sessions, meeting_sessions, meeting_store, sp
 from sessions.session import Session
 from speech.config import load_settings
 from speech.diarization import resolve_diarization_mode
+from speech.quality_profile import quality_candidate_enabled, speaker_candidate_enabled
 from speech.recording import RecordingWriter, RecordingQuotaExceeded
 from speech.streaming import NativeOnlineRecognizer, PreviewTracker
 import os
@@ -243,11 +244,11 @@ async def ws_audio(
             "spk_threshold": session.processor.spk_threshold,
             "min_speaker_audio_s": settings.min_speaker_audio_s,
             "asr_engine": speech_config.engine,
-            "asr_quality_candidate": os.getenv("MEETING_ASR_QUALITY_CANDIDATE", "0").strip().lower() in ("1", "true", "yes"),
-            "speaker_quality_candidate": os.getenv("MEETING_SPEAKER_QUALITY_CANDIDATE", "0").strip().lower() in ("1", "true", "yes"),
+            "asr_quality_candidate": quality_candidate_enabled(),
+            "speaker_quality_candidate": speaker_candidate_enabled(),
             "speaker_cluster_strategy": os.getenv(
                 "MEETING_SPEAKER_CLUSTER_STRATEGY",
-                "candidate" if os.getenv("MEETING_SPEAKER_QUALITY_CANDIDATE", "0").strip().lower() in ("1", "true", "yes") else "bootstrap",
+                "candidate" if speaker_candidate_enabled() else "bootstrap",
             ),
             "asr_model": speech_config.model if speech_config.engine != "legacy" else settings.asr_model,
             "diarization_mode": resolve_diarization_mode(
