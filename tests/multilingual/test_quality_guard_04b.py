@@ -34,7 +34,7 @@ def _segment(start: float, end: float, text: str):
 
 class WhisperQualityGuardTests(unittest.TestCase):
     @staticmethod
-    def _run(regions, pieces):
+    def _run(regions, pieces, *, flags=None):
         vad = types.ModuleType("faster_whisper.vad")
         vad.VadOptions = _VadOptions
         vad.get_speech_timestamps = lambda *args, **kwargs: regions
@@ -42,9 +42,16 @@ class WhisperQualityGuardTests(unittest.TestCase):
         main_module.vad = vad
         model = _Model(pieces)
         engine = WhisperEngine("dummy", device="cpu", compute_type="int8")
-        with patch.dict(sys.modules, {"faster_whisper": main_module, "faster_whisper.vad": vad}):
-            with patch.object(engine, "_get_model", return_value=model):
-                output = engine.recognize(np.zeros(16000 * 4, dtype=np.float32))
+        baseline_flags = {
+            "MEETING_WHISPER_SKIP_INTERNAL_VAD": "0",
+            "MEETING_WHISPER_GAP_RECOVERY": "0",
+            "MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT": "0",
+        }
+        baseline_flags.update(flags or {})
+        with patch.dict("os.environ", baseline_flags):
+            with patch.dict(sys.modules, {"faster_whisper": main_module, "faster_whisper.vad": vad}):
+                with patch.object(engine, "_get_model", return_value=model):
+                    output = engine.recognize(np.zeros(16000 * 4, dtype=np.float32))
         return output, model
 
     def test_complete_silence_does_not_start_whisper(self):
@@ -56,19 +63,41 @@ class WhisperQualityGuardTests(unittest.TestCase):
         output, model = self._run([{"start": 0, "end": 16000}],
                                   [_segment(2, 3, "Thanks for watching")])
         self.assertEqual(output.utterances, ())
-        # A bounded retry is allowed on the uncovered VAD-positive span,
-        # but unsupported model text must not appear in the transcript.
-        self.assertEqual(model.calls, 2)
+        # Baseline must never trigger an unrequested second decode.
+        self.assertEqual(model.calls, 1)
 
     def test_real_speech_is_retained(self):
         output, model = self._run([{"start": 1600, "end": 19000}],
                                   [_segment(0.2, 1.1, "Meeting audio")])
         self.assertEqual([item.text for item in output.utterances], ["Meeting audio"])
-        # External Silero VAD is already verified; do not apply another
-        # internal VAD that can silently remove weak speech.
-        self.assertFalse(model.kwargs["vad_filter"])
+        # Preserve the published V6 acoustic decoding behavior.
+        self.assertTrue(model.kwargs["vad_filter"])
+        self.assertEqual(
+            model.kwargs["vad_parameters"]["min_silence_duration_ms"], 650,
+        )
         self.assertFalse(model.kwargs["condition_on_previous_text"])
         self.assertEqual(model.kwargs["hallucination_silence_threshold"], 1.2)
+
+    def test_second_decode_requires_explicit_opt_in(self):
+        flags = {"MEETING_WHISPER_GAP_RECOVERY": "1"}
+        output, model = self._run(
+            [{"start": 0, "end": 16000}],
+            [_segment(2, 3, "Unsupported")],
+            flags=flags,
+        )
+        self.assertEqual(output.utterances, ())
+        self.assertEqual(model.calls, 2)
+        # Retry overrides only its own subwindow, not the normal ASR input.
+        self.assertFalse(model.kwargs["vad_filter"])
+
+    def test_vad_bypass_requires_explicit_opt_in(self):
+        output, model = self._run(
+            [{"start": 0, "end": 16000}],
+            [_segment(0.1, 0.9, "Real words")],
+            flags={"MEETING_WHISPER_SKIP_INTERNAL_VAD": "1"},
+        )
+        self.assertEqual(len(output.utterances), 1)
+        self.assertFalse(model.kwargs["vad_filter"])
 
     def test_zero_length_fragment_is_rejected(self):
         output, _ = self._run([{"start": 0, "end": 16000}],
