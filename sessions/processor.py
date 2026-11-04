@@ -364,6 +364,8 @@ class SessionProcessor(threading.Thread):
                             item["speaker_id"] = self._independent_published[
                                 segment["id"]
                             ]
+                        if segment["id"] in self._independent_support:
+                            item.update(self._independent_support[segment["id"]])
                         timeline_records.append(item)
                     summary["anonymous_timeline"] = anonymous_speaker_timeline(
                         timeline_records, self.settings.sample_rate
@@ -1576,21 +1578,30 @@ class SessionProcessor(threading.Thread):
                         item["speaker_status"] = "acoustic_primary"
                         item["speaker_diarization_source"] = "nemotron3"
                         if official_turns is not None:
-                            support = caption_support_summary(
-                                official_turns, start_ms, end_ms,
-                                decision.speaker_id,
-                            )
-                            # Return absolute meeting time to consumers,
-                            # even when the AOSC state began after reconnect.
-                            offset_ms = round(
-                                origin * 1000 / self.settings.sample_rate
-                            )
-                            support["speaker_activity_intervals_ms"] = [
-                                [a + offset_ms, b + offset_ms]
-                                for a, b in support["speaker_activity_intervals_ms"]
-                            ]
-                            item.update(support)
-                            self._independent_support[int(item["id"])] = support
+                            try:
+                                support = caption_support_summary(
+                                    official_turns, start_ms, end_ms,
+                                    decision.speaker_id,
+                                )
+                                # Return absolute meeting time to consumers,
+                                # even when the AOSC state began after reconnect.
+                                offset_ms = round(
+                                    origin * 1000 / self.settings.sample_rate
+                                )
+                                support["speaker_activity_intervals_ms"] = [
+                                    [a + offset_ms, b + offset_ms]
+                                    for a, b in support["speaker_activity_intervals_ms"]
+                                ]
+                            except ValueError:
+                                # Optional metadata must never delete a valid
+                                # caption or interrupt meeting finalization.
+                                logger.warning(
+                                    "Invalid official caption acoustic support",
+                                    exc_info=True,
+                                )
+                            else:
+                                item.update(support)
+                                self._independent_support[int(item["id"])] = support
                         self._independent_published[int(item["id"])] = published
                     elif (decision.status == "acoustically_ambiguous"
                           or independent_complete):
