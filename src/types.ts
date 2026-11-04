@@ -16,6 +16,7 @@ export interface ServerReady {
   min_speaker_audio_s?: number
   asr_engine?: string
   asr_model?: string
+  independent_diarization?: 'off' | 'nemotron3'
   diarization_mode?: string
   asr_language?: string
   translation_target?: string
