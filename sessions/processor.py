@@ -45,6 +45,7 @@ from phase07.telemetry import telemetry
 from phase07.speakers import speaker_stats, find_distinct_participant
 from speech.commit_guard import is_temporal_duplicate
 from speech.coverage_retention import choose_safe_drop
+from speech.quality_profile import quality_candidate_enabled
 from speech.contracts import Utterance
 from phase07.recovery import autosave_seconds
 from sessions.outbox import enqueue_message
@@ -745,8 +746,9 @@ class SessionProcessor(threading.Thread):
         # cannot silently authorize dropping earlier speech just because
         # later speech was decoded successfully.
         if (self._speech_settings.engine != "legacy"
-                and os.getenv("MEETING_ASR_COVERAGE_RETENTION", "0").strip().lower()
-                in ("1", "true", "yes")):
+                and (quality_candidate_enabled()
+                     or os.getenv("MEETING_ASR_COVERAGE_RETENTION", "0")
+                     .strip().lower() in ("1", "true", "yes"))):
             voice_ranges = tuple(getattr(
                 recognition, "speech_intervals_ms", (),
             ))
