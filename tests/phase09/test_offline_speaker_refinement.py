@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 from speech.offline_speaker import (
     OfflineDiarizationUnavailable, normalize_turns, run_offline_refinement,
-    validate_recording,
+    validate_recording, find_overlapping_speaker_intervals,
 )
 from speech.text_format import split_display_sentences, ends_finished_thought
 from storage.meetings import MeetingStore
@@ -25,7 +25,52 @@ class FakeDiarizer:
         ])
 
 
+class OverlapAwareDiarizer:
+    def __call__(self, filename: str):
+        seg = lambda start, end: SimpleNamespace(start=start, end=end)
+        full = [
+            (seg(0.0, 4.0), "SPEAKER_A"),
+            (seg(1.0, 3.0), "SPEAKER_B"),
+            (seg(2.0, 2.5), "SPEAKER_C"),
+        ]
+        exclusive = [
+            (seg(0.0, 1.0), "SPEAKER_A"),
+            (seg(1.0, 3.0), "SPEAKER_B"),
+            (seg(3.0, 4.0), "SPEAKER_A"),
+        ]
+        return SimpleNamespace(
+            speaker_diarization=full,
+            exclusive_speaker_diarization=exclusive,
+        )
+
+
 class OfflineSpeakerTests(unittest.TestCase):
+    def test_three_way_overlap_is_preserved_not_flattened(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            meeting, filename = "c" * 32, "d" * 32 + ".wav"
+            (root / meeting).mkdir()
+            (root / meeting / filename).write_bytes(b"RIFF" + b"0" * 100)
+            data = run_offline_refinement(
+                root, meeting, filename, backend=OverlapAwareDiarizer(),
+            )
+        self.assertEqual(data["speaker_count"], 3)
+        self.assertEqual(len(data["speaker_turns"]), 3)
+        self.assertEqual(len(data["exclusive_speaker_turns"]), 3)
+        self.assertEqual(data["overlap_intervals"], [
+            {"start_ms": 1000, "end_ms": 2000, "active_speaker_count": 2},
+            {"start_ms": 2000, "end_ms": 2500, "active_speaker_count": 3},
+            {"start_ms": 2500, "end_ms": 3000, "active_speaker_count": 2},
+        ])
+        self.assertFalse(data["auto_applied"])
+
+    def test_single_person_overlapping_tracks_not_two_people(self):
+        self.assertEqual(find_overlapping_speaker_intervals([
+            {"start_ms": 0, "end_ms": 2000, "speaker": "ONE"},
+            {"start_ms": 500, "end_ms": 1500, "speaker": "ONE"},
+        ]), [])
+
+
     def test_second_model_produces_alternating_turns_without_modifying_text(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
