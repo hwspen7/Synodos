@@ -13,7 +13,9 @@ from hashlib import sha256
 import json
 from pathlib import Path
 
-from tools.ami_shadow10_prepare import DURATION_S, SELECTED, checksum
+from tools.ami_shadow10_prepare import (
+    DURATION_S, SELECTED, checksum, parse_reference, validate_reference,
+)
 from tools.phase07_benchmark import load_wav
 from tools.speaker_stage1_compare import (
     _reference_turns, _score_diarization, baseline_turns,
@@ -113,7 +115,19 @@ def score_case(root: Path, meeting: str, replay_path: Path) -> dict:
     duration_ms = round(len(samples) * 1000 / 16000)
     if duration_ms != DURATION_S * 1000:
         raise ValueError("AMI excerpt must be exactly 240 seconds")
+    # Never trust a case manifest's embedded reference labels alone.
+    # Re-derive them from the pinned local RTTM and verify original bytes.
+    rttm = root / "rttm" / (meeting + ".rttm")
+    if (not rttm.is_file()
+            or checksum(rttm) != case.get("reference_source_sha256")):
+        raise ValueError("AMI RTTM missing or reference checksum changed")
     reference = _reference_turns(case.get("reference_turns"), duration_ms)
+    frozen = parse_reference(
+        rttm.read_text(encoding="utf-8"), meeting, expected_offset,
+    )
+    if frozen != reference:
+        raise ValueError("AMI annotated reference does not match source RTTM")
+    validate_reference(reference)
     replay = json.loads(replay_path.read_text(encoding="utf-8"))
     source_name = str(replay.get("source_audio") or "").replace("\\", "/").split("/")[-1]
     if (source_name != audio.name
