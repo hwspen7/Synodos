@@ -69,6 +69,7 @@ $phase1Tests = @(
     "tests.quality.test_phase1_text_acceptance",
     "tests.quality.test_phase1_fixed195_text_gate",
     "tests.quality.test_phase1_language_policy",
+    "tests.quality.test_ami_human_text_reference",
     "tests.quality.test_content_first_projection",
     "tests.quality.test_ami_content_first_projection",
     "tests.quality.test_overlap_content_risk",
@@ -115,6 +116,8 @@ Require-Pass "Frontend transcript/WebSocket regression"
 $toParse = @(
     "tools/run_nemotron_ami.ps1",
     "tools/run_phase1_engineering.ps1",
+    "tools/run_phase1_closure.ps1",
+    "tools/diagnose_github_actions.ps1",
     "tools/windows/Start-Meeting.ps1"
 )
 foreach ($file in $toParse) {
