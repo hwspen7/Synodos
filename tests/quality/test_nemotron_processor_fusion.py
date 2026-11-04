@@ -79,6 +79,44 @@ class LiveFusionTests(unittest.TestCase):
         state = processor.snapshot_state()
         self.assertEqual(state["segments"][0]["speaker_id"], 8)
 
+    def test_ambiguous_acoustics_never_publish_extra_camplus_speaker(self):
+        processor = processor_for_test()
+        processor.segments[0]["end_sample"] = 8000
+        processor.segments.append({
+            **processor.segments[0],
+            "id": 2,
+            "start_sample": 8000,
+            "end_sample": 16000,
+            "speaker_id": 18,
+            "speaker_name": "Speaker 18",
+            "emb": np.array([0., 1.], dtype=np.float32),
+        })
+        activity = np.zeros((100, 8), dtype=np.float32)
+        activity[:50, 2] = 0.95
+        activity[50:, 0] = 0.77
+        activity[50:, 1] = 0.75
+        processor.independent_diarization = FakeAcoustics(activity)
+        self.assertTrue(processor._rebuild_and_push())
+        self.assertEqual(processor._independent_published, {
+            1: 3, 2: -1,
+        })
+        self.assertEqual(
+            set(processor._independent_published.values()), {3, -1},
+        )
+        state = processor.snapshot_state()
+        self.assertEqual(
+            [row["speaker_id"] for row in state["segments"]],
+            [3, -1],
+        )
+        self.assertEqual(
+            state["segments"][1]["speaker_diarization_source"],
+            "nemotron3_uncertain",
+        )
+        self.assertEqual(
+            state["segments"][1]["speaker_name"],
+            "Unidentified Speaker",
+        )
+
     def test_unscored_activity_does_not_fabricate_speaker(self):
         processor = processor_for_test()
         processor.segments[0]["speaker_id"] = -1
