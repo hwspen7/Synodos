@@ -324,6 +324,38 @@ class SessionProcessor(threading.Thread):
             independent = getattr(self, "independent_diarization", None)
             if independent is not None:
                 closed_payload["independent_diarization"] = independent.report()
+                try:
+                    from speech.overlap_content_risk import overlap_content_risk
+                    official = independent.final_turns_snapshot()
+                    if official is not None:
+                        sr = self.settings.sample_rate
+                        caption_activity = []
+                        for seg in self.segments:
+                            if seg.get("speaker_override"):
+                                sid = int(seg.get("speaker_override_id") or -1)
+                            else:
+                                sid = self._independent_published.get(
+                                    int(seg["id"]), int(seg.get("speaker_id", -1))
+                                )
+                            caption_activity.append({
+                                "start_ms": round(seg["start_sample"] * 1000 / sr),
+                                "end_ms": round(seg["end_sample"] * 1000 / sr),
+                                "speaker_id": sid,
+                            })
+                        closed_payload["content_overlap_audit"] = (
+                            overlap_content_risk(
+                                official, caption_activity,
+                                acoustic_origin_ms=round(
+                                    self._independent_pcm_origin_samples * 1000 / sr
+                                ),
+                                speaker_id_offset=self._independent_id_offset,
+                            )
+                        )
+                except (AttributeError, TypeError, ValueError):
+                    logger.warning(
+                        "Optional final overlapping-voice audit unavailable",
+                        exc_info=True,
+                    )
             if self._asr_stage_trace:
                 closed_payload["asr_coverage_trace"] = {
                     "schema": "meeting-asr-stage-trace-v1",
