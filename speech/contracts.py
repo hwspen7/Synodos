@@ -20,6 +20,7 @@ class Utterance:
     timestamp_quality: str = "segment"
     confidence: float | None = None
     language_confidence: float | None = None
+    recognition_origin: str = "primary"
 
     def as_legacy(self) -> dict:
         return {
@@ -31,6 +32,7 @@ class Utterance:
             "words": [vars(x) for x in self.words],
             "confidence": self.confidence,
             "language_confidence": self.language_confidence,
+            "recognition_origin": self.recognition_origin,
         }
 
 
