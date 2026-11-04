@@ -139,6 +139,10 @@ class SessionProcessor(threading.Thread):
         self._last_inferred_absolute_end = -1
         self._asr_failure_reported = False
         self._last_reclustered_segment_id = 0
+        self._last_clustering_receipt: dict = {
+            "strategy_executed": "not_run",
+            "fallback_reason": None,
+        }
         self._speaker_min_audio_s = float(
             os.getenv("MEETING_SPEAKER_PROBE_MIN_S", "1.2")
         )
@@ -304,6 +308,9 @@ class SessionProcessor(threading.Thread):
                     # may fall back to FunASR on excessive fragmentation.
                     summary["clustering_strategy_requested"] = os.getenv(
                         "MEETING_SPEAKER_CLUSTER_STRATEGY", "bootstrap"
+                    )
+                    summary["clustering_execution"] = dict(
+                        self._last_clustering_receipt
                     )
                     # Review speaker-turn alignment against the original
                     # recording without transmitting any recognized text.
@@ -1010,7 +1017,21 @@ class SessionProcessor(threading.Thread):
         # The standard global acoustic clustering remains the default.
         if pool:
             embs = np.stack([self.segments[i]["emb"] for i in pool]).astype(np.float32)
-            labels = self.models.cluster(embs)
+            detailed_cluster = getattr(
+                self.models, "cluster_with_info", None
+            )
+            if callable(detailed_cluster):
+                labels, receipt = detailed_cluster(embs)
+                self._last_clustering_receipt = dict(receipt)
+            else:
+                labels = self.models.cluster(embs)
+                self._last_clustering_receipt = {
+                    "strategy_requested": "external_model_adapter",
+                    "strategy_executed": "model_cluster",
+                    "input_embeddings": len(embs),
+                    "cluster_count": len(set(map(int, labels))),
+                    "fallback_reason": None,
+                }
             for idx, label in zip(pool, labels):
                 self.segments[idx]["cluster"] = int(label)
 
