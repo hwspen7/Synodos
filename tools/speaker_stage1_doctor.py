@@ -13,7 +13,7 @@ import sys
 MODULES = {
     "camplus": ("numpy", "torch", "funasr"),
     "ecapa": ("numpy", "torch", "torchaudio", "speechbrain"),
-    "nemotron3": ("numpy", "torch", "transformers", "accelerate"),
+    "nemotron3": ("numpy", "torch", "transformers", "accelerate", "librosa"),
 }
 
 
