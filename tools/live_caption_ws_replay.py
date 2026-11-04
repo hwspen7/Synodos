@@ -347,6 +347,7 @@ def capture_event(state: dict, message: dict, elapsed_ms: float,
             "speaker_shadow_diagnostics")
         state["independent_diarization"] = message.get(
             "independent_diarization")
+        state["asr_coverage_trace"] = message.get("asr_coverage_trace")
         return True
     elif kind == "error":
         state["errors"].append(str(message.get("message", ""))[:500])
@@ -382,6 +383,7 @@ def new_capture(
         "server_saved": None, "final_cluster_diagnostics": None,
         "speaker_shadow_diagnostics": None,
         "independent_diarization": None,
+        "asr_coverage_trace": None,
         "audio_delivery_matched": None,
         "audio_received_samples": None,
     }
@@ -587,6 +589,7 @@ async def replay(args) -> dict:
         "final_cluster_diagnostics": counters["final_cluster_diagnostics"],
         "speaker_shadow_diagnostics": counters["speaker_shadow_diagnostics"],
         "independent_diarization": counters["independent_diarization"],
+        "asr_coverage_trace": counters["asr_coverage_trace"],
         "flags": counters["flags"],
         "errors": counters["errors"],
         "voiceprint_accuracy": None,
