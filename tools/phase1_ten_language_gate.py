@@ -21,6 +21,50 @@ SCHEMA = "meeting-phase1-ten-language-text-gate-v1"
 EXCLUDED_ARCHIVE_LANGUAGES = frozenset(("bn", "pt"))
 
 
+def resolve_original_asr_results(path: Path) -> Path:
+    """Recover the paired raw report when given a generated summary JSON.
+
+    Fixed195 writes both 'NAME.json' (130 case-level results) and
+    'NAME_summary.json' (aggregate-only). The summary file typically has
+    the newest modification time and is easily selected by a broad glob.
+    Only the exact sibling file is considered; the original full report
+    must still pass the unchanged fingerprint, audio and reference checks.
+    """
+    if not path.name.endswith("_summary.json"):
+        return path
+
+    summary = json.loads(path.read_text(encoding="utf-8"))
+    if (not isinstance(summary, dict)
+            or summary.get("schema")
+            != "meeting-fixed195-content-review-v1-summary"
+            or summary.get("mode") != "singles"):
+        raise ValueError(
+            "The supplied _summary.json is not a valid Fixed195 singles "
+            "summary. Pass the original 130-case ASR results JSON instead."
+        )
+
+    original = path.with_name(
+        path.name[:-len("_summary.json")] + ".json"
+    )
+    if not original.is_file():
+        raise FileNotFoundError(
+            "Fixed195 summary has no matching original case-level report: "
+            f"{original}. Re-run inference with a new --output name if "
+            "the original report is unavailable."
+        )
+    raw = json.loads(original.read_text(encoding="utf-8"))
+    if (not isinstance(raw, dict)
+            or raw.get("schema") != "meeting-fixed195-content-review-v1"
+            or raw.get("mode") != "singles"
+            or not isinstance(raw.get("single_results"), dict)):
+        raise ValueError(
+            "The paired report is not a complete Fixed195 singles result "
+            "file; do not score aggregate-only summaries."
+        )
+    print(f"Using original ASR results paired with summary: {original}")
+    return original
+
+
 def evaluate_ten_language_selection(
     original_report: dict, *,
     max_overall_cer: float = 0.15,
@@ -163,6 +207,7 @@ def main() -> int:
             or output.suffix.lower() != ".json"
             or output.exists()):
         parser.error("Use the frozen private archive and a new JSON output")
+    results = resolve_original_asr_results(results)
     archive = score_frozen_singles(
         root, results, model=args.model, device=args.device,
         precision=args.compute_type,
