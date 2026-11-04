@@ -205,6 +205,50 @@ acoustic preprocessing, and threshold behavior on independent development
 audio. Never optimize a threshold using the one held-out TS3003b sample
 that will be used for final acceptance.
 
+## Final speaker IDs and optional word-aligned subtitle times
+
+The 2026-11-04 TS3003b diagnostics produced, under the **same forced
+reference**, an independent acoustic DER of 7.368% but published-caption DER
+of 39.591%, with 4 versus 6 published speaker IDs. The historical replay
+precedes these fixes.
+
+Two *separate* improvements now require fresh paired runs:
+
+1. On normal meeting completion, published captions use only speaker channels
+   surviving the **official** Nemotron final turn extraction. Raw 8-channel
+   sigmoid activity cannot independently introduce another speaker label.
+   Ambiguous official turns remain unidentified, and manual overrides win.
+   This final normalization is automatic when independent diarization is
+   enabled, not a ref-score trick. Intermediate live labels are provisional.
+2. `-WordBounds` is an explicit ASR timing candidate. When Whisper's entire
+   recognized word sequence survives verification, use the first/last valid
+   word boundary rather than its broader segment boundaries. It never
+   synthesizes missing words, and segments without valid words keep original
+   timestamps. This may reduce no-speech false alarm but may increase gaps
+   under imperfect word alignment. It is **off** by default.
+
+The single-command test stays opt-in for each variable:
+
+```powershell
+cd E:\Meeting-Fixed10-Test
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\run_nemotron_ami.ps1 -PythonExe "E:\Meeting-Fixed10-Test\.venv\Scripts\python.exe"
+# A second, independent full replay with verified word-bound timing:
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\run_nemotron_ami.ps1 -PythonExe "E:\Meeting-Fixed10-Test\.venv\Scripts\python.exe" -WordBounds
+```
+
+Each run creates uniquely named reports in the E-drive Fixed195 directory.
+The original only_words `--require-under-10` gate will still reject a result
+at 23.768%, even if the *forced-aligned* acoustic DER is under 10%.
+Do not call a changed-reference result a change in model accuracy.
+
+For a **historical replay** produced before the fusion fix, rerun
+`tools.ami_nemotron_reference_diagnostic` with a fresh output path. It now
+also reports `forced_aligned_caption_clock_masked_acoustic_der`: independent
+speaker activity masked to the union of existing subtitle clock intervals.
+It is a controlled diagnostic to separate transcript coverage loss from
+speaker-label projection, **not** a new published-caption DER, a word
+accuracy claim or an end-to-end quality pass.
+
 ## Rollback
 
 ```powershell
