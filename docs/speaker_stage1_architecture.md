@@ -118,8 +118,17 @@ PowerShell checksums:
 The CAM++ baseline must be a completed single-loop real-time WebSocket replay
 of the **same WAV**. It provides an anonymous final timeline under
 final_cluster_diagnostics.anonymous_timeline. Its segment boundaries follow
-the live ASR/cluster pipeline. An aggregate report from a different WAV or a
-truncated timeline is rejected.
+the live ASR/cluster pipeline. The current replay tool also records
+source_audio_sha256, and the comparison checks that digest against the
+manifest audio checksum. Existing replay JSON files **without** that field
+are intentionally rejected. Re-run the same audio once after pulling the
+latest code; do not fabricate or paste the hash manually.
+
+    python -m tools.live_caption_ws_replay --audio benchmark/fixed195/audio/fixed195-en-m01.wav --loops 1 --speed 1.0 --output benchmark/fixed195/stage1_live_baseline_en_m01.json
+
+Then update camplus_replay.path and camplus_replay.sha256 in your *local*
+manifest using the newly generated report and its Get-FileHash value.
+An aggregate report from a different WAV or a truncated timeline is rejected.
 
 For voiceprints, use several consented samples per speaker, recorded on
 different days and microphones, plus different-speaker pairs. Include both
@@ -130,6 +139,8 @@ windows of the same utterance on both sides.
 ## Run the comparisons
 
 **1. Diarization: CAM++ live baseline versus Nemotron 3 offline**
+
+The baseline report must have the new source_audio_sha256 field; see above.
 
     .venv-speaker-nemotron\Scripts\python.exe -m tools.speaker_stage1_compare --mode diarization --root benchmark/fixed195 --manifest benchmark/fixed195/speaker_stage1_manifest.json --diar-device cuda --output benchmark/fixed195/stage1_diarization.json
 
