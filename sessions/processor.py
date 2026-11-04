@@ -151,6 +151,12 @@ class SessionProcessor(threading.Thread):
             "recovery_attempted": 0,
             "recovery_confirmed": 0,
             "recovery_failed": 0,
+            "vad_region_count": 0,
+            "vad_voice_ms": 0,
+            "primary_utterances": 0,
+            "accepted_utterances": 0,
+            "primary_uncovered_vad_ms": 0,
+            "final_uncovered_vad_ms": 0,
         }
         self._last_reclustered_segment_id = 0
         self._last_clustering_receipt: dict = {
@@ -335,6 +341,10 @@ class SessionProcessor(threading.Thread):
                         **self._recovery_diagnostics_total,
                         "untranscribed_voice_gap_count": len(
                             self._speech_coverage_gaps
+                        ),
+                        "interpretation": (
+                            "Sums across overlapping ASR inference windows, "
+                            "NOT unique meeting seconds or measured word recall."
                         ),
                     }
                     closed_payload["diarization_diagnostics"] = summary
@@ -617,7 +627,12 @@ class SessionProcessor(threading.Thread):
             sentences = [piece.as_legacy() for piece in recognition.utterances]
             self._recovery_diagnostics_total["asr_cycles"] += 1
             recovery = getattr(recognition, "recovery_diagnostics", None) or {}
-            for key in ("recovery_attempted", "recovery_confirmed", "recovery_failed"):
+            for key in (
+                "recovery_attempted", "recovery_confirmed", "recovery_failed",
+                "vad_region_count", "vad_voice_ms", "primary_utterances",
+                "accepted_utterances", "primary_uncovered_vad_ms",
+                "final_uncovered_vad_ms",
+            ):
                 value = recovery.get(key, 0)
                 if type(value) is int and value >= 0:
                     self._recovery_diagnostics_total[key] += value
