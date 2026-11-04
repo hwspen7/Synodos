@@ -257,15 +257,19 @@ class SessionProcessor(threading.Thread):
                     break
                 if self._async_ready.is_set():
                     self._async_ready.clear()
-                    speaker_updated = self._collect_speakers()
-                    acoustic_updated = self._collect_acoustic()
-                    self._collect_translations()
-                    if speaker_updated or acoustic_updated:
-                        self._recluster()
-                        self._last_reclustered_segment_id = self._next_segment_id - 1
-                    if self.segments:
-                        self._rebuild_and_push()
-                    continue
+                    # Continuous independent diarization may notify every
+                    # ~0.7s. Never starve ASR when microphone audio has
+                    # already reached the speech inference threshold.
+                    if self.buffer.seconds() < self._process_threshold_s:
+                        speaker_updated = self._collect_speakers()
+                        acoustic_updated = self._collect_acoustic()
+                        self._collect_translations()
+                        if speaker_updated or acoustic_updated:
+                            self._recluster()
+                            self._last_reclustered_segment_id = self._next_segment_id - 1
+                        if self.segments:
+                            self._rebuild_and_push()
+                        continue
                 if self._save_requested.is_set():
                     continue
                 try:
