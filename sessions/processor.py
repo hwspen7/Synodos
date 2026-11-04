@@ -310,7 +310,7 @@ class SessionProcessor(threading.Thread):
                 finally:
                     self._ecapa_shadow.close()
             self._ecapa_shadow_audio.clear()
-            independent = self.independent_diarization
+            independent = getattr(self, "independent_diarization", None)
             if independent is not None:
                 closed_payload["independent_diarization"] = independent.report()
             if self._asr_stage_trace:
@@ -1439,9 +1439,9 @@ class SessionProcessor(threading.Thread):
         # Keep the raw CAM++ embeddings and cluster votes intact. Publish a
         # separate primary-speaker projection only when the source-independent
         # 10 ms Nemotron activity has sufficient evidence.
-        independent = self.independent_diarization
+        independent = getattr(self, "independent_diarization", None)
         self._independent_published = {}
-        origin = self._independent_pcm_origin_samples
+        origin = getattr(self, "_independent_pcm_origin_samples", 0)
         for item, source in zip(items, ordered):
             if source.get("speaker_override"):
                 item["speaker_diarization_source"] = "manual_override"
