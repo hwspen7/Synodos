@@ -623,7 +623,6 @@ class SessionProcessor(threading.Thread):
                     "words": s.get("words", []),
                     "translation": s.get("translation", ""),
                     "revision": s.get("revision", 0),
-                "speaker_profile_id": s.get("speaker_profile_id"),
                     "manually_corrected": bool(s.get("manually_corrected", False)),
                     "speaker_override": bool(s.get("speaker_override", False)),
                     "speaker_override_id": s.get("speaker_override_id"),
