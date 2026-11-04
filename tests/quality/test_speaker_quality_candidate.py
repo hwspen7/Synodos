@@ -5,12 +5,15 @@ No unit test can establish a lower diarization error rate.
 from __future__ import annotations
 
 import os
+import asyncio
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
 import numpy as np
 
+from audio.buffer import AudioBuffer
+from core.config import Settings
 from inference.models import ModelManager
 from sessions.processor import SessionProcessor
 from speech.quality_profile import speaker_candidate_enabled
@@ -22,6 +25,22 @@ class SpeakerCandidateTests(unittest.TestCase):
             self.assertFalse(speaker_candidate_enabled())
         with patch.dict(os.environ, {"MEETING_SPEAKER_QUALITY_CANDIDATE": "1"}):
             self.assertTrue(speaker_candidate_enabled())
+
+    def test_probe_floor_changes_only_for_speaker_candidate(self):
+        with patch.dict(os.environ, {}, clear=True):
+            reference = SessionProcessor(
+                "reference", AudioBuffer(16000, max_seconds=30),
+                Settings(), object(), asyncio.Queue(),
+            )
+        with patch.dict(os.environ, {
+            "MEETING_SPEAKER_QUALITY_CANDIDATE": "1",
+        }, clear=True):
+            candidate = SessionProcessor(
+                "candidate", AudioBuffer(16000, max_seconds=30),
+                Settings(), object(), asyncio.Queue(),
+            )
+        self.assertEqual(reference._speaker_min_audio_s, 1.2)
+        self.assertEqual(candidate._speaker_min_audio_s, 0.9)
 
     def test_strategy_is_independent_and_legacy_is_explicitly_respected(self):
         model = object.__new__(ModelManager)
