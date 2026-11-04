@@ -8,6 +8,7 @@ import numpy as np
 
 from tools.ami_oracle_cluster_eval import (
     evaluate_oracle_clusters, score_reference_partition,
+    provisional_isolated_members,
 )
 from tools.ami_oracle_solo_probe import analyze_solo
 
@@ -81,6 +82,68 @@ class PairwiseMetricsTests(unittest.TestCase):
                 )
                 self.assertEqual(single["sample_count"], 1)
                 self.assertFalse(single["has_repeated_samples"])
+
+    def test_unconfirmed_singleton_can_be_isolated_without_oracle_count(self):
+        # Three coherent voiceprints and one isolated reference voice
+        # deliberately share a raw spherical cluster. Do not publish ID.
+        items = [
+            np.eye(64, dtype=np.float32)[0] for _ in range(3)
+        ] + [np.eye(64, dtype=np.float32)[3]]
+        items += [np.eye(64, dtype=np.float32)[1] for _ in range(6)]
+        items += [np.eye(64, dtype=np.float32)[2] for _ in range(6)]
+        raw = np.array([0] * 4 + [1] * 6 + [2] * 6)
+        reference = ["A"] * 3 + ["D"] + ["B"] * 6 + ["C"] * 6
+        predicted, flagged = provisional_isolated_members(
+            np.stack(items), raw,
+        )
+        self.assertEqual(len(flagged), 1)
+        self.assertEqual(flagged[0]["sample_index"], 3)
+        self.assertEqual(
+            flagged[0]["classification"],
+            "unconfirmed_isolated_voiceprint",
+        )
+        self.assertEqual(len(set(predicted)), 4)
+        before = score_reference_partition(reference, raw)
+        after = score_reference_partition(reference, predicted)
+        self.assertEqual(before["pair_f1"], 0.95652)
+        self.assertEqual(after["pair_f1"], 1.0)
+        self.assertEqual(after["adjusted_rand_index"], 1.0)
+        self.assertNotIn('"embedding":', json.dumps(flagged))
+
+    def test_nearby_voices_and_small_groups_never_spawn_singletons(self):
+        items = np.stack([
+            np.eye(64, dtype=np.float32)[0] for _ in range(8)
+        ])
+        labels, flagged = provisional_isolated_members(
+            items, np.array([0] * 4 + [1] * 4),
+        )
+        self.assertEqual(flagged, [])
+        self.assertEqual(len(set(labels)), 2)
+        # Three supporting examples are required in the remaining core.
+        items[0] = np.eye(64, dtype=np.float32)[8]
+        labels, flagged = provisional_isolated_members(
+            items, np.array([0] * 3 + [1] * 5),
+        )
+        self.assertFalse(flagged)
+        self.assertEqual(len(set(labels)), 2)
+
+    def test_corrupted_audio_indistinguishable_from_novel_person(self):
+        # The hypothesis MUST remain review-only. Even if all four
+        # reference samples are from one real speaker, a corrupted one
+        # may be acoustically distant enough to trigger a false split.
+        data = np.stack([
+            np.eye(64, dtype=np.float32)[0] for _ in range(3)
+        ] + [np.eye(64, dtype=np.float32)[4]])
+        proposed, flagged = provisional_isolated_members(
+            data, np.zeros(4, dtype=np.int32),
+        )
+        self.assertEqual(len(flagged), 1)
+        self.assertEqual(len(set(proposed)), 2)
+        self.assertNotIn("published_speaker_id", json.dumps(flagged))
+        with self.assertRaises(ValueError):
+            provisional_isolated_members(
+                np.zeros((4, 64), dtype=np.float32), np.zeros(4),
+            )
 
     def test_insufficient_samples_and_invalid_reference_fail_closed(self):
         report = evaluate_oracle_clusters({
