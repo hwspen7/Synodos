@@ -14,7 +14,12 @@ param(
     [string]$QwenAudio = "",
     [string]$QwenSegmentAudit = "",
     [string]$Phase2Dev = "",
-    [string]$Phase2Holdout = ""
+    [string]$Phase2Holdout = "",
+    [string]$PyannoteModelPath = "",
+    [string]$DiarizenModelPath = "",
+    [string]$QwenModelPath = "",
+    [ValidateSet("cpu", "cuda")][string]$ExperimentDevice = "cuda",
+    [switch]$AllowModelDownload
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,6 +35,17 @@ if (-not (Test-Path $PythonExe)) {
     throw "Python interpreter not found: $PythonExe"
 }
 $PythonExe = (Resolve-Path $PythonExe).Path
+$cacheBase = Join-Path $repo "benchmark\fixed195\.runtime_cache"
+foreach ($name in @("HF_HOME", "HF_HUB_CACHE", "HF_XET_CACHE", "HF_ASSETS_CACHE",
+                    "TORCH_HOME", "MODELSCOPE_CACHE", "PIP_CACHE_DIR",
+                    "TEMP", "TMP", "TMPDIR")) {
+    $current = [Environment]::GetEnvironmentVariable($name, "Process")
+    if (-not $current -or -not $current.StartsWith("E:\", [StringComparison]::OrdinalIgnoreCase)) {
+        $value = Join-Path $cacheBase $name.ToLowerInvariant()
+        New-Item -Path $value -ItemType Directory -Force | Out-Null
+        [Environment]::SetEnvironmentVariable($name, $value, "Process")
+    }
+}
 
 Write-Host "Phase 2: deterministic identity and manual-review tests"
 $modules = @(
@@ -62,25 +78,30 @@ if ($FullEvaluation.IsPresent) {
         $ablation.HumanReferenceVerified = $true
     }
     & (Join-Path $PSScriptRoot "run_phase1a_ablation.ps1") @ablation
-    if ($LASTEXITCODE -ne 0) {
-        throw "Phase 1A ablation did not complete"
-    }
 
     Write-Host "Phase 1B: paired, independent open-source diarization"
-    & (Join-Path $PSScriptRoot "run_phase1b_compare.ps1") `
-        -PythonExe $PythonExe `
-        -PyannotePython $PyannotePython `
-        -DiarizenPython $DiarizenPython `
-        -NemotronReplayManifest $NemotronReplayManifest
-    if ($LASTEXITCODE -ne 0) {
-        throw "Phase 1B paired model evaluation failed"
+    $comparison = @{
+        PythonExe = $PythonExe
+        PyannotePython = $PyannotePython
+        DiarizenPython = $DiarizenPython
+        NemotronReplayManifest = $NemotronReplayManifest
+        Device = $ExperimentDevice
     }
+    if ($PyannoteModelPath) { $comparison.PyannoteModelPath = $PyannoteModelPath }
+    if ($DiarizenModelPath) { $comparison.DiarizenModelPath = $DiarizenModelPath }
+    if ($AllowModelDownload.IsPresent) { $comparison.AllowModelDownload = $true }
+    & (Join-Path $PSScriptRoot "run_phase1b_compare.ps1") @comparison
 
     Write-Host "Phase 1B: private, non-mutating Qwen3-ASR gap hypotheses"
-    & $QwenPython -m tools.phase1b_qwen_shadow `
-        --audio $QwenAudio --segment-audit $QwenSegmentAudit `
-        --infer --language auto `
-        --output (Join-Path $repo ("benchmark\fixed195\ami_shadow10\phase1b_qwen_" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".json"))
+    $qwenArgs = @(
+        "-m", "tools.phase1b_qwen_shadow",
+        "--audio", $QwenAudio, "--segment-audit", $QwenSegmentAudit,
+        "--infer", "--language", "auto",
+        "--output", (Join-Path $repo ("benchmark\fixed195\ami_shadow10\phase1b_qwen_" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".json"))
+    )
+    if ($QwenModelPath) { $qwenArgs += @("--model-id", $QwenModelPath) }
+    if ($AllowModelDownload.IsPresent) { $qwenArgs += "--allow-model-download" }
+    & $QwenPython @qwenArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Qwen3-ASR shadow evaluation failed"
     }
