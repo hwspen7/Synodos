@@ -188,11 +188,11 @@ try {
         Write-Host "ASR missing-caption report: $gaps"
         Write-Host "Paired forced-reference comparison: $forced"
         Write-Host "Backend logs: $errLog"
-        Write-Host ("Original only_words independent DER: {0:P3}" -f [double]$d.original_only_words_independent_der)
-        Write-Host ("Forced reference independent DER: {0:P3}" -f [double]$d.forced_aligned_independent_der)
+        Write-Host ("Original only_words independent DER: {0:P3}" -f ([double]$d.original_only_words_independent_der))
+        Write-Host ("Forced reference independent DER: {0:P3}" -f ([double]$d.forced_aligned_independent_der))
         Write-Host ("Forced reference caption-clock counterfactual DER: {0:P3}" -f $clockMasked)
-        Write-Host ("Forced reference ACTUAL published-caption DER: {0:P3}" -f [double]$d.forced_aligned_caption_der)
-        Write-Host ("Forced reference published speaker count: {0}" -f [int]$d.forced_aligned_caption_metrics.predicted_speaker_count)
+        Write-Host ("Forced reference ACTUAL published-caption DER: {0:P3}" -f ([double]$d.forced_aligned_caption_der))
+        Write-Host ("Forced reference published speaker count: {0}" -f ([int]$d.forced_aligned_caption_metrics.predicted_speaker_count))
         Write-Host ("Word-aligned caption bounds active: {0}" -f $WordBounds.IsPresent)
 
         if ($RequirePublishedForcedUnder10.IsPresent -and -not $publishedForcedPass) {
