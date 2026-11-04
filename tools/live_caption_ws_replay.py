@@ -25,6 +25,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tools.fixed150_prepare import atomic_json
 from tools.phase07_benchmark import load_wav
+from tools.replay_transcript_score import (
+    finalized_transcript, score_reference, write_private_transcript,
+)
 
 HEADER = struct.Struct(">4sIQ")
 FRAME_SAMPLES = 3200
@@ -242,6 +245,10 @@ def capture_event(state: dict, message: dict, elapsed_ms: float,
         state["confirmed_segment_disappearances"] += len(disappeared)
         # Text is held in memory for comparison, never persisted in reports.
         state["segment_texts"] = updated_text
+        # Snapshot order follows the backend's chronological output. Do not
+        # infer chronology from async-created segment ID numbering.
+        state["segment_order"] = [segment["id"] for segment in incoming
+                                   if type(segment.get("id")) is int]
         state["segment_speakers"] = updated
         state["segment_speaker_names"] = updated_names
         state["final_segment_count"] = len(updated)
@@ -291,7 +298,7 @@ def new_capture(interval_seconds: int = 300) -> dict:
         "last_partial_revision": 0, "last_transcript_version": 0,
         "last_preview_chars": 0, "clear_events": 0,
         "segment_speakers": {}, "segment_speaker_names": {},
-        "segment_texts": {},
+        "segment_texts": {}, "segment_order": [],
         "speaker_reassignments": 0,
         "speaker_change_types": Counter(),
         "speaker_change_counts": Counter(),
@@ -320,6 +327,8 @@ async def replay(args) -> dict:
         raise ValueError("Cannot replay empty audio")
     if args.loops < 1 or args.loops > 100:
         raise ValueError("--loops must be between 1 and 100")
+    if getattr(args, "reference_text", None) and args.loops != 1:
+        raise ValueError("Text accuracy scoring requires exactly one audio loop")
     if not 0.25 <= args.speed <= 8:
         raise ValueError("--speed must be 0.25..8")
     if not 0 <= args.gap_ms <= 3000:
@@ -505,6 +514,28 @@ async def replay(args) -> dict:
         summary["flags"].append("server_audio_sample_count_mismatch")
     if not counters["server_closed"]:
         summary["flags"].append("server_did_not_finish")
+
+    if getattr(args, "reference_text", None) or getattr(
+            args, "transcript_output", None):
+        # Explicit opt-in only. The default report remains transcript-free.
+        # Never score a truncated/broken session as an accurate meeting.
+        if not (summary["server_closed"] and summary["delivery_matched"]
+                and not summary["errors"] and not summary["flags"]):
+            raise RuntimeError(
+                "Cannot score/export transcript from incomplete audio replay")
+        recognized = finalized_transcript(counters)
+        if getattr(args, "reference_text", None):
+            reference = args.reference_text.read_text(encoding="utf-8-sig")
+            score = score_reference(reference, recognized)
+            summary["asr_cer"] = score["cer"]
+            summary["asr_wer"] = score["wer"]
+            summary["reference_scoring"] = score
+            summary["subtitle_completeness"] = (
+                "reference_scored_manual_review_still_required"
+            )
+        if getattr(args, "transcript_output", None):
+            write_private_transcript(args.transcript_output, recognized)
+
     if args.output:
         atomic_json(args.output, summary)
     return summary
@@ -529,6 +560,12 @@ def main() -> int:
                         help="Group progress and caption lag every 5 minutes")
     parser.add_argument("--output", type=Path,
                         default=Path("benchmark/fixed195/live_caption_replay.json"))
+    parser.add_argument("--reference-text", type=Path,
+                        help="Optional verified human transcript (.txt); compute "
+                             "local aggregate CER/WER, never store reference text")
+    parser.add_argument("--transcript-output", type=Path,
+                        help="Explicit opt-in: export final ASR text to a new "
+                             "gitignored benchmark/fixed195/*.txt for human review")
     args = parser.parse_args()
     summary = asyncio.run(replay(args))
     print(json.dumps(summary, ensure_ascii=False, indent=2))
