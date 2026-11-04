@@ -163,6 +163,11 @@ class MeetingStore:
             "speaker_activity_score": s.get("speaker_activity_score"),
             "speaker_activity_margin": s.get("speaker_activity_margin"),
             "speaker_activity_status": s.get("speaker_activity_status"),
+            "speaker_activity_intervals_ms": s.get(
+                "speaker_activity_intervals_ms", [],
+            ),
+            "speaker_activity_fraction": s.get("speaker_activity_fraction"),
+            "speaker_activity_time_source": s.get("speaker_activity_time_source"),
         }
 
     def list_segments(self, meeting_id: str) -> list[dict] | None:
