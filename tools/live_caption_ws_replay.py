@@ -428,6 +428,7 @@ async def replay(args) -> dict:
             raise RuntimeError(f"Server did not send ready: {opening.get('type')}")
         ready = {
             "engine": opening.get("asr_engine"),
+            "asr_quality_candidate": opening.get("asr_quality_candidate"),
             "model": opening.get("asr_model"),
             "diarization_mode": opening.get("diarization_mode"),
             "processing_window_s": opening.get("processing_window_s"),
