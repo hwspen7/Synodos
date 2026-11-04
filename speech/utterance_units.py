@@ -7,7 +7,6 @@ synthetic timing: the frontend may still display soft line breaks.
 """
 from __future__ import annotations
 
-from difflib import SequenceMatcher
 import re
 import unicodedata
 from speech.contracts import Utterance, Word
@@ -21,8 +20,15 @@ _ABBREVIATIONS = frozenset({
 _NUMBER = re.compile(r"^[0-9]+(?:[,.][0-9]+)*[.]?$")
 
 
-def _characters(text: str) -> str:
-    return "".join(c for c in unicodedata.normalize("NFKC", text).casefold() if c.isalnum())
+def _surface(text: str) -> str:
+    """Compare trusted ASR text without silently deleting words or punctuation.
+
+    Visual whitespace and Unicode compatibility forms may differ between
+    sentence-level text and word alignment. Every other character must match
+    before original transcript content can be replaced by timed word groups.
+    """
+    return "".join(char for char in unicodedata.normalize("NFKC", text)
+                   if not char.isspace())
 
 
 def _trailing_terminal(word: str) -> bool:
@@ -61,9 +67,10 @@ def split_utterance(
             any(words[i].start_ms < words[i-1].start_ms for i in range(1, len(words)))):
         return (utterance,)
     rebuilt = _joined(words)
-    old = _characters(utterance.text)
-    new = _characters(rebuilt)
-    if not old or not new or SequenceMatcher(None, old, new, autojunk=False).ratio() < 0.94:
+    source_surface = _surface(utterance.text)
+    if not source_surface or source_surface != _surface(rebuilt):
+        # Approximate word alignments are not authorized to rewrite the
+        # complete Whisper hypothesis, even when the edit distance is small.
         return (utterance,)
     groups: list[list[Word]] = []
     current: list[Word] = []
@@ -94,7 +101,7 @@ def split_utterance(
             text, group[0].start_ms, group[-1].end_ms, utterance.language,
             tuple(group), "word", utterance.confidence, utterance.language_confidence,
         ))
-    if _characters(" ".join(s.text for s in output)) != _characters(rebuilt):
+    if _surface(" ".join(s.text for s in output)) != source_surface:
         return (utterance,)
     return tuple(output)
 
