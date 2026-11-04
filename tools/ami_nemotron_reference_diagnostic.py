@@ -19,7 +19,7 @@ from tools.ami_shadow10_prepare import SELECTED, checksum
 from tools.ami_nemotron_live_score import _validated_independent, _solo_only
 from tools.ami_shadow10_score import score_case
 from tools.phase09_speaker_benchmark import evaluate
-from tools.speaker_stage1_compare import diarization_details
+from tools.speaker_stage1_compare import diarization_details, _reference_turns
 
 REFERENCE_COMMIT = "9527b7c64846fb38316a610f32e9d3466bd6d8b7"
 REFERENCE_SOURCE = "nttcslab-sp/diar-forced-alignment"
@@ -101,6 +101,15 @@ def alternate_score(root: Path, meeting: str, replay_path: Path) -> dict:
     if replay.get("server_ready", {}).get("independent_diarization") != "nemotron3":
         raise ValueError("This replay was not an independent Nemotron run")
     prediction = _validated_independent(replay)
+    frozen_case = json.loads(
+        (root / "cases" / (meeting + ".json")).read_text(encoding="utf-8")
+    )
+    old_reference = _reference_turns(
+        frozen_case["reference_turns"], DURATION_MS,
+    )
+    old_metric = evaluate(old_reference, prediction, step_ms=100)
+    old_details = diarization_details(old_reference, prediction, old_metric)
+    old_metric.pop("speaker_mapping", None)
     raw, reference_sha, reference_file = fetch_forced_rttm(root, meeting)
     offset = dict(SELECTED)[meeting]
     reference = forced_reference(raw, meeting, offset)
@@ -119,7 +128,9 @@ def alternate_score(root: Path, meeting: str, replay_path: Path) -> dict:
         "alternate_reference_commit": REFERENCE_COMMIT,
         "same_audio_and_prediction": True,
         "different_reference_annotations": True,
-        "original_only_words_der": original["metrics"]["der"],
+        "original_only_words_independent_der": old_metric["der"],
+        "original_only_words_independent_metrics": {**old_metric, **old_details},
+        "original_only_words_caption_der": original["metrics"]["der"],
         "forced_aligned_independent_der": measured["der"],
         "forced_aligned_independent_metrics": {**measured, **details},
         "forced_aligned_solo_only_metrics": solo,
