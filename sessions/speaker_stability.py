@@ -358,14 +358,25 @@ def diagnose_fresh_cluster_candidates(
                 "candidate_cluster_count": None,
                 "reason": "invalid_or_excessive_fragmentation",
             })
+    from speech.spherical_cluster import spherical_speaker_candidates
+    try:
+        spherical = spherical_speaker_candidates(array)
+        spherical_report = spherical.details
+    except ValueError as exc:
+        spherical_report = {
+            "available": False,
+            "reason": "spherical_validation_" + type(exc).__name__,
+        }
     return {
         "available": True,
         "eligible_embeddings": len(vectors),
         "candidate_reclustering": candidates,
+        "spherical_candidate": spherical_report,
         "warning": (
-            "Actual complete-link reclustering of original voiceprints, "
-            "NOT a speaker identity claim, speaker-count ground truth or "
-            "calibrated improvement. Compare against human RTTM first."
+            "Complete-link threshold sweeps can overfragment one voice. "
+            "Spherical candidates choose k via a heuristic silhouette score, "
+            "not oracle person count. Neither is speaker identity ground "
+            "truth or a calibrated DER improvement. Verify held-out RTTM."
         ),
     }
 
