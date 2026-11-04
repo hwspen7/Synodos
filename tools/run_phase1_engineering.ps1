@@ -68,6 +68,7 @@ Require-Pass "Python compilation"
 $phase1Tests = @(
     "tests.quality.test_phase1_text_acceptance",
     "tests.quality.test_phase1_fixed195_text_gate",
+    "tests.quality.test_phase1_language_policy",
     "tests.quality.test_content_first_projection",
     "tests.quality.test_ami_content_first_projection",
     "tests.quality.test_overlap_content_risk",
@@ -131,12 +132,12 @@ Write-Host "PowerShell parser regression PASS"
 
 if ($Fixed195Results) {
     $fixedTag = Get-Date -Format "yyyyMMdd-HHmmss"
-    $fixedOutput = Join-Path $root "benchmark\fixed195\phase1_130_text_gate_$fixedTag.json"
-    & $PythonExe -m tools.phase1_fixed195_text_gate --root "benchmark/fixed195" --results $Fixed195Results --output $fixedOutput
-    Require-Pass "Fixed195 human-referenced 130-clip content gate"
+    $fixedOutput = Join-Path $root "benchmark\fixed195\phase1_10_languages_110_text_gate_$fixedTag.json"
+    & $PythonExe -m tools.phase1_ten_language_gate --root "benchmark/fixed195" --results $Fixed195Results --output $fixedOutput
+    Require-Pass "Phase 1 approved 10-language, 110-clip human-reference gate"
     Write-Host "Fixed195 content report: $fixedOutput"
 } else {
-    Write-Host "Fixed195 130-reference text gate NOT RUN (no results supplied)."
+    Write-Host "Phase 1 ten-language, 110-reference text gate NOT RUN (no Fixed195 results supplied)."
 }
 
 if ($ReferenceReplay) {
