@@ -57,7 +57,7 @@ class SpeakerTurnIntegrityTests(unittest.TestCase):
                 self.assertFalse(valid_turn_partition(1000, 2000, "Hi", candidate))
 
     def test_nfkc_and_spacing_are_only_allowed_normalizations(self):
-        self.assertTrue(valid_turn_partition(0, 2000, "ＡＢ C", [
+        self.assertTrue(valid_turn_partition(0, 2000, "\uFF21\uFF22 C", [
             {"start": 0, "end": 2000, "text": "AB C"},
         ]))
         self.assertFalse(valid_turn_partition(0, 2000, "A B C", [
