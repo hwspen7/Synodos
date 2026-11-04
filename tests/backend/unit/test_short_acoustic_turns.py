@@ -6,10 +6,17 @@ not real-world speaker diarization error rates.
 """
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import Future
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
+from audio.buffer import AudioBuffer
+from core.config import Settings
+from sessions.processor import SessionProcessor
+from speech.config import SpeechSettings
 from speech.text_format import join_transcript_text
 from speech.turn_split import split_by_acoustic_turns
 
@@ -133,6 +140,74 @@ class ShortMixedUtteranceTests(unittest.TestCase):
             result[0]["text"], result[1]["text"]),
             sentence["text"],
         )
+
+    def test_async_acoustic_split_preserves_all_confirmed_text_and_timestamps(self):
+        audio = voice_audio((1, 2), 1.2)
+        source = self.sentence()
+        pieces = split_by_acoustic_turns(
+            source, audio, SyntheticSpeakerEmbedding(),
+        )
+        self.assertEqual(len(pieces), 2)
+        cfg = Settings()
+
+        class Models:
+            def embed(self, _audio):
+                return None
+
+        with patch("sessions.processor.load_settings", return_value=SpeechSettings(
+                engine="whisper", model="large-v3")):
+            processor = SessionProcessor(
+                "short-turn-contract", AudioBuffer(RATE), cfg,
+                Models(), asyncio.Queue(),
+            )
+        events = []
+        processor._put = events.append
+        processor.segments = [{
+            "id": 1,
+            "_audio_base_sample": 0,
+            "start_sample": 0,
+            "end_sample": int(2.4 * RATE),
+            "text": source["text"],
+            "language": "en",
+            "words": source["words"],
+            "emb": None,
+            "cluster": -3,
+            "speaker_uncertain": True,
+        }]
+        processor._next_segment_id = 2
+        done = Future()
+        done.set_result(pieces)
+        processor._speaker_tasks[1] = done
+        self.assertTrue(processor._collect_speakers())
+        self.assertEqual(len(processor.segments), 2)
+        self.assertEqual(
+            [s["id"] for s in processor.segments], [1, 2],
+        )
+        self.assertEqual([
+            (round(s["start_sample"] * 1000 / RATE),
+             round(s["end_sample"] * 1000 / RATE))
+            for s in processor.segments
+        ], [(100, 800), (1320, 2260)])
+        self.assertEqual([
+            len(s["words"]) for s in processor.segments
+        ], [2, 2])
+        processor._recluster()
+        self.assertTrue(processor._rebuild_and_push())
+        snapshots = [event for event in events
+                     if event.get("type") == "transcript"]
+        self.assertEqual(len(snapshots), 1)
+        out = snapshots[0]["segments"]
+        self.assertEqual(len(out), 2)
+        self.assertEqual(join_transcript_text(
+            out[0]["text"], out[1]["text"]
+        ), source["text"])
+        self.assertEqual(
+            [(s["start_ms"], s["end_ms"]) for s in out],
+            [(100, 800), (1320, 2260)],
+        )
+        self.assertTrue(all(
+            s["speaker_name"] == "Unidentified Speaker" for s in out
+        ))
 
     def test_invalid_window_bounds_rejected(self):
         with self.assertRaisesRegex(ValueError, "sampling bounds"):
