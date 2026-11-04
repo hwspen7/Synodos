@@ -119,6 +119,53 @@ def _reference_turns(items: object, duration_ms: int) -> list[dict]:
     return checked
 
 
+def diarization_details(reference: list[dict], predicted: list[dict],
+                        der_result: dict) -> dict:
+    """Count speakers and score complete recovery during annotated overlap."""
+    mapping = der_result["speaker_mapping"]
+    ref_names = {turn["speaker"] for turn in reference}
+    hyp_names = {turn["speaker_id"] for turn in predicted}
+    step_ms = der_result["frame_step_ms"]
+    duration = max(
+        [turn["end_ms"] for turn in reference + predicted], default=0
+    )
+    overlap_frames = 0
+    overlap_correct = 0
+    for time_ms in range(0, duration, step_ms):
+        real = {
+            str(t["speaker"]) for t in reference
+            if t["start_ms"] <= time_ms < t["end_ms"]
+        }
+        if len(real) < 2:
+            continue
+        observed = {
+            mapping.get(str(t["speaker_id"]))
+            for t in predicted
+            if t["start_ms"] <= time_ms < t["end_ms"]
+        }
+        overlap_frames += 1
+        overlap_correct += real.issubset(observed)
+    return {
+        "reference_speaker_count": len(ref_names),
+        "predicted_speaker_count": len(hyp_names),
+        "speaker_count_absolute_error": abs(len(hyp_names) - len(ref_names)),
+        "overlap_reference_frames": overlap_frames,
+        "overlap_all_speakers_recall": (
+            round(overlap_correct / overlap_frames, 5)
+            if overlap_frames else None
+        ),
+        "overlap_note": (
+            "All reference speakers must be active in a mapped predicted "
+            "channel during each annotated overlap frame."
+        ),
+    }
+
+
+def _score_diarization(reference: list[dict], predicted: list[dict]) -> dict:
+    result = evaluate(reference, predicted)
+    return {**result, **diarization_details(reference, predicted, result)}
+
+
 def _summarize_diarization(rows: list[dict]) -> dict:
     done = [x for x in rows if x.get("metrics")]
     total_seconds = sum(x["metrics"]["reference_speaker_seconds"] for x in done)
@@ -170,7 +217,7 @@ def compare_diarization(cases: list[dict], root: Path, *,
         outputs["camplus_live"].append({
             "id": case["id"],
             "inference_ms": None,  # replay already ran; no invented latency
-            "metrics": evaluate(reference, baseline_predictions),
+            "metrics": _score_diarization(reference, baseline_predictions),
         })
         try:
             started = time.perf_counter()
@@ -178,7 +225,7 @@ def compare_diarization(cases: list[dict], root: Path, *,
             elapsed = round((time.perf_counter() - started) * 1000, 1)
             outputs["nemotron3"].append({
                 "id": case["id"], "inference_ms": elapsed,
-                "metrics": evaluate(reference, predicted),
+                "metrics": _score_diarization(reference, predicted),
             })
         except Exception as exc:
             # Model inference failures are explicit, never zero DER.
