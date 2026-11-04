@@ -26,6 +26,54 @@ _VALID_OUTCOMES = frozenset({
 })
 _MAX_QUEUE = 6
 _MAX_SECONDS = 6
+# These are minimum electrical levels, not trained speech/VAD thresholds.
+# The ASR-confirmed sentence is the primary speech evidence.
+_MIN_RMS = 0.001
+_FRAME_SAMPLES = 3200
+_SELECTION_SECONDS = 3
+
+
+def select_shadow_window(audio: np.ndarray, sample_rate: int = 16000) -> np.ndarray | None:
+    """Choose the most active 2-3 second excerpt of an ASR-confirmed turn.
+
+    Short-term energy identifies where a word-level segment is loudest.
+    Never fabricate speech from a quiet excerpt, and never normalize
+    noise blindly to force a successful voiceprint.
+    """
+    samples = np.asarray(audio, dtype=np.float32).reshape(-1)
+    if (sample_rate != 16000 or not 2 * sample_rate <= samples.size
+            or samples.size > 120 * sample_rate
+            or not np.isfinite(samples).all()
+            or np.max(np.abs(samples)) > 1.001):
+        return None
+    size = min(_SELECTION_SECONDS * sample_rate, samples.size)
+    step = sample_rate // 2
+    best = None
+    for start in range(0, samples.size - size + 1, step):
+        window = samples[start:start + size]
+        rms = float(np.sqrt(np.mean(window * window)))
+        if rms < _MIN_RMS:
+            continue
+        frame_count = window.size // _FRAME_SAMPLES
+        if not frame_count:
+            continue
+        frames = window[:frame_count * _FRAME_SAMPLES].reshape(
+            frame_count, _FRAME_SAMPLES
+        )
+        frame_rms = np.sqrt(np.mean(frames * frames, axis=1))
+        active_fraction = float(np.mean(
+            frame_rms >= max(_MIN_RMS, 0.20 * float(frame_rms.max()))
+        ))
+        if active_fraction < 0.40:
+            continue
+        # Prefer broad activity over one short loud transient.
+        score = (active_fraction, min(rms, 0.2))
+        if best is None or score > best[0]:
+            best = (score, start)
+    if best is None:
+        return None
+    start = best[1]
+    return np.array(samples[start:start + size], dtype=np.float32, copy=True)
 
 
 def _enabled() -> bool:
@@ -79,6 +127,7 @@ class EcapaShadowSession:
         self._process: subprocess.Popen | None = None
         self._thread: threading.Thread | None = None
         self._available = True
+        self._observed_labels: set[int] = set()
 
     def submit(self, label: int, audio: np.ndarray) -> bool:
         """Never block or mutate main speaker IDs, text or embeddings."""
@@ -92,7 +141,10 @@ class EcapaShadowSession:
                 self._counts["invalid_audio"] += 1
             return False
         # Fast energy gate reduces background GPU/CPU work but is not a VAD.
-        if float(np.sqrt(np.mean(samples * samples))) < 0.008:
+        # Audio is already a selected 2-3s ASR-confirmed voice excerpt.
+        # The old 0.008 RMS gate rejected quiet but legitimate AMI speech.
+        rms = float(np.sqrt(np.mean(samples * samples)))
+        if rms < _MIN_RMS:
             with self._lock:
                 self._counts["low_energy"] += 1
             return False
@@ -106,6 +158,9 @@ class EcapaShadowSession:
                 self._counts["queue_full"] += 1
                 return False
             self._counts["submitted"] += 1
+            self._observed_labels.add(label)
+            if rms < 0.008:
+                self._counts["accepted_quiet_speech"] += 1
             if self._thread is None:
                 self._thread = threading.Thread(
                     target=self._run, daemon=True,
@@ -183,6 +238,8 @@ class EcapaShadowSession:
                 "mode": "shadow_only_no_identity_changes",
                 "submitted": self._counts["submitted"],
                 "completed": self._counts["completed"],
+                "observed_camplus_speaker_count": len(self._observed_labels),
+                "accepted_quiet_speech": self._counts["accepted_quiet_speech"],
                 "rank_match": self._counts["rank_match"],
                 "rank_conflict": self._counts["rank_conflict"],
                 "seeded": self._counts["seeded"],
