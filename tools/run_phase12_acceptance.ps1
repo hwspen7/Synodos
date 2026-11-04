@@ -51,6 +51,7 @@ foreach ($name in @("HF_HOME", "HF_HUB_CACHE", "HF_XET_CACHE", "HF_ASSETS_CACHE"
 Write-Host "Phase 2: deterministic identity and manual-review tests"
 $modules = @(
     "tests.backend.unit.test_phase2_identity_matcher",
+    "tests.backend.unit.test_phase2_identity_consensus",
     "tests.backend.integration.test_phase2_manual_review",
     "tests.multilingual.test_corrections",
     "tests.quality.test_ami_human_text_reference",
