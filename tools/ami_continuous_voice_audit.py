@@ -260,6 +260,43 @@ def audit_continuous_windows(
             }
             for name, assignments in substructure.variants.items()
         ]
+        # Sequential hypotheses: first separate a coherent subgroup,
+        # then inspect whether its smaller new group contains a lone
+        # acoustically isolated voice. Reference labels are consulted
+        # only in the final score, never to select either partition.
+        # These candidates are NOT published speaker assignments.
+        event_times = {
+            event["vector_index"]: event["start_ms"]
+            for event in events
+            if event.get("vector_index") is not None
+        }
+        result["hierarchical_provisional_review"] = []
+        for name, assignments in substructure.variants.items():
+            if name == "original":
+                continue
+            revised, hypotheses = provisional_isolated_members(
+                array, assignments
+            )
+            result["hierarchical_provisional_review"].append({
+                "source_variant": name,
+                "original_cluster_count": len(set(map(int, assignments))),
+                "provisional_cluster_count": len(set(map(int, revised))),
+                "unconfirmed_candidate_count": len(hypotheses),
+                "unconfirmed_candidates": [
+                    {**hypothesis,
+                     "window_start_ms": event_times[hypothesis["sample_index"]]}
+                    for hypothesis in hypotheses
+                ],
+                "pure_window_score": score_reference_partition(
+                    reference_ids,
+                    revised[pure_vector_indices],
+                ),
+                "warning": (
+                    "Two-stage acoustic hypotheses only. A second split "
+                    "might be noise, overlap, or microphone drift, NOT a "
+                    "new human speaker. No live label is modified."
+                ),
+            })
         result["pure_window_sample_scores"] = {
             "spherical": score_reference_partition(
                 reference_ids, np.asarray(original_labels)
