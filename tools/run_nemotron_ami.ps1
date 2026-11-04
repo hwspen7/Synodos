@@ -11,6 +11,9 @@ param(
     [switch]$RecoverVadGaps,
     [switch]$ContentFirst,
     [switch]$PreserveVerifiedText,
+    [string]$HumanReferenceText = "",
+    [string]$ExpectedReferenceSha256 = "",
+    [switch]$HumanReferenceVerified,
     [switch]$RequirePublishedForcedUnder10
 )
 
@@ -78,6 +81,28 @@ if (-not (Test-Path $baseline)) {
     throw "Frozen V6 audit missing: $baseline"
 }
 
+if ($HumanReferenceVerified.IsPresent -and -not $HumanReferenceText) {
+    throw "-HumanReferenceVerified requires an actual independently verified -HumanReferenceText file."
+}
+$humanReferenceHash = ""
+if ($HumanReferenceText) {
+    if (-not (Test-Path -Path $HumanReferenceText -PathType Leaf)) {
+        throw "Independent reference transcript not found: $HumanReferenceText"
+    }
+    $HumanReferenceText = (Resolve-Path $HumanReferenceText).Path
+    $privateRoot = (Resolve-Path "benchmark/fixed195").Path
+    if (-not $HumanReferenceText.StartsWith(
+        ($privateRoot.TrimEnd('\') + '\'),
+        [System.StringComparison]::OrdinalIgnoreCase
+    )) {
+        throw "Human reference must stay in private E-drive benchmark/fixed195."
+    }
+    $humanReferenceHash = (Get-FileHash -LiteralPath $HumanReferenceText -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($ExpectedReferenceSha256 -and $humanReferenceHash -ne $ExpectedReferenceSha256.ToLowerInvariant()) {
+        throw "Provided human reference transcript does not match its pinned SHA256."
+    }
+}
+
 if (-not $SkipUnitTests) {
     $modules = @(
         "tests.quality.test_nemotron_live_stream",
@@ -91,7 +116,8 @@ if (-not $SkipUnitTests) {
         "tests.quality.test_caption_acoustic_alignment",
         "tests.quality.test_content_first_projection",
         "tests.quality.test_ami_content_first_projection",
-        "tests.quality.test_overlap_content_risk"
+        "tests.quality.test_overlap_content_risk",
+        "tests.quality.test_phase1_text_acceptance"
     )
     foreach ($module in $modules) {
         & $PythonExe -m unittest $module -v
@@ -107,6 +133,7 @@ $score = Join-Path $root "audit_TS3003b_nemotron_$timestamp.json"
 $gaps = Join-Path $root "audit_TS3003b_asr_stages_$timestamp.json"
 $forced = Join-Path $root "audit_TS3003b_forced_comparison_$timestamp.json"
 $forcedGaps = Join-Path $root "audit_TS3003b_forced_asr_stages_$timestamp.json"
+$textGateReport = Join-Path $root "audit_TS3003b_phase1_human_text_$timestamp.json"
 $outLog = Join-Path $root "nemotron_server_$timestamp.stdout.log"
 $errLog = Join-Path $root "nemotron_server_$timestamp.stderr.log"
 
@@ -178,9 +205,16 @@ try {
         }
 
         $wsUrl = "ws://127.0.0.1:$Port/ws/audio?language=auto&record_audio=false&translate_to="
-        & $PythonExe -m tools.live_caption_ws_replay `
-            --audio $audio --loops 1 --speed 1.0 `
-            --final-timeout 240 --url $wsUrl --output $replay
+        $replayArgs = @(
+            "-m", "tools.live_caption_ws_replay",
+            "--audio", $audio, "--loops", "1", "--speed", "1.0",
+            "--final-timeout", "240", "--url", $wsUrl,
+            "--output", $replay
+        )
+        if ($HumanReferenceText) {
+            $replayArgs += @("--reference-text", $HumanReferenceText)
+        }
+        & $PythonExe @replayArgs
         if ($LASTEXITCODE -ne 0) {
             throw "Realtime replay failed. Inspect $errLog"
         }
@@ -229,6 +263,21 @@ try {
         $d = Get-Content $forced -Raw | ConvertFrom-Json
         $g = Get-Content $forcedGaps -Raw | ConvertFrom-Json
         $overlap = $r.content_overlap_audit
+        $textGateExit = $null
+        if ($HumanReferenceText) {
+            $textArgs = @(
+                "-m", "tools.phase1_text_acceptance",
+                "--replay", $replay,
+                "--audio-sha256", [string]$r.source_audio_sha256,
+                "--reference-sha256", $humanReferenceHash,
+                "--output", $textGateReport
+            )
+            if ($HumanReferenceVerified.IsPresent) {
+                $textArgs += "--human-reference-verified"
+            }
+            & $PythonExe @textArgs
+            $textGateExit = $LASTEXITCODE
+        }
         $independentForcedPass = (
             [double]$d.forced_aligned_independent_der -lt 0.10
         )
@@ -260,6 +309,14 @@ try {
         Write-Host ("Forced-reference no-caption clock seconds: {0}" -f $g.reference_clock_no_caption_seconds)
         Write-Host ("Forced-reference VAD-without-raw-model seconds: {0}" -f $g.gap_causes_seconds.vad_without_raw_model_timestamp)
         Write-Host ("ASR recovery attempted / confirmed: {0} / {1}" -f $g.recovery_counts.recovery_attempted, $g.recovery_counts.recovery_confirmed)
+        if ($HumanReferenceText) {
+            Write-Host "Human-reference text acceptance report: $textGateReport"
+            Write-Host ("Human-reference character error rate: {0:P2}" -f ([double]$r.reference_scoring.cer))
+            Write-Host ("Human-reference character deletion rate: {0:P2}" -f ([double]$r.reference_scoring.reference_character_deletion_rate))
+            Write-Host ("Human-reference text gate passed: {0}" -f ($textGateExit -eq 0))
+        } else {
+            Write-Host "Human-reference CER/WER: NOT MEASURED; no verified transcript provided."
+        }
         if ($null -ne $g.commit_totals_across_cycles) {
             $c = $g.commit_totals_across_cycles
             Write-Host ("ASR candidates / published / held / duplicates / invalid: {0} / {1} / {2} / {3} / {4}" -f $c.verified_candidates, $c.published_new, $c.held, $c.duplicate_skipped, $c.invalid_timestamps)
@@ -273,6 +330,9 @@ try {
             }
         }
 
+        if ($null -ne $textGateExit -and $textGateExit -ne 0) {
+            throw "Human-reference text gate did not pass; see $textGateReport."
+        }
         if ($RequirePublishedForcedUnder10.IsPresent -and -not $publishedForcedPass) {
             throw "Forced-reference PUBLISHED caption DER remains >=10%; NOT accepted."
         }
