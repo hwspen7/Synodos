@@ -50,6 +50,20 @@ class ForcedReferenceProtocolTests(unittest.TestCase):
             replay_path = root / "replay.json"
             replay_path.write_text(json.dumps({
                 "server_ready": {"independent_diarization": "nemotron3"},
+                "source_audio_duration_s": 240.0,
+                "delivery_matched": True,
+                "server_closed": True,
+                "errors": [], "flags": [],
+                "final_cluster_diagnostics": {
+                    "anonymous_timeline": {
+                        "truncated": False,
+                        "total_segments": 1,
+                        "segments": [{
+                            "start_ms": 0, "end_ms": 1000,
+                            "published_speaker_id": 1,
+                        }],
+                    },
+                },
             }), encoding="utf-8")
             forced = (
                 "SPEAKER TS3003b 1 1500.000 0.500 <NA> <NA> TS3003b.A <NA> <NA>\n"
@@ -78,6 +92,11 @@ class ForcedReferenceProtocolTests(unittest.TestCase):
             self.assertEqual(result["original_only_words_caption_der"], 0.77)
             self.assertGreater(result["forced_aligned_independent_der"], 0)
             self.assertTrue(result["different_reference_annotations"])
+            self.assertIn("forced_aligned_caption_metrics", result)
+            self.assertGreater(
+                result["forced_aligned_caption_der"],
+                result["forced_aligned_independent_der"],
+            )
             self.assertTrue(result["same_audio_and_prediction"])
 
 
