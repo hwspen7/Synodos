@@ -9,7 +9,7 @@ overlapping word must be recoverable.
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from hashlib import sha256
 import json
 import math
@@ -110,15 +110,17 @@ def words_from_official_archive(
     )
     if not words:
         raise ValueError("No time-aligned words in selected AMI clip")
-    overlaps = 0
-    for index, word in enumerate(words):
-        if any(
+    # Count each lexical entry that overlaps at least one other speaker.
+    # Do not assume all such words were recoverable in headset-mix audio.
+    overlaps = sum(
+        any(
             other.speaker != word.speaker
             and other.start_s < word.end_s
             and other.end_s > word.start_s
-            for other in words[max(0, index - 30):index]
-        ):
-            overlaps += 1
+            for other in words
+        )
+        for word in words
+    )
     return words, {
         "source": "AMI manual annotations v1.6.2 (CC BY 4.0)",
         "source_url": ANNOTATION_URL,
