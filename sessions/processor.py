@@ -623,10 +623,13 @@ class SessionProcessor(threading.Thread):
                     "words": s.get("words", []),
                     "translation": s.get("translation", ""),
                     "revision": s.get("revision", 0),
+                "speaker_profile_id": s.get("speaker_profile_id"),
                     "manually_corrected": bool(s.get("manually_corrected", False)),
                     "speaker_override": bool(s.get("speaker_override", False)),
                     "speaker_override_id": s.get("speaker_override_id"),
                     "speaker_override_name": s.get("speaker_override_name"),
+                    "speaker_profile_id": s.get("speaker_profile_id"),
+                    "original_asr_text": s.get("original_asr_text"),
                     "corrections": s.get("corrections", []),
                 }
                 for s in self.segments
@@ -694,6 +697,8 @@ class SessionProcessor(threading.Thread):
                     "speaker_override": bool(item.get("speaker_override", False)),
                     "speaker_override_id": item.get("speaker_override_id"),
                     "speaker_override_name": item.get("speaker_override_name"),
+                    "speaker_profile_id": item.get("speaker_profile_id"),
+                    "original_asr_text": item.get("original_asr_text"),
                     "corrections": item.get("corrections", []),
                 }
             )
