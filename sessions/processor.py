@@ -456,12 +456,16 @@ class SessionProcessor(threading.Thread):
                     "end_sample": s["end_sample"],
                     "text": s["text"],
                     "cluster": s["cluster"],
-                    "speaker_id": self._independent_published.get(
-                        int(s["id"]),
-                        s.get("saved_nemotron_id") or s.get(
-                            "speaker_id",
-                            self._speaker_map.get(s["cluster"], s["cluster"]),
-                        ),
+                    "speaker_id": (
+                        int(s.get("speaker_override_id") or -1)
+                        if s.get("speaker_override")
+                        else self._independent_published.get(
+                            int(s["id"]),
+                            s.get("saved_nemotron_id") or s.get(
+                                "speaker_id",
+                                self._speaker_map.get(s["cluster"], s["cluster"]),
+                            ),
+                        )
                     ),
                     "speaker_name": (
                         f"Speaker {self._independent_published[int(s['id'])]}"
