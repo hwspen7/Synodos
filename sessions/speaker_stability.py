@@ -159,6 +159,7 @@ def summarize_cluster_fragmentation(
             "speaker_task_backpressure_or_failure",
             "turn_analysis_unavailable", "turn_voiceprint",
             "turn_ambiguous", "turn_no_voiceprint", "acoustic_backfill",
+            "short_probe",
             "not_recorded",
         }:
             reason = "other"
