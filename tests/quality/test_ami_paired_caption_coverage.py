@@ -26,6 +26,32 @@ class PairedCoverageTests(unittest.TestCase):
         self.assertEqual(result["newly_covered_s"], 0.2)
         self.assertEqual(result["coverage_lost_s"], 0.2)
         self.assertEqual(result["net_new_coverage_s"], 0)
+        self.assertEqual(result["longest_newly_covered_intervals"], [
+            {"start_ms": 600, "end_ms": 800, "duration_ms": 200},
+        ])
+        self.assertEqual(result["longest_coverage_lost_intervals"], [
+            {"start_ms": 0, "end_ms": 200, "duration_ms": 200},
+        ])
+        self.assertEqual(result["longest_missing_in_both_intervals"], [
+            {"start_ms": 800, "end_ms": 1000, "duration_ms": 200},
+        ])
+
+    def test_reference_silence_terminates_missing_runs(self):
+        reference = [
+            {"start_ms": 0, "end_ms": 300, "speaker": "A"},
+            {"start_ms": 500, "end_ms": 800, "speaker": "B"},
+        ]
+        result = framewise_caption_change(
+            reference, [], [], duration_ms=1000,
+        )
+        self.assertEqual(result["unchanged_missing_s"], 0.6)
+        self.assertEqual(
+            result["longest_missing_in_both_intervals"],
+            [
+                {"start_ms": 0, "end_ms": 300, "duration_ms": 300},
+                {"start_ms": 500, "end_ms": 800, "duration_ms": 300},
+            ],
+        )
 
     def test_overlapping_reference_talkers_count_one_clock_frame(self):
         reference = [
