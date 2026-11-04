@@ -77,6 +77,17 @@ async def ws_audio(
     if len(language) > 24 or len(translate_to or "") > 24:
         await websocket.close(code=1008, reason="Invalid language")
         return
+    try:
+        language = spoken_language(language)
+        selected_translation = translation_target(
+            speech_config.translate_to if translate_to is None else translate_to
+        )
+    except ValueError:
+        # Explicit unsupported selections fail before opening a recording.
+        # Automatic detection is still permitted and recognized text is
+        # never filtered based on a provider's detected language code.
+        await websocket.close(code=1008, reason="Language not enabled in Phase 1")
+        return
     await websocket.accept()
     metrics.increment("websocket_accepted")
     audio_archive = None
@@ -182,7 +193,7 @@ async def ws_audio(
         )
         try:
             session.processor.speech_language = language
-            session.processor.translate_target = speech_config.translate_to if translate_to is None else translate_to
+            session.processor.translate_target = selected_translation
             session.start(loop, state=loaded_state)
             session.processor.ui_settings = {
                 "language": language,
