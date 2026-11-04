@@ -206,3 +206,49 @@ def project_confirmed_caption(
         "status": "split_verified" if len(cues) > 1 else "one_speaker",
         "text_preserved": True,
     }
+
+def project_caption_activity_for_audit(
+    source_captions: Sequence[Mapping],
+    display_projections: Mapping[int, Mapping],
+) -> list[dict]:
+    """Text-free actual displayed speaker activity, without duplicating parents.
+
+    A verified split replaces the parent's one-speaker timing in the UI
+    audit only. Unknown speaker cue spans remain unattributed. Canonical
+    captions and the frozen DER scorer stay unchanged.
+    """
+    if not isinstance(source_captions, (list, tuple)):
+        raise ValueError("Canonical captions must be ordered records")
+    if not isinstance(display_projections, Mapping):
+        raise ValueError("Projection index must be a mapping")
+    rows: list[dict] = []
+    for segment in source_captions:
+        if not isinstance(segment, Mapping):
+            raise ValueError("Malformed canonical caption")
+        sid = segment.get("id")
+        a, b, speaker = (
+            segment.get("start_ms"), segment.get("end_ms"),
+            segment.get("speaker_id"),
+        )
+        if (type(sid) is not int or type(a) is not int or type(b) is not int
+                or a < 0 or b <= a or type(speaker) is not int):
+            raise ValueError("Malformed canonical caption geometry")
+        projection = display_projections.get(sid)
+        cues = projection.get("cues") if isinstance(projection, Mapping) else None
+        status = projection.get("status") if isinstance(projection, Mapping) else None
+        if status == "split_verified" and isinstance(cues, list) and len(cues) > 1:
+            for cue in cues:
+                p, q, voice = (cue.get("start_ms"), cue.get("end_ms"),
+                               cue.get("speaker_id"))
+                if (type(p) is not int or type(q) is not int or
+                        type(voice) is not int or p < a - 150 or q > b + 150
+                        or q <= p):
+                    raise ValueError("Malformed displayed speaker cue")
+                rows.append({
+                    "start_ms": p, "end_ms": q, "speaker_id": voice,
+                })
+        else:
+            rows.append({
+                "start_ms": a, "end_ms": b, "speaker_id": speaker,
+            })
+    return rows
