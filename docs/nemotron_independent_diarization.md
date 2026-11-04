@@ -268,6 +268,69 @@ It is a controlled diagnostic to separate transcript coverage loss from
 speaker-label projection, **not** a new published-caption DER, a word
 accuracy claim or an end-to-end quality pass.
 
+## Next isolated ASR-coverage experiments (2026-11-04)
+
+The confirmed baseline is the user-run 14:02 TS3003b replay with
+*forced-aligned* independent DER **7.368%**, published-caption DER **35.439%**,
+and four published speakers. The separate `-WordBounds` replay at 14:08
+yielded **35.731%** published DER, not an improvement. WordBounds stays OFF.
+
+The following two candidates change different failure stages and MUST be run
+one at a time, with a fresh backend and unique replay JSON for each:
+
+```powershell
+cd E:\Meeting-Fixed10-Test
+$PY = "E:\Meeting-Fixed10-Test\.venv\Scripts\python.exe"
+
+# A. Keep outer Silero VAD; bypass only the second VAD inside each
+# already-Silero-cropped auto-language Whisper window.
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\run_nemotron_ami.ps1 -PythonExe $PY -BypassWindowVad
+
+# B. Use the prior, bounded real-ASR recovery on substantial
+# VAD-positive intervals without verified transcript timestamps.
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\run_nemotron_ami.ps1 -PythonExe $PY -RecoverVadGaps
+```
+
+The runner refuses multiple ASR candidate flags in one run and keeps
+`MEETING_ASR_QUALITY_CANDIDATE=0`, `MEETING_CAPTION_WORD_BOUNDS=0`,
+and all other earlier regressed quality candidates OFF.
+
+Each run reports the raw and final caption timeline, pinned only_words
+DER, separately pinned forced-aligned acoustic/caption DER, and **two ASR
+gap audits**. The `only_words` report is never overwritten; the forced
+report is labeled `reference_protocol="forced_aligned"`, with its own
+pinned reference checksum. Do NOT compare 16.4 seconds under only_words
+to forced-reference missing speech without these paired audits.
+
+The trace also counts audio inference cycles where the second VAD was
+bypassed and actual gap-recovery attempts/confirmed decodes/failures.
+A timestamp gap is not proof that particular human words were missing.
+Compare caption text using separately verified transcripts before claiming
+ASR completeness or readability.
+
+Even if the forced-aligned acoustic DER remains 7.368%, the original
+only_words strict DER <10% gate will continue to fail (23.768%). A failed
+gate is not evidence that the audio replay crashed.
+
+## Source-independent speaker support for confirmed captions
+
+Final confirmed caption items now optionally carry
+`speaker_activity_intervals_ms`, `speaker_activity_fraction` and
+`speaker_activity_time_source`. These intervals come from the **official
+completed Nemotron speaker turns** for the caption's selected speaker.
+Unlike the original ASR sentence interval, they may contain disjoint
+voiced islands, preserve quiet gaps and keep parallel speakers separate.
+A caption's text, ID, revision, start/end timestamps, recorded words,
+manual identity corrections and persisted ASR source remain unchanged.
+
+The E-drive local replay JSON stores this support metadata in the final
+anonymous timeline for auditing; the live UI may consume it to present
+speech activity, but the original `published_caption_der` scorer still
+uses the real, unchanged caption start/end timestamps. Speaker support
+metadata is NOT a DER improvement or a license to delete transcript text.
+Do not mark this metadata as a successful subtitle boundary fix until a
+paired real-audio A/B confirms both timestamps and reading quality.
+
 ## Rollback
 
 ```powershell
