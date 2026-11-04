@@ -1,12 +1,14 @@
 name: Windows Launcher Validation
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - 'Start-Meeting.cmd'
       - 'tools/windows/Start-Meeting.ps1'
       - 'tools/run_nemotron_ami.ps1'
       - 'tools/run_phase1_engineering.ps1'
+      - 'tools/diagnose_github_actions.ps1'
       - '.github/workflows/windows-launcher.yml'
   pull_request:
     paths:
@@ -14,6 +16,7 @@ on:
       - 'tools/windows/Start-Meeting.ps1'
       - 'tools/run_nemotron_ami.ps1'
       - 'tools/run_phase1_engineering.ps1'
+      - 'tools/diagnose_github_actions.ps1'
       - '.github/workflows/windows-launcher.yml'
 
 jobs:
@@ -29,7 +32,8 @@ jobs:
           $scripts = @(
             'tools/windows/Start-Meeting.ps1',
             'tools/run_nemotron_ami.ps1',
-            'tools/run_phase1_engineering.ps1'
+            'tools/run_phase1_engineering.ps1',
+            'tools/diagnose_github_actions.ps1'
           )
           foreach ($script in $scripts) {
             $tokens = $null
