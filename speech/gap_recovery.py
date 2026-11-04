@@ -69,6 +69,7 @@ def recover_missing_voice(
     sample_rate: int = 16000,
     max_windows: int = MAX_RECOVERY_WINDOWS,
     min_uncovered_ms: int = MIN_UNCOVERED_MS,
+    short_voice_support_ms: int = 160,
 ) -> tuple[tuple[Utterance, ...], dict]:
     """Retry only acoustically supported uncovered windows using the ASR.
 
@@ -138,6 +139,7 @@ def recover_missing_voice(
                 candidates = verify_utterances(
                     list(chunks), local, clip_b - clip_a, detected,
                     preserve_disputed_text=True,
+                    short_voice_support_ms=short_voice_support_ms,
                 )
             except Exception:
                 failed += 1
