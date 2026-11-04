@@ -31,6 +31,7 @@ PRIVATE_ROOT = (PROJECT / "benchmark" / "fixed195").resolve()
 # accidentally contaminate the A/B experiment.
 CONTROL_ENV = {
     "MEETING_DIARIZATION_DIAGNOSTICS": "1",
+    "MEETING_ASR_QUALITY_CANDIDATE": "0",
     "MEETING_ASR_ENGINE": "whisper",
     "MEETING_ASR_MODEL": "large-v3",
     "MEETING_DIARIZATION_MODE": "cluster",
