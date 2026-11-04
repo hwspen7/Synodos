@@ -53,6 +53,11 @@ class WhisperEngine:
             "condition_on_previous_text": False,
             "temperature": 0,
         }
+        # Silero VAD already selects speech regions for windowing and
+        # quality checks. Disable Whisper's second VAD pass for both fixed
+        # language and auto-detected paths so quiet short turns are not cut twice.
+        kwargs["vad_filter"] = False
+        kwargs.pop("vad_parameters", None)
         if terms.strip():
             kwargs["hotwords"] = terms[:1500]
         # Preserve verified Whisper segment text when forced word alignment does

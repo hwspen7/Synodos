@@ -63,3 +63,5 @@ class WhisperAutoLanguageTests(unittest.TestCase):
                 result = engine.recognize(np.zeros(16000*3, dtype=np.float32), language="en")
         self.assertEqual(result.language, "en")
         self.assertEqual(engine._model.kwargs["language"], "en")
+        self.assertFalse(engine._model.kwargs["vad_filter"])
+        self.assertNotIn("vad_parameters", engine._model.kwargs)

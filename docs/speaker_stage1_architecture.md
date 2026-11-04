@@ -541,7 +541,7 @@ Stop the backend, update the branch and restart **with both diagnostics
 flags** in the backend's PowerShell window:
 
     cd E:\Meeting-Fixed10-Test
-    git pull --ff-only origin feature/multilingual-fixed10-ui-refresh
+    git pull --ff-only origin codex/fixed10-quality-repair-12lang
     python -m unittest tests.quality.test_ecapa_shadow_shutdown tests.quality.test_ami_shadow10_score -v
 
     $env:MEETING_ECAPA_SHADOW = "1"
@@ -704,7 +704,7 @@ audio accuracy.
 Run in the existing test checkout:
 
     cd E:\Meeting-Fixed10-Test
-    git pull --ff-only origin feature/multilingual-fixed10-ui-refresh
+    git pull --ff-only origin codex/fixed10-quality-repair-12lang
     python -m unittest tests.quality.test_adaptive_speaker_clustering tests.quality.test_speaker_candidate_diagnostics tests.quality.test_multi_speaker_overlap tests.quality.test_ecapa_shadow tests.quality.test_ami_nemotron_compare tests.quality.test_ami_batch_replay -v
 
 Restart the backend in its own PowerShell terminal with the SAME

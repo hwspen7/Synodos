@@ -65,12 +65,24 @@ async def ws_audio(
         return
     normalized_language = normalize_supported_language(language, allow_auto=True)
     requested_target = speech_config.translate_to if translate_to is None else translate_to
-    normalized_target = "" if not requested_target.strip() else normalize_supported_language(requested_target)
+    normalized_target = (
+        "" if not requested_target.strip()
+        else normalize_supported_language(requested_target)
+    )
     if normalized_language is None or normalized_target is None:
-        await websocket.close(code=1008, reason="Language is outside the supported 12-language set")
+        await websocket.close(
+            code=1008,
+            reason="Language is outside the supported 12-language set",
+        )
         return
     if speech_config.engine == "legacy" and normalized_language not in ("zh", "auto"):
-        await websocket.close(code=1008, reason="The legacy ASR engine supports Chinese only; use Whisper or Qwen3 for the 12-language set")
+        await websocket.close(
+            code=1008,
+            reason=(
+                "The legacy ASR engine supports Chinese only; use Whisper "
+                "or Qwen3 for the 12-language set"
+            ),
+        )
         return
     language = "zh" if speech_config.engine == "legacy" and normalized_language == "auto" else normalized_language
     effective_translate_to = normalized_target
@@ -203,8 +215,10 @@ async def ws_audio(
     archive_warning = None
     if recording_requested:
         try:
-            audio_archive = RecordingWriter(
-                speech_config.recording_root, meeting_id,
+            audio_archive = await asyncio.to_thread(
+                RecordingWriter,
+                speech_config.recording_root,
+                meeting_id,
                 speech_config.max_recording_bytes,
             )
         except Exception as exc:
@@ -341,7 +355,9 @@ async def ws_audio(
                         durable_samples = None
                         if audio_archive is not None:
                             try:
-                                durable_samples = audio_archive.checkpoint()
+                                durable_samples = await asyncio.to_thread(
+                                    audio_archive.checkpoint
+                                )
                             except OSError as exc:
                                 metrics.increment("wav_checkpoint_failure")
                                 await websocket.send_json({
@@ -367,7 +383,7 @@ async def ws_audio(
     finally:
         if audio_archive is not None:
             try:
-                audio_archive.close()
+                await asyncio.to_thread(audio_archive.close)
             except OSError as exc:
                 metrics.increment("wav_close_failure")
                 await session.outbox.put({

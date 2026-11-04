@@ -90,11 +90,12 @@ def verify_utterances(
     needs at least 35% VAD overlap. Words lacking speech support are excluded;
     accepted words split at long gaps so silence is not represented as speech.
 
-    A guarded opt-in preserves the original segment text when word alignment
-    disagrees with already-verified segment acoustic support. It discards
-    unreliable word timestamps instead of inventing word-level precision.
-    Segment-level evidence checks and decoding diagnostic rejection remain
-    mandatory. The production default is unchanged pending real A/B testing.
+    When preserve_disputed_text is enabled, keep original segment text if
+    its word alignment disagrees with already-verified segment acoustic
+    support. Discard unreliable word timestamps instead of inventing
+    word-level precision. Segment-level evidence checks and decoding
+    diagnostic rejection remain mandatory. The live Whisper repair branch
+    enables this behavior, but it still requires real A/B evaluation.
     """
     if duration_ms <= 0:
         return ()
