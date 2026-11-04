@@ -16,7 +16,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import urllib.request
 import wave
 
@@ -153,7 +152,7 @@ def validate_reference(turns: list[dict]) -> dict:
     return {
         "reference_speaker_count": len(speech_ms),
         "qualified_speaker_count": len(qualified),
-        "reference_turns": len(turns),
+        "annotated_turn_count": len(turns),
         "reference_speaker_seconds": round(sum(speech_ms.values()) / 1000, 2),
     }
 
@@ -221,16 +220,18 @@ def prepare_case(root: Path, meeting: str, offset: int,
     stats = validate_reference(turns)
     source_name = meeting + ".Mix-Headset.wav"
     cached = root / "cache" / source_name
+    used_url = AMI_AUDIO_BASE + source_name
     if not cached.exists():
         try:
-            downloader(AMI_AUDIO_BASE + source_name, cached)
+            downloader(used_url, cached)
         except (OSError, ValueError) as exc:
             # Explicit fallback to a verified redistribution of the same
             # 16-meeting AMI evaluation subset, not a random replacement.
             if cached.exists():
                 raise
             try:
-                downloader(AMI_BACKUP_BASE + source_name, cached)
+                used_url = AMI_BACKUP_BASE + source_name
+                downloader(used_url, cached)
             except Exception as fallback:
                 raise RuntimeError(
                     "AMI source unavailable from official mirror and backup"
@@ -241,6 +242,7 @@ def prepare_case(root: Path, meeting: str, offset: int,
             "id": f"ami-{meeting}-{offset}",
             "source_meeting": meeting,
             "source_audio_url": AMI_AUDIO_BASE + source_name,
+            "source_download_url": used_url,
             "source_audio_sha256": checksum(cached),
             "reference_url": ANNOTATION_BASE + meeting + ".rttm",
             "reference_source_sha256": checksum(rttm),
@@ -322,7 +324,7 @@ def main() -> int:
         result = prepare_case(root, meeting, offset,
                               keep_full=args.keep_full)
         print(f"  {result['reference_speaker_count']} reference speakers, "
-              f"{result['reference_turns']} annotated turns, "
+              f"{result['annotated_turn_count']} annotated turns, "
               f"{result['audio']}", flush=True)
     inventory = write_inventory(root)
     print(json.dumps({
