@@ -5,7 +5,16 @@ param(
     [string]$PythonExe = ".\.venv\Scripts\python.exe",
     [int]$Port = 8012,
     [switch]$HumanReferenceVerified,
-    [string]$Fixed195Results = ""
+    [string]$Fixed195Results = "",
+    [switch]$FullEvaluation,
+    [string]$PyannotePython = "",
+    [string]$DiarizenPython = "",
+    [string]$QwenPython = "",
+    [string]$NemotronReplayManifest = "",
+    [string]$QwenAudio = "",
+    [string]$QwenSegmentAudit = "",
+    [string]$Phase2Dev = "",
+    [string]$Phase2Holdout = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,11 +36,64 @@ $modules = @(
     "tests.backend.unit.test_phase2_identity_matcher",
     "tests.backend.integration.test_phase2_manual_review",
     "tests.multilingual.test_corrections",
-    "tests.quality.test_ami_human_text_reference"
+    "tests.quality.test_ami_human_text_reference",
+    "tests.quality.test_phase1b_diarization",
+    "tests.quality.test_phase1b_qwen_shadow",
+    "tests.quality.test_phase2_cross_session_acceptance"
 )
 & $PythonExe -m unittest @modules -v
 if ($LASTEXITCODE -ne 0) {
     throw "Phase 2 regression tests FAILED. Phase 1 replay was not started."
+}
+
+if ($FullEvaluation.IsPresent) {
+    if (-not $PyannotePython -or -not $DiarizenPython -or
+        -not $QwenPython -or -not $NemotronReplayManifest -or
+        -not $QwenAudio -or -not $QwenSegmentAudit -or
+        -not $Phase2Dev -or -not $Phase2Holdout) {
+        throw "FullEvaluation requires all three optional Python environments, a ten-meeting replay manifest, a Qwen audio/segment audit pair, and separate Phase 2 dev/holdout manifests."
+    }
+    Write-Host "Phase 1A: independent Whisper ablations"
+    $ablation = @{
+        PythonExe = $PythonExe
+        Port = $Port
+    }
+    if ($HumanReferenceVerified.IsPresent) {
+        $ablation.HumanReferenceVerified = $true
+    }
+    & (Join-Path $PSScriptRoot "run_phase1a_ablation.ps1") @ablation
+    if ($LASTEXITCODE -ne 0) {
+        throw "Phase 1A ablation did not complete"
+    }
+
+    Write-Host "Phase 1B: paired, independent open-source diarization"
+    & (Join-Path $PSScriptRoot "run_phase1b_compare.ps1") `
+        -PythonExe $PythonExe `
+        -PyannotePython $PyannotePython `
+        -DiarizenPython $DiarizenPython `
+        -NemotronReplayManifest $NemotronReplayManifest
+    if ($LASTEXITCODE -ne 0) {
+        throw "Phase 1B paired model evaluation failed"
+    }
+
+    Write-Host "Phase 1B: private, non-mutating Qwen3-ASR gap hypotheses"
+    & $QwenPython -m tools.phase1b_qwen_shadow `
+        --audio $QwenAudio --segment-audit $QwenSegmentAudit `
+        --infer --language auto `
+        --output (Join-Path $repo ("benchmark\fixed195\ami_shadow10\phase1b_qwen_" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".json"))
+    if ($LASTEXITCODE -ne 0) {
+        throw "Qwen3-ASR shadow evaluation failed"
+    }
+
+    Write-Host "Phase 2: disjoint cross-session identity threshold evaluation"
+    & $PythonExe -m tools.phase2_cross_session_acceptance `
+        --dev $Phase2Dev --holdout $Phase2Holdout `
+        --output (Join-Path $repo ("benchmark\fixed195\phase2_identity_" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".json"))
+    if ($LASTEXITCODE -ne 0) {
+        throw "Phase 2 cross-session identity threshold gate failed"
+    }
+} else {
+    Write-Host "Model-free gates will run; optional GPU and held-out experiments require -FullEvaluation."
 }
 
 Write-Host "Phase 1: frozen ten-language, reviewed AMI replay and hosted CI checks"
