@@ -127,6 +127,52 @@ def acoustic_turns_within_caption_clock(
     return clipped
 
 
+def display_projection_turns(replay: dict, duration_ms: int) -> tuple[list[dict], int]:
+    """Diagnostic for actual UI speaker cues, NOT canonical stored caption DER.
+
+    If the feature is off, raise rather than silently reporting the original
+    caption metric as a projection gain. Unsplit captions retain original
+    speaker IDs. No words, text, or audio are changed.
+    """
+    timeline = (replay.get("final_cluster_diagnostics") or {}).get(
+        "anonymous_timeline"
+    )
+    if (not isinstance(timeline, dict) or
+            timeline.get("truncated") is not False or
+            timeline.get("total_segments") != len(timeline.get("segments", []))):
+        raise ValueError("Complete anonymous caption timeline is required")
+    turns = []
+    split_count = 0
+    for row in timeline["segments"]:
+        cues = row.get("caption_projection_turns") or []
+        status = row.get("caption_projection_status")
+        if status == "split_verified" and len(cues) > 1:
+            for cue in cues:
+                a, b, speaker = (
+                    cue.get("start_ms"), cue.get("end_ms"),
+                    cue.get("speaker_id"),
+                )
+                if (type(a) is not int or type(b) is not int or
+                        type(speaker) is not int or a < 0 or
+                        b <= a or b > duration_ms):
+                    raise ValueError("Invalid projected caption cue")
+                if speaker > 0:
+                    turns.append({
+                        "start_ms": a, "end_ms": b, "speaker_id": speaker,
+                    })
+            split_count += 1
+        else:
+            a, b, speaker = (
+                row.get("start_ms"), row.get("end_ms"),
+                row.get("published_speaker_id"),
+            )
+            if type(speaker) is int and speaker > 0:
+                turns.append({
+                    "start_ms": a, "end_ms": b, "speaker_id": speaker,
+                })
+    return turns, split_count
+
+
 def alternate_score(root: Path, meeting: str, replay_path: Path) -> dict:
     if meeting not in {name for name, _ in SELECTED}:
         raise ValueError("Meeting not in frozen AMI inventory")
@@ -167,6 +213,17 @@ def alternate_score(root: Path, meeting: str, replay_path: Path) -> dict:
     masked_details = diarization_details(reference, masked_prediction, masked)
     masked.pop("speaker_mapping", None)
     solo = _solo_only(reference, prediction, duration_ms=DURATION_MS)
+    projected_turns, projected_split_count = display_projection_turns(
+        replay, DURATION_MS,
+    )
+    if projected_split_count:
+        projected = evaluate(reference, projected_turns, step_ms=100)
+        projected.update(diarization_details(
+            reference, projected_turns, projected,
+        ))
+        projected.pop("speaker_mapping", None)
+    else:
+        projected = None
     return {
         "schema": "meeting-ami-forced-reference-diagnostic-v1",
         "meeting": meeting,
@@ -198,6 +255,15 @@ def alternate_score(root: Path, meeting: str, replay_path: Path) -> dict:
             **caption_measured, **caption_details,
         },
         "forced_aligned_solo_only_metrics": solo,
+        "display_speaker_cue_splits": projected_split_count,
+        "forced_aligned_display_projection_metrics": projected,
+        "display_projection_note": (
+            "Separate post-finalization UI projection of confirmed ASR words "
+            "against official Nemotron speaker turns. It is NOT canonical "
+            "published-caption DER, does not recover missing words, and "
+            "cannot by itself supply two simultaneous text transcripts. "
+            "Null means no verified speaker-switch cue splitting was emitted."
+        ),
         "note": (
             "This uses different ground truth and cannot be called an "
             "improvement to the old metric, a model enhancement, or a "
