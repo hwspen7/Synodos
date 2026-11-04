@@ -42,6 +42,45 @@ DEFAULT_WS_URL = (
 )
 
 
+def preflight_private_exports(args) -> None:
+    """Reject unsafe or occupied export targets before replaying audio.
+
+    The final writers still use exclusive-create mode to protect against
+    files appearing while a replay is in progress.
+    """
+    root = Path("benchmark/fixed195").resolve()
+    report = getattr(args, "output", None)
+    report_path = Path(report).resolve() if report is not None else None
+    reference = getattr(args, "reference_text", None)
+    reference_path = (
+        Path(reference).resolve() if reference is not None else None
+    )
+    for attribute, suffix in (
+        ("transcript_output", ".txt"),
+        ("segment_audit_output", ".json"),
+    ):
+        requested = getattr(args, attribute, None)
+        if requested is None:
+            continue
+        path = Path(requested).resolve()
+        if not path.is_relative_to(root) or path.suffix.lower() != suffix:
+            raise ValueError(
+                f"--{attribute.replace('_', '-')} must be a {suffix} "
+                "file inside benchmark/fixed195 (gitignored)"
+            )
+        if path == report_path or path == reference_path:
+            raise ValueError(
+                f"--{attribute.replace('_', '-')} must not share a path "
+                "with the metric report or reference transcript"
+            )
+        if path.exists():
+            raise FileExistsError(
+                f"Private replay export already exists: {path}. "
+                "Choose a new filename (for example, append a timestamp). "
+                "No audio has been replayed."
+            )
+
+
 def pcm_packet(pcm, seq: int, offset: int) -> bytes:
     import numpy as np
 
@@ -332,6 +371,8 @@ def new_capture(
 
 
 async def replay(args) -> dict:
+    # Check conflicts before loading the WAV or opening a WebSocket.
+    preflight_private_exports(args)
     import numpy as np
     from websockets.asyncio.client import connect
 
