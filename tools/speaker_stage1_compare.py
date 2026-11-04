@@ -391,6 +391,7 @@ def run(path: Path, root: Path, mode: str, *, nemotron=None,
         "diarization": None,
         "verification": None,
         "reference_status": "operator_supplied_not_independently_verified",
+        "verification_provenance": doc.get("verification_provenance"),
         "candidate_models_not_promoted": True,
     }
     if mode in ("diarization", "both"):
