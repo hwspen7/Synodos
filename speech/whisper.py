@@ -74,6 +74,11 @@ class WhisperEngine:
         gap_recovery = os.environ.get(
             "MEETING_WHISPER_GAP_RECOVERY", "0"
         ).strip().lower() in ("1", "true", "yes")
+        # Keep short acknowledged speech eligible for real ASR retries in
+        # opt-in, held-out quality experiments. The default remains V6.
+        recovery_gap_ms = int(os.getenv("MEETING_WHISPER_RECOVERY_MIN_GAP_MS", "900"))
+        if not 300 <= recovery_gap_ms <= 2000:
+            raise ValueError("Recovery minimum gap must be 300..2000 ms")
         with self._infer_lock:
             speech_regions = get_speech_timestamps(
                 samples, options, sampling_rate=16000
@@ -127,6 +132,7 @@ class WhisperEngine:
                     samples, speech_regions, primary,
                     lambda chunk, **kw: self._get_model().transcribe(chunk, **kw),
                     kwargs, language=language,
+                    min_uncovered_ms=recovery_gap_ms,
                 )
             else:
                 recovery = {
