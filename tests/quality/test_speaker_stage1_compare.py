@@ -131,6 +131,37 @@ class SpeakerStageOneTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             check("invented")
 
+    def test_doctor_distinguishes_cpu_only_torch_from_driver_failure(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from tools.speaker_stage1_doctor import check
+
+        def fake_torch(cuda_version):
+            return SimpleNamespace(
+                version=SimpleNamespace(cuda=cuda_version),
+                cuda=SimpleNamespace(is_available=lambda: False),
+            )
+
+        with patch("tools.speaker_stage1_doctor.util.find_spec",
+                   return_value=object()), \
+             patch("tools.speaker_stage1_doctor.metadata.version",
+                   return_value="2.11.0"), \
+             patch.dict("sys.modules", {"torch": fake_torch(None)}):
+            result = check("ecapa", device="cuda")
+            self.assertIsNone(result["torch_cuda_build"])
+            self.assertIn("CPU-only", result["cuda_diagnosis"])
+            self.assertFalse(result["dependencies_ready"])
+
+        with patch("tools.speaker_stage1_doctor.util.find_spec",
+                   return_value=object()), \
+             patch("tools.speaker_stage1_doctor.metadata.version",
+                   return_value="2.11.0"), \
+             patch.dict("sys.modules", {"torch": fake_torch("12.8")}):
+            result = check("ecapa", device="cuda")
+            self.assertEqual(result["torch_cuda_build"], "12.8")
+            self.assertIn("driver", result["cuda_diagnosis"])
+            self.assertFalse(result["dependencies_ready"])
+
     def test_default_factory_does_not_load_any_optional_models(self):
         self.assertIsInstance(
             create_embedding_backend("camplus", manager=DummyCampManager()),
