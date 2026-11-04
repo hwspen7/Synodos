@@ -6,7 +6,8 @@ param(
     [string]$PythonExe = ".\.venv\Scripts\python.exe",
     [int]$Port = 8012,
     [switch]$SkipUnitTests,
-    [switch]$WordBounds
+    [switch]$WordBounds,
+    [switch]$RequirePublishedForcedUnder10
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,7 +48,8 @@ if (-not $SkipUnitTests) {
         "tests.quality.test_ami_nemotron_live_score",
         "tests.quality.test_asr_stage_trace",
         "tests.quality.test_asr_priority_vs_nemotron",
-        "tests.quality.test_caption_word_bounds_and_official_turns"
+        "tests.quality.test_caption_word_bounds_and_official_turns",
+        "tests.quality.test_ami_nemotron_reference_diagnostic"
     )
     foreach ($module in $modules) {
         & $PythonExe -m unittest $module -v
@@ -61,6 +63,7 @@ $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $replay = Join-Path $root "replay_TS3003b_nemotron_$timestamp.json"
 $score = Join-Path $root "audit_TS3003b_nemotron_$timestamp.json"
 $gaps = Join-Path $root "audit_TS3003b_asr_stages_$timestamp.json"
+$forced = Join-Path $root "audit_TS3003b_forced_comparison_$timestamp.json"
 $outLog = Join-Path $root "nemotron_server_$timestamp.stdout.log"
 $errLog = Join-Path $root "nemotron_server_$timestamp.stderr.log"
 
@@ -162,14 +165,49 @@ try {
             throw "ASR stage gap audit failed."
         }
 
+        # Always compute the paired forced-alignment diagnostic. The
+        # strict only_words gate above is intentionally NOT rewritten.
+        & $PythonExe -m tools.ami_nemotron_reference_diagnostic `
+            --root $root --meeting TS3003b --replay $replay `
+            --output $forced
+        if ($LASTEXITCODE -ne 0) {
+            throw "Forced-alignment comparison failed."
+        }
+
+        $d = Get-Content $forced -Raw | ConvertFrom-Json
+        $independentForcedPass = (
+            [double]$d.forced_aligned_independent_der -lt 0.10
+        )
+        $publishedForcedPass = (
+            [double]$d.forced_aligned_caption_der -lt 0.10
+        )
+        $clockMasked = [double]$d.forced_aligned_caption_clock_masked_acoustic_der
+
         Write-Host ""
         Write-Host "Independent Nemotron report: $score"
         Write-Host "ASR missing-caption report: $gaps"
+        Write-Host "Paired forced-reference comparison: $forced"
         Write-Host "Backend logs: $errLog"
-        if ($derExit -ne 0) {
-            throw "Frozen standard DER remains at or above 10%; NOT accepted."
+        Write-Host ("Original only_words independent DER: {0:P3}" -f [double]$d.original_only_words_independent_der)
+        Write-Host ("Forced reference independent DER: {0:P3}" -f [double]$d.forced_aligned_independent_der)
+        Write-Host ("Forced reference caption-clock counterfactual DER: {0:P3}" -f $clockMasked)
+        Write-Host ("Forced reference ACTUAL published-caption DER: {0:P3}" -f [double]$d.forced_aligned_caption_der)
+        Write-Host ("Forced reference published speaker count: {0}" -f [int]$d.forced_aligned_caption_metrics.predicted_speaker_count)
+        Write-Host ("Word-aligned caption bounds active: {0}" -f $WordBounds.IsPresent)
+
+        if ($RequirePublishedForcedUnder10.IsPresent -and -not $publishedForcedPass) {
+            throw "Forced-reference PUBLISHED caption DER remains >=10%; NOT accepted."
         }
-        Write-Host "Standard DER under 10% in this one frozen AMI sample."
+        if ($derExit -ne 0) {
+            throw "Frozen original only_words independent DER remains >=10%; NOT accepted. Forced-reference scores are separate diagnostics above."
+        }
+        Write-Host "Original only_words independent DER under 10% on this one frozen AMI sample."
+        if ($independentForcedPass) {
+            Write-Host "Forced-alignment independent DER also under 10% (different reference protocol)."
+        }
+        if (-not $publishedForcedPass) {
+            Write-Host "Final published-caption DER is NOT below 10% on the forced reference."
+        }
         Write-Host "Further multi-meeting, multilingual, text-accuracy and latency validation is required."
     } finally {
         if ($null -ne $server -and -not $server.HasExited) {
