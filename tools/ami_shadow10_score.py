@@ -344,6 +344,153 @@ def reference_speaker_coverage(
     }
 
 
+def reference_speaker_context_breakdown(
+    timeline: dict, reference: list[dict], duration_ms: int,
+    *, frame_step_ms: int = 100,
+) -> dict:
+    """Separate isolated reference speech from overlapping human speech.
+
+    Compare only temporal caption/embedding coverage, not inferred IDs.
+    Return the longest solo stretches for targeted original-WAV listening.
+    """
+    if frame_step_ms != 100 or duration_ms <= 0:
+        raise ValueError("Context breakdown requires 100ms frames")
+    names = sorted({item["speaker"] for item in reference})
+    records: dict[str, dict] = {}
+    for speaker in names:
+        records[speaker] = {}
+        for context in ("solo", "overlap"):
+            records[speaker][context] = {
+                "total_frames": 0,
+                "no_caption_frames": 0,
+                "unknown_only_frames": 0,
+                "positive_caption_frames": 0,
+                "without_embedding_frames": 0,
+                "with_embedding_frames": 0,
+                "label_contacts": {},
+            }
+        records[speaker]["solo_runs"] = []
+        records[speaker]["solo_start"] = None
+
+    for ms in range(0, duration_ms + frame_step_ms, frame_step_ms):
+        active = set() if ms >= duration_ms else {
+            item["speaker"] for item in reference
+            if item["start_ms"] <= ms < item["end_ms"]
+        }
+        visible = [] if ms >= duration_ms else [
+            item for item in timeline["segments"]
+            if item["start_ms"] <= ms < item["end_ms"]
+        ]
+        labels = {
+            item["published_speaker_id"] for item in visible
+            if type(item.get("published_speaker_id")) is int
+            and item["published_speaker_id"] > 0
+        }
+        with_embedding = any(
+            bool(item.get("embedding_available")) for item in visible
+        )
+        for speaker in names:
+            state = records[speaker]
+            is_solo = speaker in active and len(active) == 1
+            if is_solo and state["solo_start"] is None:
+                state["solo_start"] = ms
+            if not is_solo and state["solo_start"] is not None:
+                begin = state["solo_start"]
+                if ms > begin:
+                    state["solo_runs"].append({
+                        "start_ms": begin, "end_ms": ms,
+                        "duration_ms": ms - begin,
+                    })
+                state["solo_start"] = None
+            if speaker not in active:
+                continue
+            context = "solo" if is_solo else "overlap"
+            values = state[context]
+            values["total_frames"] += 1
+            if not visible:
+                values["no_caption_frames"] += 1
+            elif not labels:
+                values["unknown_only_frames"] += 1
+            else:
+                values["positive_caption_frames"] += 1
+                for label in labels:
+                    contacts = values["label_contacts"]
+                    contacts[label] = contacts.get(label, 0) + 1
+            if visible and not with_embedding:
+                values["without_embedding_frames"] += 1
+            elif with_embedding:
+                values["with_embedding_frames"] += 1
+
+    def format_context(values: dict) -> dict:
+        if (values["total_frames"] != values["no_caption_frames"]
+                + values["unknown_only_frames"]
+                + values["positive_caption_frames"]):
+            raise AssertionError("Context speech time does not reconcile")
+        return {
+            "reference_speech_seconds": round(
+                values["total_frames"] * frame_step_ms / 1000, 2
+            ),
+            "without_caption_seconds": round(
+                values["no_caption_frames"] * frame_step_ms / 1000, 2
+            ),
+            "unknown_only_caption_seconds": round(
+                values["unknown_only_frames"] * frame_step_ms / 1000, 2
+            ),
+            "positive_caption_seconds": round(
+                values["positive_caption_frames"] * frame_step_ms / 1000, 2
+            ),
+            "caption_without_embedding_seconds": round(
+                values["without_embedding_frames"] * frame_step_ms / 1000, 2
+            ),
+            "caption_with_embedding_seconds": round(
+                values["with_embedding_frames"] * frame_step_ms / 1000, 2
+            ),
+            "positive_label_contacts": [
+                {
+                    "published_label": label,
+                    "temporal_overlap_seconds": round(
+                        frames * frame_step_ms / 1000, 2
+                    ),
+                }
+                for label, frames in sorted(
+                    values["label_contacts"].items(),
+                    key=lambda pair: (-pair[1], pair[0]),
+                )
+            ],
+        }
+
+    result = []
+    for speaker in names:
+        value = records[speaker]
+        solo = format_context(value["solo"])
+        overlap = format_context(value["overlap"])
+        result.append({
+            "reference_speaker": speaker,
+            "solo": solo, "overlap": overlap,
+            "longest_solo_stretches": sorted(
+                value["solo_runs"],
+                key=lambda item: (-item["duration_ms"], item["start_ms"]),
+            )[:12],
+        })
+    result.sort(
+        key=lambda item: (
+            -(item["solo"]["reference_speech_seconds"]
+              + item["overlap"]["reference_speech_seconds"]),
+            item["reference_speaker"],
+        )
+    )
+    return {
+        "frame_step_ms": frame_step_ms,
+        "speakers": result,
+        "interpretation": (
+            "Solo means exactly one AMI reference speaker is active. "
+            "Positive caption label contact is only temporal evidence, not "
+            "proof of speaker identity. Solo stretches are 100ms-quantized "
+            "review intervals, not automatic trusted enrollment clips."
+        ),
+    }
+
+
 def score_case(root: Path, meeting: str, replay_path: Path) -> dict:
     root = root.resolve()
     replay_path = replay_path.resolve()
@@ -407,6 +554,9 @@ def score_case(root: Path, meeting: str, replay_path: Path) -> dict:
     per_speaker = reference_speaker_coverage(
         timeline, reference, duration_ms,
     )
+    context_breakdown = reference_speaker_context_breakdown(
+        timeline, reference, duration_ms,
+    )
     caption_gaps = reference_speech_without_captions(
         timeline, reference, duration_ms,
     )
@@ -436,6 +586,7 @@ def score_case(root: Path, meeting: str, replay_path: Path) -> dict:
         "collar_ms": 0,
         "metrics": metrics,
         "reference_speaker_coverage": per_speaker,
+        "reference_speaker_context": context_breakdown,
         "missed_speaker_time_breakdown": missed_breakdown,
         "unidentified": unknown,
         "reference_speech_without_captions": caption_gaps,
