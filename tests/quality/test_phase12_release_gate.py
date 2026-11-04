@@ -12,10 +12,19 @@ def evidence():
     lang = {
         "schema": "meeting-phase1-ten-language-text-gate-v1",
         "pass": True,
+        "supported_language_codes": [
+            "en", "zh", "fr", "es", "ar", "id", "ja", "ru", "de", "hi",
+        ],
+        "selected_reference_case_count": 110,
+        "overall": {"cer": 0.05078},
         "gates": {
             "exactly_ten_supported_languages": True,
             "exactly_110_frozen_reference_clips": True,
+            "all_selected_alignments_evaluable": True,
+            "no_empty_predictions": True,
             "weighted_cer_within_limit": True,
+            "weighted_deletion_within_limit": True,
+            "each_supported_language_within_limit": True,
         }
     }
     human = {
@@ -96,6 +105,13 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertFalse(result["pass"])
         self.assertFalse(result["gates"]["same_audio_der_under_20_percent"])
         self.assertEqual(result["next_stage"], "phase1_2_blocked")
+
+    def test_language_cer_between_ten_and_fifteen_does_not_pass(self):
+        rows = list(evidence())
+        rows[0]["overall"]["cer"] = 0.12
+        result = assess(*rows, source_commit=COMMIT)
+        self.assertFalse(result["pass"])
+        self.assertFalse(result["gates"]["ten_language_frozen_cer"])
 
     def test_missing_one_paired_meeting_or_ci_job_blocks(self):
         rows = list(evidence())
