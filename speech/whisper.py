@@ -9,6 +9,7 @@ from speech.quality_guard import verify_utterances, speech_intervals
 from speech.gap_recovery import recover_missing_voice
 from speech.utterance_units import split_utterances
 from speech.quality_profile import quality_candidate_enabled
+from speech.asr_stage_trace import model_intervals, utterance_intervals
 
 
 class WhisperEngine:
@@ -76,6 +77,10 @@ class WhisperEngine:
         gap_recovery = quality_candidate or os.environ.get(
             "MEETING_WHISPER_GAP_RECOVERY", "0"
         ).strip().lower() in ("1", "true", "yes")
+        trace_enabled = os.getenv("MEETING_ASR_TRACE_STAGES", "0").lower() in (
+            "1", "true", "yes",
+        )
+        stage_trace = None
         with self._infer_lock:
             speech_regions = get_speech_timestamps(
                 samples, options, sampling_rate=16000
@@ -85,7 +90,19 @@ class WhisperEngine:
             ).strip().lower() in ("1", "true", "yes"):
                 speech_regions = crosscheck_speech_regions(samples, speech_regions)
             if not speech_regions:
-                return Recognition(engine="whisper", speech_detected=False)
+                if trace_enabled:
+                    stage_trace = {
+                        "vad_intervals_ms": [],
+                        "raw_model_intervals_ms": [],
+                        "verified_intervals_ms": [],
+                        "speech_windows": 0,
+                    }
+                return Recognition(
+                    engine="whisper", speech_detected=False,
+                    recovery_diagnostics=(
+                        {"stage_trace": stage_trace} if stage_trace else None
+                    ),
+                )
             intervals_ms = speech_intervals(
                 speech_regions, round(len(samples) * 1000 / 16000)
             )
@@ -112,6 +129,10 @@ class WhisperEngine:
                 primary = recognized.utterances
                 detected = recognized.language
                 probability = recognized.confidence
+                if trace_enabled:
+                    stage_trace = (
+                        recognized.recovery_diagnostics or {}
+                    ).get("stage_trace")
             else:
                 # The iterator is lazy, and must be exhausted under the lock.
                 segments, info = self._get_model().transcribe(samples, **kwargs)
@@ -126,6 +147,18 @@ class WhisperEngine:
                     round(len(samples) * 1000 / 16000), detected,
                     preserve_disputed_text=preserve_disputed,
                 )
+                if trace_enabled:
+                    duration_ms = round(len(samples) * 1000 / 16000)
+                    stage_trace = {
+                        "vad_intervals_ms": [list(pair) for pair in intervals_ms],
+                        "raw_model_intervals_ms": model_intervals(
+                            pieces, duration_ms=duration_ms,
+                        ),
+                        "verified_intervals_ms": utterance_intervals(
+                            primary, duration_ms=duration_ms,
+                        ),
+                        "speech_windows": 1,
+                    }
 
             # Bounded actual ASR retry for a VAD-positive interval omitted
             # from accepted speech. No text is fabricated, and the original
@@ -144,6 +177,11 @@ class WhisperEngine:
                     "recovery_failed": 0,
                     "disabled": True,
                 }
+        if trace_enabled and stage_trace is not None:
+            stage_trace["after_recovery_intervals_ms"] = utterance_intervals(
+                primary, duration_ms=round(len(samples) * 1000 / 16000),
+            )
+            recovery["stage_trace"] = stage_trace
         return Recognition(
             utterances=split_utterances(primary),
             language=detected,
