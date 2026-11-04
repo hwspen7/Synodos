@@ -75,6 +75,57 @@ def edit_distance(left: list | str, right: list | str) -> int:
     return previous[-1]
 
 
+def alignment_error_counts(reference: list | str, hypothesis: list | str,
+                           *, max_cells: int = 16_000_000) -> dict | None:
+    """Counts from one deterministic minimum-edit alignment.
+
+    The reference is the expected transcript. Deletion means content in
+    reference but absent from hypothesis; insertion means extra hypothesis
+    content. Equally optimal alignments can have different operation counts,
+    so these are review indicators, never proof of word-level causation.
+    Memory is O(min(reference_length, hypothesis_length)). A bounded
+    optional audit never prevents the existing CER/WER scorer from working.
+    """
+    r, h = list(reference), list(hypothesis)
+    if not r and not h:
+        return {"deletions": 0, "insertions": 0, "substitutions": 0, "edits": 0}
+    if len(r) * len(h) > max_cells:
+        return None
+    # Smaller dimension is across columns. Transposition reverses the
+    # meaning of insertion/deletion, repaired in the returned counters.
+    transposed = len(h) > len(r)
+    outer, inner = (h, r) if transposed else (r, h)
+    # (distance, substitutions, deletions, insertions)
+    previous = [(i, 0, 0, i) for i in range(len(inner) + 1)]
+    for i, expected in enumerate(outer, 1):
+        current = [(i, 0, i, 0)]
+        for j, observed in enumerate(inner, 1):
+            diag = previous[j - 1]
+            if expected == observed:
+                best = diag
+            else:
+                best = (diag[0] + 1, diag[1] + 1, diag[2], diag[3])
+            above = previous[j]
+            deletion = (above[0] + 1, above[1], above[2] + 1, above[3])
+            if deletion[0] < best[0]:
+                best = deletion
+            left = current[j - 1]
+            insertion = (left[0] + 1, left[1], left[2], left[3] + 1)
+            if insertion[0] < best[0]:
+                best = insertion
+            current.append(best)
+        previous = current
+    edits, substitutions, deletions, insertions = previous[-1]
+    if transposed:
+        deletions, insertions = insertions, deletions
+    if edits != substitutions + deletions + insertions:
+        raise AssertionError("Edit operation conservation failed")
+    return {
+        "deletions": deletions, "insertions": insertions,
+        "substitutions": substitutions, "edits": edits,
+    }
+
+
 def score_reference(reference: str, hypothesis: str) -> dict:
     """Aggregate CER and English whitespace-token WER; never emit raw text.
 
@@ -101,10 +152,31 @@ def score_reference(reference: str, hypothesis: str) -> dict:
     word_evaluable = not cjk and has_word_spaces and bool(word_refs)
     wer_errors = edit_distance(word_refs, word_hyps) if word_evaluable else None
     wer = round(wer_errors / len(word_refs), 4) if wer_errors is not None else None
+    # This is not a second CER/WER algorithm. Operation breakdown uses an
+    # optimal alignment to explain the already-reported Levenshtein edits.
+    char_ops = alignment_error_counts(ref_chars, hyp_chars)
+    word_ops = (alignment_error_counts(word_refs, word_hyps)
+                if word_evaluable else None)
+    if ((char_ops is not None and char_ops["edits"] != char_errors)
+            or (word_ops is not None and word_ops["edits"] != wer_errors)):
+        raise AssertionError("Text alignment disagrees with Levenshtein score")
     return {
         "reference_characters": len(ref_chars),
         "hypothesis_characters": len(hyp_chars),
         "character_edits": char_errors,
+        "character_deletions": (
+            char_ops["deletions"] if char_ops is not None else None
+        ),
+        "character_insertions": (
+            char_ops["insertions"] if char_ops is not None else None
+        ),
+        "character_substitutions": (
+            char_ops["substitutions"] if char_ops is not None else None
+        ),
+        "reference_character_deletion_rate": (
+            round(char_ops["deletions"] / len(ref_chars), 4)
+            if char_ops is not None else None
+        ),
         "cer": round(char_errors / len(ref_chars), 4),
         "cer_percent": round(100 * char_errors / len(ref_chars), 2),
         "punctuation_sensitive_cer_percent": (
@@ -114,13 +186,30 @@ def score_reference(reference: str, hypothesis: str) -> dict:
         "reference_words": len(word_refs) if word_evaluable else None,
         "hypothesis_words": len(word_hyps) if word_evaluable else None,
         "word_edits": wer_errors,
+        "word_deletions": (
+            word_ops["deletions"] if word_ops is not None else None
+        ),
+        "word_insertions": (
+            word_ops["insertions"] if word_ops is not None else None
+        ),
+        "word_substitutions": (
+            word_ops["substitutions"] if word_ops is not None else None
+        ),
+        "reference_word_deletion_rate": (
+            round(word_ops["deletions"] / len(word_refs), 4)
+            if word_ops is not None else None
+        ),
         "wer": wer,
         "wer_percent": round(100 * wer, 2) if wer is not None else None,
         "note": (
             "Local full-transcript reference scoring, NFKC/casefold; "
             "CER ignores punctuation and whitespace; WER uses space-delimited "
             "tokens when supported. Does not score diarization, speaker turns, "
-            "overlap, timing, or independently certify reference correctness."
+            "overlap, timing, or independently certify reference correctness. "
+            "Deletions, insertions and substitutions come from one optimal "
+            "edit alignment and can differ across equal-score alignments. "
+            "Null operation breakdown means the comparison exceeded a "
+            "bounded computational budget; the base CER/WER remain intact."
         ),
     }
 
