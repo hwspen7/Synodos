@@ -139,6 +139,11 @@ class SessionProcessor(threading.Thread):
         self._last_inferred_absolute_end = -1
         self._asr_failure_reported = False
         self._last_reclustered_segment_id = 0
+        self._speaker_min_audio_s = float(
+            os.getenv("MEETING_SPEAKER_PROBE_MIN_S", "1.2")
+        )
+        if not 0.8 <= self._speaker_min_audio_s <= 1.2:
+            raise ValueError("MEETING_SPEAKER_PROBE_MIN_S must be 0.8..1.2")
 
         # Handle transcripts and speaker assignments.
         self.meeting_store = meeting_store
@@ -584,9 +589,10 @@ class SessionProcessor(threading.Thread):
                         emb = normalized_embedding(self.models.embed(seg_audio))
                     except Exception:
                         logger.exception("Speaker embedding failed; preserving ASR text")
-            elif len(seg_audio) >= int(sr * 1.2):
+            elif len(seg_audio) >= int(sr * self._speaker_min_audio_s):
                 speaker_task = submit_speaker_analysis(
                     sentence, seg_audio, self.models.embed, sr,
+                    minimum_embedding_seconds=self._speaker_min_audio_s,
                 )
                 if speaker_task is None:
                     self._put({"type": "feature_warning", "feature": "diarization",
@@ -866,9 +872,13 @@ class SessionProcessor(threading.Thread):
                 segment["language"] = source_language
                 segment["emb"] = normalized_embedding(piece.get("emb"))
                 segment["cluster"] = -1
-                segment["speaker_uncertain"] = bool(piece.get("ambiguous") or segment["emb"] is None)
+                segment["speaker_uncertain"] = bool(
+                    piece.get("ambiguous") or piece.get("short_probe")
+                    or segment["emb"] is None
+                )
                 segment["speaker_evidence_status"] = (
-                    "turn_voiceprint" if segment["emb"] is not None
+                    "short_probe" if piece.get("short_probe")
+                    else "turn_voiceprint" if segment["emb"] is not None
                     else "turn_ambiguous" if piece.get("ambiguous")
                     else "turn_no_voiceprint"
                 )
