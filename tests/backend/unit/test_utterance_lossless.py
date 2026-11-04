@@ -77,11 +77,11 @@ class LosslessUtteranceSplitTests(unittest.TestCase):
         self.assertEqual(split_utterance(source2), (source2,))
 
     def test_cjk_word_timing_only_splits_at_real_sentence_boundaries(self):
-        source = Utterance("你好。你好吗？", 0, 2200, "zh", (
-            Word("你好。", 0, 1000), Word("你好吗？", 1100, 2200),
+        source = Utterance("\u4f60\u597d\u3002\u4f60\u597d\u5417\uff1f", 0, 2200, "zh", (
+            Word("\u4f60\u597d\u3002", 0, 1000), Word("\u4f60\u597d\u5417\uff1f", 1100, 2200),
         ), "word")
         parts = split_utterance(source)
-        self.assertEqual([p.text for p in parts], ["你好。", "你好吗？"])
+        self.assertEqual([p.text for p in parts], ["\u4f60\u597d\u3002", "\u4f60\u597d\u5417\uff1f"])
         self.assertEqual(len(split_utterances((source,))), 2)
 
     def test_invalid_time_order_preserves_whisper_original(self):
