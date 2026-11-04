@@ -342,15 +342,48 @@ class SessionProcessor(threading.Thread):
                                 "end_ms": round(seg["end_sample"] * 1000 / sr),
                                 "speaker_id": sid,
                             })
-                        closed_payload["content_overlap_audit"] = (
+                        origin_ms = round(
+                            self._independent_pcm_origin_samples * 1000 / sr
+                        )
+                        original_audit = overlap_content_risk(
+                            official, caption_activity,
+                            acoustic_origin_ms=origin_ms,
+                            speaker_id_offset=self._independent_id_offset,
+                        )
+                        # Derive the actual display-level voice hypothesis
+                        # independently, without counting a split caption's
+                        # parent as an additional simultaneous speaker.
+                        from speech.content_first_projection import (
+                            project_caption_activity_for_audit,
+                        )
+                        projection = project_caption_activity_for_audit(
+                            [
+                                {
+                                    "id": int(seg["id"]),
+                                    "start_ms": round(seg["start_sample"] * 1000 / sr),
+                                    "end_ms": round(seg["end_sample"] * 1000 / sr),
+                                    "speaker_id": row["speaker_id"],
+                                }
+                                for seg, row in zip(
+                                    self.segments, caption_activity
+                                )
+                            ],
+                            self._content_first_projection,
+                        )
+                        original_audit["actual_ui_display_projection"] = (
                             overlap_content_risk(
-                                official, caption_activity,
-                                acoustic_origin_ms=round(
-                                    self._independent_pcm_origin_samples * 1000 / sr
-                                ),
+                                official, projection,
+                                acoustic_origin_ms=origin_ms,
                                 speaker_id_offset=self._independent_id_offset,
                             )
                         )
+                        original_audit["projection_note"] = (
+                            "UI speaker cues replace their parent captions "
+                            "for this separate activity diagnostic. It does "
+                            "not establish second-speaker word recovery, "
+                            "source-separated ASR, or improved canonical DER."
+                        )
+                        closed_payload["content_overlap_audit"] = original_audit
                 except (AttributeError, TypeError, ValueError):
                     logger.warning(
                         "Optional final overlapping-voice audit unavailable",
