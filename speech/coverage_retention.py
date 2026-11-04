@@ -19,6 +19,7 @@ def choose_safe_drop(
     utterances: tuple[Utterance, ...],
     attempts: dict[int, int],
     max_holds: int = 2,
+    min_uncovered_ms: int = 1000,
     final: bool = False,
 ) -> tuple[int, list[dict]]:
     """Return a drop frontier and newly exhausted reference-free voice gaps.
@@ -29,7 +30,8 @@ def choose_safe_drop(
     """
     if (not 0 < sample_rate <= 192000 or audio_samples < 0
             or not 0 <= proposed_drop_samples <= audio_samples
-            or global_start_samples < 0 or not 0 <= max_holds <= 5):
+            or global_start_samples < 0 or not 0 <= max_holds <= 5
+            or not 300 <= min_uncovered_ms <= 2000):
         raise ValueError("Invalid speech coverage reclamation geometry")
     if not speech_intervals_ms:
         return proposed_drop_samples, []
@@ -42,7 +44,8 @@ def choose_safe_drop(
         for a, b in speech_intervals_ms
     ]
     gaps = uncovered_voice_intervals(
-        regions, utterances, duration_ms, min_uncovered_ms=1000,
+        regions, utterances, duration_ms,
+        min_uncovered_ms=min_uncovered_ms,
     )
     safe_drop = proposed_drop_samples
     exhausted = []
