@@ -91,6 +91,10 @@ class ContentFirstProjectionTests(unittest.TestCase):
             word_base_ms=4000,
             acoustic_origin_ms=3000,
             speaker_id_offset=3,
+            official_turns=[
+                {"start_ms": 1000, "end_ms": 1500, "speaker_id": 1},
+                {"start_ms": 1550, "end_ms": 2000, "speaker_id": 2},
+            ],
         )
         self.assertEqual([x["speaker_id"] for x in p["cues"]], [4, 5])
 
