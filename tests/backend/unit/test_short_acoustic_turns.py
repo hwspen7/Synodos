@@ -110,6 +110,26 @@ class ShortMixedUtteranceTests(unittest.TestCase):
         self.assertEqual(parts[0]["text"], source["text"])
         self.assertTrue(parts[0]["ambiguous"])
 
+    def test_word_alignment_cannot_alter_confirmed_punctuation(self):
+        source = self.sentence()
+        source["words"][1]["text"] = " there"
+        pieces = split_by_acoustic_turns(
+            source, voice_audio((1, 2), 1.2), SyntheticSpeakerEmbedding(),
+        )
+        self.assertEqual(len(pieces), 1)
+        self.assertEqual(pieces[0]["text"], "Hello there. Hi again.")
+        self.assertTrue(pieces[0]["ambiguous"])
+
+    def test_near_matching_alignment_cannot_omit_one_spoken_word(self):
+        source = self.sentence()
+        source["text"] = "Hello there. Hi everybody again."
+        pieces = split_by_acoustic_turns(
+            source, voice_audio((1, 2), 1.2), SyntheticSpeakerEmbedding(),
+        )
+        self.assertEqual(len(pieces), 1)
+        self.assertEqual(pieces[0]["text"], source["text"])
+        self.assertTrue(pieces[0]["ambiguous"])
+
     def test_longer_two_voice_turns_keep_distinct_consistent_embeddings(self):
         sentence = {
             "start": 0, "end": 4000,
