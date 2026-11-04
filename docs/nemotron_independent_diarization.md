@@ -205,6 +205,25 @@ acoustic preprocessing, and threshold behavior on independent development
 audio. Never optimize a threshold using the one held-out TS3003b sample
 that will be used for final acceptance.
 
+## Automatic paired-reference and published-caption report
+
+The Windows one-command acceptance script now also runs the pinned
+forced-alignment diagnostic on every successful replay. In addition to the
+strict **original only_words** acoustic gate, it always prints and saves:
+
+- Original-only_words independent acoustic DER.
+- Forced-aligned independent acoustic DER.
+- Forced-aligned acoustic DER masked to final caption clock coverage (a
+  counterfactual diagnostic, not real subtitle DER).
+- Forced-aligned **actual published-caption DER** and speaker count.
+- The exact status of optional verified word-bound timing.
+
+The original only_words `<10%` check remains mandatory and can still
+return a **nonzero exit** even when the independent forced-aligned result is
+under 10%. Both reference protocols remain separate; generated reports are
+written only to private E-drive Fixed195 paths. On failure, the reports
+remain available for diagnosis.
+
 ## Final speaker IDs and optional word-aligned subtitle times
 
 The 2026-11-04 TS3003b diagnostics produced, under the **same forced
