@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from tools.ami_nemotron_reference_diagnostic import (
     alternate_score, forced_reference,
+    acoustic_turns_within_caption_clock,
 )
 
 
@@ -24,6 +25,35 @@ class ForcedReferenceProtocolTests(unittest.TestCase):
             {"start_ms": 0, "end_ms": 700, "speaker": "TS3003b.A"},
             {"start_ms": 800, "end_ms": 1700, "speaker": "TS3003b.D"},
         ])
+
+    def test_caption_clock_mask_retains_only_acoustic_activity_under_text(self):
+        replay = {
+            "final_cluster_diagnostics": {
+                "anonymous_timeline": {
+                    "truncated": False,
+                    "total_segments": 2,
+                    "segments": [
+                        {"start_ms": 100, "end_ms": 400,
+                         "published_speaker_id": None},
+                        {"start_ms": 300, "end_ms": 700,
+                         "published_speaker_id": 19},
+                    ],
+                },
+            },
+        }
+        acoustic = [
+            {"start_ms": 0, "end_ms": 500, "speaker_id": 1},
+            {"start_ms": 600, "end_ms": 1000, "speaker_id": 2},
+        ]
+        self.assertEqual(
+            acoustic_turns_within_caption_clock(
+                acoustic, replay, duration_ms=1000,
+            ),
+            [
+                {"start_ms": 100, "end_ms": 500, "speaker_id": 1},
+                {"start_ms": 600, "end_ms": 700, "speaker_id": 2},
+            ],
+        )
 
     def test_an_unexpected_speaker_or_meeting_is_rejected(self):
         with self.assertRaises(ValueError):
