@@ -19,6 +19,7 @@ from typing import Any
 import numpy as np
 
 from core.config import Settings
+from speech.quality_profile import speaker_candidate_enabled
 from foundation.settings import InfrastructureSettings, load_infrastructure_settings
 from inference.scheduler import InferenceScheduler
 
@@ -216,8 +217,9 @@ class ModelManager:
         if data.ndim != 2:
             raise ValueError("embeddings must be a [N,D] matrix")
         n = len(data)
+        default_strategy = "candidate" if speaker_candidate_enabled() else "bootstrap"
         requested = os.getenv(
-            "MEETING_SPEAKER_CLUSTER_STRATEGY", "bootstrap"
+            "MEETING_SPEAKER_CLUSTER_STRATEGY", default_strategy
         ).strip().lower()
         if requested not in ("legacy", "bootstrap", "candidate", "strict"):
             raise ValueError("Invalid speaker cluster strategy")
