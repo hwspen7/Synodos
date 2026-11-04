@@ -70,6 +70,7 @@ class SpeakerStore:
             "text": v.get("text"),
             "created_at": v.get("created_at"),
             "short": bool(v.get("short", False)),
+            "embedding_model": v.get("embedding_model", "camplus"),
         }
 
     def _summary(self, s: dict) -> dict:
@@ -126,6 +127,7 @@ class SpeakerStore:
                 vec = {
                     "id": uuid.uuid4().hex,
                     "emb": np.asarray(v["emb"], dtype=np.float32).reshape(-1),
+                    "embedding_model": str(v.get("embedding_model") or "camplus"),
                     "duration_s": float(v.get("duration_s", 0.0)),
                     "source": v.get("source", "recording"),
                     "meeting_id": v.get("meeting_id"),
