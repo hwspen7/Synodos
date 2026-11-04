@@ -339,7 +339,7 @@ def reference_speaker_coverage(
             "NOT identity correctness. One live label can contact multiple "
             "reference speakers; simultaneous speech is counted for each "
             "active speaker. RTTM only_words intervals are not necessarily "
-            "complete conversational turns. No transcript text is exported."
+            "complete conversational turns. No recognized utterances are exported."
         ),
     }
 
