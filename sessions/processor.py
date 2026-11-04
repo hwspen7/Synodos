@@ -821,7 +821,6 @@ class SessionProcessor(threading.Thread):
         elif not final and not sentences and self._speech_settings.engine != "legacy" and recognition.speech_detected is False:
             # Reclaim only very-low-energy LEADING silence when ASR returned
             # no utterances. Preserve all uncertain or voice-like samples.
-            import os
             if os.getenv("MEETING_SAFE_SILENCE_RECLAIM", "1").strip().lower() in ("1", "true", "yes"):
                 from speech.silence_retention import safe_silence_prefix
                 drop = safe_silence_prefix(audio, sr)
