@@ -102,7 +102,11 @@ if (-not $NoFrontendInstall.IsPresent) {
 Require-Pass "Vue/TypeScript type-check"
 & $launcher @prefix build-only
 Require-Pass "Frontend production build"
-& node.exe --test tests/frontend/contracts/*.test.mjs
+$frontTests = @(Get-ChildItem -Path "tests/frontend/contracts" -Filter "*.test.mjs" -File | ForEach-Object { $_.FullName })
+if ($frontTests.Count -lt 1) {
+    throw "No frontend contract test files found"
+}
+& node.exe --test @frontTests
 Require-Pass "Frontend transcript/WebSocket regression"
 
 $toParse = @(
