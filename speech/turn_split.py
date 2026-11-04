@@ -84,8 +84,8 @@ def split_by_acoustic_turns(
     # extra speaker turns.
     short_windows = n_samples / (sample_rate * count) < 1.4
     # The opt-in speaker candidate tests a modestly more sensitive change
-    # point on short windows, but still requires lossless aligned words and
-    # independent acoustic embedding agreement before trusting identities.
+    # point on short windows, but still requires lossless aligned words.
+    # Short or mixed-voice embeddings can remain uncertain downstream.
     short_gate = 0.54 if speaker_candidate_enabled() else 0.45
     change_threshold = min(threshold, short_gate) if short_windows else threshold
     changes = [i for i in range(1, len(windows))
