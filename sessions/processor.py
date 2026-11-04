@@ -399,6 +399,7 @@ class SessionProcessor(threading.Thread):
 
     def snapshot_state(self) -> dict:
         """Audio transcription and speaker data handling."""
+        acoustics = speaker_evidence(self.segments)
         return {
             "id": self.meeting_id,
             "title": self.meeting_title,
@@ -430,6 +431,7 @@ class SessionProcessor(threading.Thread):
                     "recognition_origin": s.get("recognition_origin", "primary"),
                     "speaker_match_similarity": s.get("speaker_match_similarity"),
                     "speaker_evidence_status": s.get("speaker_evidence_status", "unavailable"),
+                    **acoustics[s["id"]],
                     "timestamp_quality": s.get("timestamp_quality", "segment"),
                     "words": s.get("words", []),
                     "translation": s.get("translation", ""),
