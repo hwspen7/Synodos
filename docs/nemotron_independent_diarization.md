@@ -376,6 +376,87 @@ counts cannot verify word correctness; WER/CER still needs an independently
 verified word transcript. The paired coverage comparison does not patch
 captions or change the frozen original DER gate.
 
+## Content-first speaker captions and overlapping-voice review (2026-11-04)
+
+This is a **non-destructive, opt-in upgrade**, not a claim that every
+overlapping speaker has already been independently transcribed or that
+the target DER is met.
+
+**What changed**
+
+- `speech/content_first_projection.py` uses the final official Nemotron
+  speaker timeline to attribute *individual, fully aligned Whisper words* to
+  a primary speaker. If the **literal complete ASR text** cannot be
+  reconstructed exactly from the word list, or its inference audio base
+  timestamp is missing, the projection fails closed. Neither a word nor
+  punctuation can be invented, deleted or replicated to a second speaker.
+- Each canonical caption has one permanent segment ID, text, revision,
+  original timestamps and translation. Extra `caption_cues` are
+  **display-only**. The frontend `src/transcript/contentFirst.ts` renders
+  them as split speaker lines while correction actions still target the
+  original canonical segment. A manually corrected speaker invalidates any
+  previous inferred speaker cue. Translations without parallel word-level
+  timing are never split.
+- `overlap_intervals_ms` and the final
+  `content_overlap_audit` preserve independently detected simultaneous
+  voice activity and highlight portions with no parallel attributed
+  captions. These are **speech-activity review flags**, not fabricated text
+  or proof of omitted words.
+- The existing `forced_aligned_caption_der` remains the untouched,
+  canonical published-caption scoring definition.
+  `forced_aligned_display_projection_metrics` is reported **separately**
+  only when at least one complete word-conserving split was emitted.
+- `asr_coverage_trace[].cycles[].commit_receipt` accounts for candidate
+  segments as newly committed, held, skipped as temporal duplicates, or
+  rejected due to invalid timestamps. Counts are per-cycle, NOT WER and
+  not proof of final transcript completeness. The AMI stage gap audit
+  aggregates those receipts while remaining text-free.
+- `MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT=1` is a **separate** existing
+  quality-guard candidate exposed as `-PreserveVerifiedText`. It preserves
+  the raw segment's exact text when an otherwise VAD-verified Whisper
+  word alignment is inconsistent; unreliable alignment loses its word
+  provenance. It is not combined with speaker projection in the single-
+  variable AMI runner, pending comparison of hallucination risk and WER.
+- The original audio is not automatically saved by this feature.
+  Independently transcribing each simultaneous voice requires a separately
+  qualified source-separation + ASR pipeline or separate microphone
+  channels. Nemotron is diarization, **not** speech source separation.
+
+**Windows isolated E-drive experiment**
+
+```powershell
+cd E:\Meeting-Fixed10-Test
+$branch = (git branch --show-current).Trim()
+if ($branch -ne "fix/ts3003b-integrity-forensics-20261104") {
+    throw "Wrong branch: $branch"
+}
+git fetch origin fix/ts3003b-integrity-forensics-20261104
+git merge --ff-only FETCH_HEAD
+$PY = "E:\Meeting-Fixed10-Test\.venv\Scripts\python.exe"
+& $PY -m unittest tests.quality.test_content_first_projection tests.quality.test_ami_content_first_projection tests.quality.test_overlap_content_risk -v
+if ($LASTEXITCODE -ne 0) { throw "Content-first contract tests failed" }
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\run_nemotron_ami.ps1 -PythonExe $PY -ContentFirst
+```
+
+The strict original `only_words` DER acceptance gate still fails at
+23.768% on the historical reference even though the separate forced-
+aligned acoustic DER measured 7.368%. The script prints the real, unchanged
+published-caption DER and the distinct UI projection metric before
+reporting the strict gate failure. No previous benchmark is replaced.
+
+**What must be validated before production**
+
+1. Pixel-level UI and correction/save/reload behavior with multilingual
+   source text, Chinese without spaces, short turns and punctuation.
+2. No confirmed word added/deleted/repeated, correct VAD-supported wording
+   on held-out multilingual meetings, WER/CER and publication completeness.
+3. Overlap spans that contain **two genuine simultaneous transcripts**.
+   The overlap warning alone does not pass this acceptance.
+4. Tail processing, streaming latency, 4070 Ti SUPER 16 GB peak VRAM,
+   cross-session speaker consistency and robustness to model failure.
+5. Projected speaker cue DER must remain a separately labeled metric.
+   Never substitute it for canonical published-caption DER.
+
 ## Rollback
 
 ```powershell
