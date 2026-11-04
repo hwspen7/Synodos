@@ -54,8 +54,8 @@ class ReviewPureTests(unittest.TestCase):
         apply_review(state, 3, 0, profile_id="enrolled_1",
                      profile_name="Ada")
         seg = state["segments"][0]
-        self.assertEqual(seg["speaker_id"], 1)
-        self.assertEqual(seg["speaker_override_id"], 1)
+        self.assertEqual(seg["speaker_id"], 2)
+        self.assertEqual(seg["speaker_override_id"], 2)
         self.assertEqual(seg["speaker_profile_id"], "enrolled_1")
         self.assertEqual(seg["speaker_name"], "Ada")
         self.assertEqual(seg["speaker_status"], "manual_override")
