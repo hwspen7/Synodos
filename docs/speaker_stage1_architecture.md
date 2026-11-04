@@ -963,3 +963,58 @@ only_words annotation can omit non-word vocalizations. One
 voice's cross-person cosine alone does not prove a classifier error;
 calibration and human-audited review are still needed. No results
 from this probe are used to promote or rewrite live speaker IDs.
+
+
+## V6 pure-speech oracle probe results and controlled clustering A/B
+
+The user ran the reference-solo CAM++ probe on the unchanged V6 TS3003b
+audio. All selected windows yielded a valid embedding:
+
+- MTD0010ID (fourth speaker): 3 clean probes, within-person
+  cosine min/median/max 0.67402 / 0.67722 / 0.80185.
+- Other speakers: MTD009PM has 6 probes (within min 0.54720),
+  MTD012ME has 6 probes (within min 0.74276), and MTD011UID
+  has only ONE clean probe (within-person reliability unknown).
+- Fourth-person versus ANY other annotated voice:
+  maximum observed cross-person cosine 0.58154.
+  Thus the specific 3 selected fourth-person probes have a
+  min-within minus max-cross margin of 0.09248.
+  This is evidence of fourth-person distinguishability in these
+  manually isolated probe windows, NOT evidence that the production
+  88-sample live timeline contained a clean fourth-person embedding.
+- The other main speaker MTD009PM has minimum same-person
+  cosine 0.54720, BELOW a cross-person maximum of 0.58154,
+  so one global threshold is not guaranteed to be accurate.
+  Do not set a global enrollment threshold using one test clip.
+
+To separate embedding quality from the model-selection error,
+the optional --cluster-analysis flag evaluates candidate clustering
+on exactly those human-reference solo CAM++ vectors while keeping
+the ground-truth labels hidden from the clustering algorithms.
+The report includes a strict complete-link threshold sweep, the
+existing unsupervised spherical silhouette candidate, permutation-
+invariant pair precision/recall/F1 and adjusted Rand index, and
+per-reference group contacts. It is NOT real-time DER. The one-
+sample third speaker cannot contribute a within-speaker positive
+pair and cannot establish enrollment reliability.
+
+From the old branch, in the environment with CAM++ installed:
+
+    cd E:\Meeting-Fixed10-Test
+    git pull --ff-only origin feature/multilingual-fixed10-ui-refresh
+    python -m unittest tests.quality.test_ami_oracle_cluster_eval tests.quality.test_ami_oracle_solo_probe -v
+    python -m tools.ami_oracle_solo_probe --root benchmark/fixed195/ami_shadow10 --meeting TS3003b --replay benchmark/fixed195/ami_shadow10/replay_TS3003b_v6.json --cluster-analysis --output benchmark/fixed195/ami_shadow10/oracle_solo_cluster_eval_TS3003b_v6.json
+
+Read the private JSON without displaying vectors:
+
+    $r = Get-Content benchmark/fixed195/ami_shadow10/oracle_solo_cluster_eval_TS3003b_v6.json -Raw | ConvertFrom-Json
+    $r.clustering_evaluation.methods | ConvertTo-Json -Depth 8
+
+This flag re-extracts the same 16 private audio windows and holds
+all vectors in memory only. Output paths must be new gitignored
+Fixed195 JSON files. The reference count is used for evaluating
+partitions AFTER the algorithm finishes; no K=4 oracle setting.
+Never treat a favorable oracle-window score as a production speaker
+count guarantee. The next necessary test is the actual same-input
+live V6 pipeline against annotated RTTM, followed by held-out AMI
+cases, not threshold selection on this one meeting.
