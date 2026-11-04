@@ -38,15 +38,24 @@ class WhisperEngine:
             min_silence_duration_ms=650,
             speech_pad_ms=180,
         )
-        # We already run Silero once and verify every accepted utterance
-        # against those same regions. A second internal VAD pass may silently
-        # remove quiet / interrupted words or change time alignment.
+        # Preserve the exact V6 decoding path by default. Skipping the
+        # model's internal VAD is an independent, experimental A/B variable.
+        # A different VAD crop changes decoding context and can increase
+        # both missed speech and hallucinations.
+        bypass_internal_vad = os.environ.get(
+            "MEETING_WHISPER_SKIP_INTERNAL_VAD", "0"
+        ).strip().lower() in ("1", "true", "yes")
         kwargs = {
             "language": None if language in ("auto", "und", "") else language,
             "multilingual": language in ("auto", "und", ""),
             "beam_size": 5,
             "word_timestamps": True,
-            "vad_filter": False,
+            "vad_filter": not bypass_internal_vad,
+            "vad_parameters": {
+                "min_speech_duration_ms": options.min_speech_duration_ms,
+                "min_silence_duration_ms": options.min_silence_duration_ms,
+                "speech_pad_ms": options.speech_pad_ms,
+            },
             "no_speech_threshold": 0.5,
             "log_prob_threshold": -1.0,
             "compression_ratio_threshold": 2.4,
@@ -60,10 +69,10 @@ class WhisperEngine:
         # forced word alignment is incomplete. This avoids deleting genuine
         # meeting content merely because word timestamps disagree.
         preserve_disputed = os.environ.get(
-            "MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT", "1"
+            "MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT", "0"
         ).strip().lower() in ("1", "true", "yes")
         gap_recovery = os.environ.get(
-            "MEETING_WHISPER_GAP_RECOVERY", "1"
+            "MEETING_WHISPER_GAP_RECOVERY", "0"
         ).strip().lower() in ("1", "true", "yes")
         with self._infer_lock:
             speech_regions = get_speech_timestamps(
