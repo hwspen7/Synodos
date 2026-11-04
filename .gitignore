@@ -15,6 +15,7 @@ Desktop.ini
 
 # Python environments and caches (keep uv.lock)
 .venv/
+.venv-speaker-*/
 venv/
 __pycache__/
 *.py[cod]
@@ -39,6 +40,7 @@ coverage/
 
 # Downloaded models and local tool distributions
 models_cache/
+pretrained_models/
 uv-bin/
 uv.zip
 *.pt
