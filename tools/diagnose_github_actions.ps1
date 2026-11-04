@@ -124,16 +124,8 @@ $report = [ordered]@{
 }
 $report | ConvertTo-Json -Depth 12
 if ($Output) {
-    $private = (Join-Path $workspace "benchmark\fixed195")
-    $path = [System.IO.Path]::GetFullPath(
-        (Join-Path $workspace $Output)
-    )
-    $privateRoot = [System.IO.Path]::GetFullPath($private).TrimEnd('\') + '\'
-    if (-not $path.StartsWith($privateRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
-        [System.IO.Path]::GetExtension($path) -ne ".json" -or
-        [System.IO.File]::Exists($path)) {
-        throw "Use a NEW .json under benchmark/fixed195 for CI diagnostics"
-    }
+    . (Join-Path $PSScriptRoot "resolve_private_ci_path.ps1")
+    $path = Resolve-PrivateCiReportPath -Workspace $workspace -RequestedPath $Output
     New-Item -ItemType Directory -Path (Split-Path $path -Parent) -Force | Out-Null
     [System.IO.File]::WriteAllText(
         $path, ($report | ConvertTo-Json -Depth 12),
