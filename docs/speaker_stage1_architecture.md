@@ -30,7 +30,7 @@ Files:
 ## Install optional models without touching the live backend
 
 Use **separate** Python 3.12 environments on Windows. First make sure your
-RTX 4090 CUDA PyTorch installation matches the environment and verify it
+RTX 4070 Ti SUPER (16 GB) CUDA PyTorch installation matches the environment and verify it
 with the official PyTorch installation guidance. Do not change the working
 live ASR virtual environment. Stop active meetings before running comparisons.
 
@@ -63,8 +63,8 @@ package named `torch` does not by itself guarantee CUDA support:
     .venv-speaker-nemotron\Scripts\python.exe -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
 
 If `torch.version.cuda` prints `None`, the Python environment has a
-CPU-only PyTorch build. On a Windows NVIDIA system whose driver supports
-CUDA 12.8, install the known official **CUDA 12.8** PyTorch 2.11.0 wheel
+CPU-only PyTorch build. On the verified RTX 4070 Ti SUPER with NVIDIA driver 610.88,
+CUDA 12.8 is supported. Install the known official **CUDA 12.8** PyTorch 2.11.0 wheel
 in **only** these optional environments:
 
     uv pip install --python .venv-speaker-ecapa\Scripts\python.exe "torch==2.11.0+cu128" "torchaudio==2.11.0+cu128" --index-url https://download.pytorch.org/whl/cu128
