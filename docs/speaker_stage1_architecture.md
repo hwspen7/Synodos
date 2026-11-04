@@ -1195,3 +1195,62 @@ on TS3003b. Replicate it on other untouched AMI sessions and
 evaluate the actual live ASR/caption/diarization DER with an
 independent reference. The production V6 speaker clustering
 and published IDs have NOT been changed.
+
+
+## TS3003b nested subgroup result and two-stage rare-voice review
+
+The user's 147-voiceprint fixed-grid re-extraction yielded
+75 reference-pure samples. With nested two-way subdivision
+on raw parent 0, the user obtained:
+
+| Variant | Groups | Pair F1 | ARI | Wrong merges | Wrong splits |
+| Original spherical | 2 | 0.91749 | 0.84908 | 209 | 0 |
+| Split parent 0 | 3 | 0.99742 | 0.99556 | 6 | 0 |
+
+This is a reduction of 203/209 = 97.13% in WRONG SAME-SPEAKER
+SAMPLE PAIRS in this one reference-pure subset, NOT DER.
+The six residual cross-person pairs are consistent with
+one low-frequency AMI speaker sample being folded into
+another person's six reference-pure windows.
+
+The next opt-in audit composes the two independent
+review-only transformations in sequence:
+  1) globally fit spherical clustering on all successful
+     2s/1.5s windows, including mixed windows;
+  2) propose a bounded two-way subcluster for each eligible
+     large raw parent, then test a **single** acoustic outlier
+     against each revised partition.
+
+The new hierarchical_provisional_review report shows each
+source variant, the number of temporary proposed groups,
+isolated sample indices and audio-relative timestamps,
+and the same reference-pure pair score. Neither candidate
+selection consumes RTTM speaker IDs. The reference labels
+are used only to score afterward. No change to actual
+real-time speaker identities, enrollment or transcript.
+
+False-positive risk is explicit: an unusual/noisy audio
+window from the SAME person can appear to be an isolated
+speaker and make the pairwise score WORSE. The regression
+test includes both a distinct-person example and precisely
+the same acoustic vectors with a same-person reference
+label; automated identity promotion is NOT authorized.
+
+In the existing feature checkout:
+
+    cd E:\Meeting-Fixed10-Test
+    git pull --ff-only origin feature/multilingual-fixed10-ui-refresh
+    python -m unittest tests.quality.test_ami_hierarchical_provisional tests.quality.test_ami_cluster_substructure tests.quality.test_ami_continuous_voice_audit -v
+    python -m tools.ami_continuous_voice_audit --root benchmark/fixed195/ami_shadow10 --meeting TS3003b --replay benchmark/fixed195/ami_shadow10/replay_TS3003b_v6.json --output benchmark/fixed195/ami_shadow10/continuous_camplus_TS3003b_v6_hierarchical.json
+
+PowerShell review:
+
+    $r = Get-Content benchmark/fixed195/ami_shadow10/continuous_camplus_TS3003b_v6_hierarchical.json -Raw | ConvertFrom-Json
+    $r.hierarchical_provisional_review | ForEach-Object { [PSCustomObject]@{ Variant=$_.source_variant; Groups=$_.provisional_cluster_count; Unconfirmed=$_.unconfirmed_candidate_count; PairF1=$_.pure_window_score.pair_f1; FP=$_.pure_window_score.false_positive_pairs; FN=$_.pure_window_score.false_negative_pairs } } | Format-Table -AutoSize
+    $r.hierarchical_provisional_review | ConvertTo-Json -Depth 7
+
+Do not claim 4 actual people from a proposed fourth
+group, even if the TS3003b subset score reaches 1.0.
+The next real decision requires consistent improvement
+across held-out AMI meetings and the real-time 240s
+speaker DER baseline of 0.40534.
