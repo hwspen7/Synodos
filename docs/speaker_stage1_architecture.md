@@ -446,7 +446,7 @@ in a local gitignored manifest. No resynthesized dialogues.
 ### Reproducible E-drive preparation
 
     cd E:\Meeting-Fixed10-Test
-    git pull --ff-only origin feature/multilingual-fixed10-ui-refresh
+    git pull --ff-only origin codex/fixed10-quality-repair-12lang
     python -m unittest tests.quality.test_ami_shadow10_prepare -v
     python -m tools.ami_shadow10_prepare --case-id EN2002b
 
@@ -651,21 +651,16 @@ are 100 ms, no-collar approximate scores, not industry certification.
 ### Changes, all disabled for production promotion
 
 * FunASR ClusterBackend returns a single label below 20 embeddings.
-  The NEW default MEETING_SPEAKER_CLUSTER_STRATEGY=bootstrap uses
-  conservative complete-link speaker clustering for under 20 vectors.
-  At 20 or more vectors it keeps the existing FunASR backend.
-* Set MEETING_SPEAKER_CLUSTER_STRATEGY=candidate for an explicitly
-  experimental bounded spherical clustering of 4-256 embeddings.
-  It evaluates 2-8 possible speaker groups using repeat-support
-  constraints and a penalized cosine-distance silhouette criterion.
-  This is **not** calibrated speaker count estimation and may still
-  return the wrong number. It replaces the previous overfragmenting
-  full-recording complete-link candidate. A failed/weak hypothesis
-  falls back to FunASR with an explicit execution receipt. Set
-  legacy to restore the exact previous path, or strict to reproduce
-  the historical 256-sample complete-link hypothesis. The separate
-  MEETING_SPEAKER_BOOTSTRAP_SIMILARITY=0.76 still controls the
-  under-20 bootstrap, not the spherical model selection.
+  The repair branch changes the default to bounded spherical candidate
+  clustering for 4-256 vectors. It evaluates 2-8 possible speaker groups
+  with a penalized cosine silhouette score. This score is heuristic,
+  not calibrated speaker-count estimation, and may return the wrong
+  number. Weak candidates now abstain as Unidentified instead of falling
+  back to the single-cluster FunASR result. Set strategy=bootstrap or
+  strategy=legacy to retain the prior backend explicitly; strict selects
+  complete-link clustering. The candidate default is experimental and
+  must not be merged into production until human-labeled DER, confusion,
+  false-alarm and latency results show no regression.
 * The final anonymous diagnostics now include fresh_cluster_sweep,
   which genuinely re-clusters acoustic embeddings at several thresholds.
   The prior posthoc_merge_sweep could only MERGE existing clusters.
@@ -716,6 +711,7 @@ Restart the backend in its own PowerShell terminal with the SAME
 ECAPA environment and cache settings as before, plus the following
 explicit candidate experiment:
 
+    # Candidate is the repair branch default; set explicitly for reproducible A/B.
     $env:MEETING_SPEAKER_CLUSTER_STRATEGY = "candidate"
     $env:MEETING_SPEAKER_BOOTSTRAP_SIMILARITY = "0.76"
     $env:MEETING_SPEAKER_LABEL_REVISABLE_S = "0"
@@ -757,7 +753,9 @@ one individual into many labels. Production promotion must wait for
 independently held-out 3, 4 and 6 speaker meeting DER, confusion,
 false-alarm, short-interjection and end-to-end latency results.
 Audio shorter than 1.2s still may not provide a reliable voiceprint;
-unknown is preferable to inventing an identity. The measured no-caption
+the repair branch lowers the probe floor to 0.8s, but uncertain short
+probes remain Unidentified until corroborated. This change needs measured
+DER and confusion results before the branch is merged. The measured no-caption
 gaps require audio/ASR inspection; the scoring utility cannot invent
 missing words. The current live transcript still assigns one speaker
 to a transcript interval and cannot fully transcribe three simultaneous
@@ -782,10 +780,10 @@ a positive published speaker ID unless an independent time-aligned
 acoustic window also matches it at cosine similarity >=0.82. Only
 then is it marked short_probe_corroborated. Uncorroborated probes
 remain unidentified, and cannot seed ECAPA shadow speaker references.
-This trial may increase competing acoustic evidence and must not be
-promoted without measured DER and confusion improvement. Run an independent A/B against the same frozen
-human annotation; do not enable in production until confusion
-and DER both improve. The default is still 1.2 seconds.
+The repair branch changes the default probe floor to 0.8 seconds. This is
+an unvalidated behavior change and remains blocked from production merge
+until an independent A/B on the same frozen human annotations shows no DER
+or confusion regression.
 
 The new AMI reference audit also includes
 reference_speech_without_captions.longest_gaps. They are 100ms

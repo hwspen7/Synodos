@@ -11,6 +11,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from core.runtime import settings, sessions, meeting_sessions, meeting_store, speaker_store, hotword_store
 from sessions.session import Session
 from speech.config import load_settings
+from speech.language import normalize_supported_language
 from speech.diarization import resolve_diarization_mode
 from speech.recording import RecordingWriter, RecordingQuotaExceeded
 from speech.streaming import NativeOnlineRecognizer, PreviewTracker
@@ -62,6 +63,17 @@ async def ws_audio(
     if len(language) > 24 or len(translate_to or "") > 24:
         await websocket.close(code=1008, reason="Invalid language")
         return
+    normalized_language = normalize_supported_language(language, allow_auto=True)
+    requested_target = speech_config.translate_to if translate_to is None else translate_to
+    normalized_target = "" if not requested_target.strip() else normalize_supported_language(requested_target)
+    if normalized_language is None or normalized_target is None:
+        await websocket.close(code=1008, reason="Language is outside the supported 12-language set")
+        return
+    if speech_config.engine == "legacy" and normalized_language not in ("zh", "auto"):
+        await websocket.close(code=1008, reason="The legacy ASR engine supports Chinese only; use Whisper or Qwen3 for the 12-language set")
+        return
+    language = "zh" if speech_config.engine == "legacy" and normalized_language == "auto" else normalized_language
+    effective_translate_to = normalized_target
     await websocket.accept()
     metrics.increment("websocket_accepted")
     audio_archive = None
@@ -161,11 +173,11 @@ async def ws_audio(
             meeting_sessions[meeting_id] = session
         try:
             session.processor.speech_language = language
-            session.processor.translate_target = speech_config.translate_to if translate_to is None else translate_to
+            session.processor.translate_target = effective_translate_to
             session.start(loop, state=loaded_state)
             session.processor.ui_settings = {
                 "language": language,
-                "translate_to": session.processor.translate_target,
+                "translate_to": effective_translate_to,
                 "record_audio": bool(record_audio if record_audio is not None else speech_config.record_audio),
                 "vad_threshold": vad_s,
                 "rec_threshold": rec_s,

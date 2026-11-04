@@ -50,6 +50,7 @@ from sessions.translation_tasks import submit_translation
 from sessions.speaker_tasks import submit_speaker_analysis, submit_acoustic_window
 from speech.acoustic_timeline import AcousticTimeline
 from speech.diarization import resolve_diarization_mode
+from speech.language import normalize_supported_language
 from sessions.speaker_fallback import (
     UNIDENTIFIED_CLUSTER, fallback_speaker_id, normalized_embedding,
 )
@@ -553,6 +554,8 @@ class SessionProcessor(threading.Thread):
         phase07_asr_started = time.monotonic()
         if self._speech_settings.engine == "legacy":
             sentences = self.models.transcribe_sentences(audio, hotword=self._hotword_str or None)
+            for sentence in sentences:
+                sentence.setdefault("language", "zh")
         else:
             recognition = self.models.recognize_multilingual(
                 audio,
@@ -606,13 +609,16 @@ class SessionProcessor(threading.Thread):
                 if speaker_task is None:
                     self._put({"type": "feature_warning", "feature": "diarization",
                                "message": "Speaker analysis backlog full; speaker remains unidentified"})
+            speaker_language = normalize_supported_language(
+                sentence.get("language")
+            ) or "und"
             record = {
                 "id": self._next_segment_id,
                 "_audio_base_sample": start_offset,
                 "start_sample": s_g,
                 "end_sample": e_g,
                 "text": text,
-                "language": sentence.get("language", "und"),
+                "language": speaker_language,
                 "language_confidence": sentence.get("language_confidence"),
                 "timestamp_quality": sentence.get("timestamp_quality", "segment"),
                 "words": sentence.get("words", []),

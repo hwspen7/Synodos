@@ -18,3 +18,20 @@ NAMES = {
 def normalize_language(code: str | None) -> str:
     value = (code or "").strip().lower().replace("_", "-")
     return NAMES.get(value, value or "und")
+
+
+SUPPORTED_LANGUAGES = frozenset({
+    "en", "zh", "hi", "es", "fr", "ar",
+    "bn", "pt", "ru", "id", "de", "ja",
+})
+
+
+def normalize_supported_language(
+    code: str | None, *, allow_auto: bool = False,
+) -> str | None:
+    """Normalize a language code and accept only the product's 12 languages."""
+    value = normalize_language(code)
+    if allow_auto and value == "auto":
+        return "auto"
+    primary = value.split("-", 1)[0]
+    return primary if primary in SUPPORTED_LANGUAGES else None
