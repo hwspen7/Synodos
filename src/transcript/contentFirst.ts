@@ -4,6 +4,7 @@
  * Source segment IDs and complete source text remain authoritative.
  */
 import type { Segment } from '@/types'
+import { speakerColor } from '@/speaker/clustering'
 
 function plain(text: string): string {
   return text.normalize('NFKC').trim()
