@@ -209,6 +209,10 @@ export interface HotwordLibrary {
 /* Audio processing and UI rendering. */
 export interface MeetingSegment {
   id: number
+  caption_cues?: TranscriptSegment['caption_cues']
+  overlap_intervals_ms?: TranscriptSegment['overlap_intervals_ms']
+  caption_projection_status?: string
+  speaker_diarization_source?: string
   text: string
   start_ms: number
   end_ms: number
