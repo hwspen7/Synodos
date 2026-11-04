@@ -162,6 +162,7 @@ def scalar_similarities(
 
 def analyze_solo(
     reference: list[dict], samples: np.ndarray, embedding_backend,
+    *, cluster_analysis: bool = False,
 ) -> dict:
     if samples.ndim != 1 or len(samples) != 240 * SAMPLE_RATE:
         raise ValueError("Require frozen 240s mono 16kHz source audio")
@@ -197,6 +198,9 @@ def analyze_solo(
             succeeded.append(vector)
         data[speaker] = succeeded
     result = scalar_similarities(data, windows)
+    if cluster_analysis:
+        from tools.ami_oracle_cluster_eval import evaluate_oracle_clusters
+        result["clustering_evaluation"] = evaluate_oracle_clusters(data)
     result["failed_windows"] = failures
     result["usable_reference_speakers"] = sum(
         bool(x) for x in data.values()
@@ -215,6 +219,10 @@ def main() -> int:
                         choices=[m for m, _ in SELECTED])
     parser.add_argument("--replay", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--cluster-analysis", action="store_true",
+        help="Evaluate unsupervised clustering on oracle-clean voiceprints",
+    )
     args = parser.parse_args()
     root = args.root.resolve()
     destination = args.output.resolve()
@@ -241,7 +249,8 @@ def main() -> int:
     manager = ModelManager(Settings())
     try:
         report = analyze_solo(
-            case["reference_turns"], samples, CamPlusEmbedding(manager)
+            case["reference_turns"], samples, CamPlusEmbedding(manager),
+            cluster_analysis=args.cluster_analysis,
         )
     finally:
         manager.close()
