@@ -526,17 +526,25 @@ class SessionProcessor(threading.Thread):
                     ).get("speaker_activity_time_source", s.get(
                         "speaker_activity_time_source",
                     )),
-                    "caption_cues": self._content_first_projection.get(
-                        int(s["id"]), {},
-                    ).get("cues", s.get("caption_cues", [])),
+                    "caption_cues": (
+                        [] if s.get("speaker_override")
+                        else self._content_first_projection.get(
+                            int(s["id"]), {},
+                        ).get("cues", s.get("caption_cues", []))
+                    ),
                     "overlap_intervals_ms": self._content_first_projection.get(
                         int(s["id"]), {},
                     ).get("overlap_intervals_ms", s.get(
                         "overlap_intervals_ms", [],
                     )),
-                    "caption_projection_status": self._content_first_projection.get(
-                        int(s["id"]), {},
-                    ).get("status", s.get("caption_projection_status", "disabled")),
+                    "caption_projection_status": (
+                        "manual_override" if s.get("speaker_override")
+                        else self._content_first_projection.get(
+                            int(s["id"]), {},
+                        ).get("status", s.get(
+                            "caption_projection_status", "disabled",
+                        ))
+                    ),
                     "speaker_uncertain": bool(s.get("speaker_uncertain", False)),
                     "emb": s["emb"],  # Preserve behavior.
                     "language": s.get("language", "und"),
