@@ -53,6 +53,10 @@ class AudioBuffer:
         with self._lock:
             return self._count
 
+    def capacity_samples(self) -> int:
+        """Read the immutable configured capacity without exposing internals."""
+        return self._max_samples
+
     def absolute_end_samples(self) -> int:
         # Monotonic sample endpoint for real-time preview timestamps.
         with self._lock:
