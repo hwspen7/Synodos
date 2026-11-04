@@ -266,7 +266,11 @@ try {
         }
         if ($null -ne $overlap) {
             Write-Host ("Acoustic overlapping-voice clock (ms): {0}" -f $overlap.overlap_acoustic_clock_ms)
-            Write-Host ("Overlapping voice underrepresented by parallel captions (ms): {0}" -f $overlap.overlap_clock_underrepresented_ms)
+            Write-Host ("Canonical overlapping voice underrepresented (ms): {0}" -f $overlap.overlap_clock_underrepresented_ms)
+            if ($null -ne $overlap.actual_ui_display_projection) {
+                Write-Host ("UI-projected overlapping voice underrepresented (ms, separate score): {0}" -f $overlap.actual_ui_display_projection.overlap_clock_underrepresented_ms)
+                Write-Host ("UI-projected overlapping voice with no caption (ms): {0}" -f $overlap.actual_ui_display_projection.overlap_clock_no_caption_ms)
+            }
         }
 
         if ($RequirePublishedForcedUnder10.IsPresent -and -not $publishedForcedPass) {
