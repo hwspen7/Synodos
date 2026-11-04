@@ -90,7 +90,8 @@ if (-not $SkipUnitTests) {
         "tests.quality.test_whisper_window_vad_ablation",
         "tests.quality.test_caption_acoustic_alignment",
         "tests.quality.test_content_first_projection",
-        "tests.quality.test_ami_content_first_projection"
+        "tests.quality.test_ami_content_first_projection",
+        "tests.quality.test_overlap_content_risk"
     )
     foreach ($module in $modules) {
         & $PythonExe -m unittest $module -v
@@ -227,6 +228,7 @@ try {
 
         $d = Get-Content $forced -Raw | ConvertFrom-Json
         $g = Get-Content $forcedGaps -Raw | ConvertFrom-Json
+        $overlap = $r.content_overlap_audit
         $independentForcedPass = (
             [double]$d.forced_aligned_independent_der -lt 0.10
         )
@@ -258,6 +260,14 @@ try {
         Write-Host ("Forced-reference no-caption clock seconds: {0}" -f $g.reference_clock_no_caption_seconds)
         Write-Host ("Forced-reference VAD-without-raw-model seconds: {0}" -f $g.gap_causes_seconds.vad_without_raw_model_timestamp)
         Write-Host ("ASR recovery attempted / confirmed: {0} / {1}" -f $g.recovery_counts.recovery_attempted, $g.recovery_counts.recovery_confirmed)
+        if ($null -ne $g.commit_totals_across_cycles) {
+            $c = $g.commit_totals_across_cycles
+            Write-Host ("ASR candidates / published / held / duplicates / invalid: {0} / {1} / {2} / {3} / {4}" -f $c.verified_candidates, $c.published_new, $c.held, $c.duplicate_skipped, $c.invalid_timestamps)
+        }
+        if ($null -ne $overlap) {
+            Write-Host ("Acoustic overlapping-voice clock (ms): {0}" -f $overlap.overlap_acoustic_clock_ms)
+            Write-Host ("Overlapping voice underrepresented by parallel captions (ms): {0}" -f $overlap.overlap_clock_underrepresented_ms)
+        }
 
         if ($RequirePublishedForcedUnder10.IsPresent -and -not $publishedForcedPass) {
             throw "Forced-reference PUBLISHED caption DER remains >=10%; NOT accepted."
