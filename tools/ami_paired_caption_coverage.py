@@ -66,11 +66,30 @@ def framewise_caption_change(
         "covered_both": 0,
         "missing_both": 0,
     }
+    # Keep exact 100ms positions, not just net statistics. Silence
+    # terminates a run: two separated speech islands must never merge.
+    status_runs: dict[str, list[dict]] = {
+        "newly_covered": [], "coverage_lost": [], "missing_both": [],
+    }
+    active_status = None
+    run_start = None
+
+    def close_run(end_ms: int) -> None:
+        nonlocal active_status, run_start
+        if active_status is not None:
+            status_runs[active_status].append({
+                "start_ms": run_start, "end_ms": end_ms,
+                "duration_ms": end_ms - run_start,
+            })
+        active_status = None
+        run_start = None
+
     for t in range(0, duration_ms, STEP_MS):
         active = any(
             row["start_ms"] <= t < row["end_ms"] for row in reference
         )
         if not active:
+            close_run(t)
             continue
         before = any(a <= t < b for a, b in baseline)
         after = any(a <= t < b for a, b in candidate)
@@ -81,6 +100,22 @@ def framewise_caption_change(
         counts["coverage_lost"] += int(before and not after)
         counts["covered_both"] += int(before and after)
         counts["missing_both"] += int(not before and not after)
+        status = (
+            "newly_covered" if after and not before
+            else "coverage_lost" if before and not after
+            else "missing_both" if not before and not after else None
+        )
+        if status != active_status:
+            close_run(t)
+            if status is not None:
+                active_status = status
+                run_start = t
+    close_run(duration_ms)
+    for key in status_runs:
+        expected_ms = counts[key] * STEP_MS
+        actual_ms = sum(row["duration_ms"] for row in status_runs[key])
+        if expected_ms != actual_ms:
+            raise AssertionError(f"Paired coverage intervals do not add up: {key}")
     return {
         "reference_clock_s": counts["reference_frames"] / 10,
         "baseline_covered_s": counts["baseline_covered"] / 10,
@@ -92,6 +127,17 @@ def framewise_caption_change(
         "net_new_coverage_s": round(
             (counts["newly_covered"] - counts["coverage_lost"]) / 10, 2,
         ),
+        # Sorted by duration, but the individual intervals retain their
+        # original source-audio timestamps for subsequent manual review.
+        "longest_newly_covered_intervals": sorted(
+            status_runs["newly_covered"], key=lambda row: -row["duration_ms"]
+        )[:24],
+        "longest_coverage_lost_intervals": sorted(
+            status_runs["coverage_lost"], key=lambda row: -row["duration_ms"]
+        )[:24],
+        "longest_missing_in_both_intervals": sorted(
+            status_runs["missing_both"], key=lambda row: -row["duration_ms"]
+        )[:24],
     }
 
 
