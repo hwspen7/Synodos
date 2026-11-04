@@ -7,12 +7,45 @@ param(
     [int]$Port = 8012,
     [switch]$SkipUnitTests,
     [switch]$WordBounds,
+    [switch]$BypassWindowVad,
+    [switch]$RecoverVadGaps,
     [switch]$RequirePublishedForcedUnder10
 )
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
+
+# Preserve one-variable-at-a-time attribution for ASR changes.
+$candidates = @(
+    $WordBounds.IsPresent,
+    $BypassWindowVad.IsPresent,
+    $RecoverVadGaps.IsPresent
+) | Where-Object { $_ }
+if (@($candidates).Count -gt 1) {
+    throw "Choose only ONE ASR candidate: -WordBounds, -BypassWindowVad, or -RecoverVadGaps."
+}
+
+# Preserve existing E-drive model caches; redirect any unspecified/C-drive
+# writable caches and temporary install paths into this E-drive worktree.
+function Set-LocalCache([string]$Name, [string]$Relative) {
+    $current = [Environment]::GetEnvironmentVariable($Name, "Process")
+    if (-not $current -or $current -notmatch '^[Ee]:\\') {
+        $current = Join-Path $repoRoot ("benchmark\\fixed195\\.runtime_cache\\" + $Relative)
+        [Environment]::SetEnvironmentVariable($Name, $current, "Process")
+    }
+    New-Item -ItemType Directory -Path $current -Force | Out-Null
+}
+Set-LocalCache "HF_HOME" "huggingface"
+Set-LocalCache "HF_HUB_CACHE" "huggingface\\hub"
+Set-LocalCache "HF_XET_CACHE" "huggingface\\xet"
+Set-LocalCache "HF_ASSETS_CACHE" "huggingface\\assets"
+Set-LocalCache "TORCH_HOME" "torch"
+Set-LocalCache "XDG_CACHE_HOME" "xdg"
+Set-LocalCache "PIP_CACHE_DIR" "pip"
+Set-LocalCache "TEMP" "temp"
+Set-LocalCache "TMP" "temp"
+Set-LocalCache "TMPDIR" "temp"
 
 if ($Port -lt 1024 -or $Port -gt 65535) {
     throw "Port must be 1024..65535."
@@ -49,7 +82,8 @@ if (-not $SkipUnitTests) {
         "tests.quality.test_asr_stage_trace",
         "tests.quality.test_asr_priority_vs_nemotron",
         "tests.quality.test_caption_word_bounds_and_official_turns",
-        "tests.quality.test_ami_nemotron_reference_diagnostic"
+        "tests.quality.test_ami_nemotron_reference_diagnostic",
+        "tests.quality.test_whisper_window_vad_ablation"
     )
     foreach ($module in $modules) {
         & $PythonExe -m unittest $module -v
@@ -64,6 +98,7 @@ $replay = Join-Path $root "replay_TS3003b_nemotron_$timestamp.json"
 $score = Join-Path $root "audit_TS3003b_nemotron_$timestamp.json"
 $gaps = Join-Path $root "audit_TS3003b_asr_stages_$timestamp.json"
 $forced = Join-Path $root "audit_TS3003b_forced_comparison_$timestamp.json"
+$forcedGaps = Join-Path $root "audit_TS3003b_forced_asr_stages_$timestamp.json"
 $outLog = Join-Path $root "nemotron_server_$timestamp.stdout.log"
 $errLog = Join-Path $root "nemotron_server_$timestamp.stderr.log"
 
@@ -84,7 +119,8 @@ $env:MEETING_MIN_COMMIT_CONTEXT_S = "7.0"
 $env:MEETING_ASR_SPEECH_BACKPRESSURE_GUARD = "0"
 $env:MEETING_ASR_QUALITY_CANDIDATE = "0"
 $env:MEETING_SPEAKER_QUALITY_CANDIDATE = "0"
-$env:MEETING_WHISPER_GAP_RECOVERY = "0"
+$env:MEETING_WHISPER_GAP_RECOVERY = if ($RecoverVadGaps.IsPresent) { "1" } else { "0" }
+$env:MEETING_WHISPER_WINDOW_VAD_BYPASS = if ($BypassWindowVad.IsPresent) { "1" } else { "0" }
 $env:MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT = "0"
 $env:MEETING_ASR_COVERAGE_RETENTION = "0"
 $env:MEETING_WHISPER_DUAL_VAD = "0"
@@ -174,7 +210,15 @@ try {
             throw "Forced-alignment comparison failed."
         }
 
+        & $PythonExe -m tools.ami_asr_stage_gap_audit `
+            --root $root --meeting TS3003b --replay $replay `
+            --reference-protocol forced_aligned --output $forcedGaps
+        if ($LASTEXITCODE -ne 0) {
+            throw "Forced-alignment ASR-stage gap audit failed."
+        }
+
         $d = Get-Content $forced -Raw | ConvertFrom-Json
+        $g = Get-Content $forcedGaps -Raw | ConvertFrom-Json
         $independentForcedPass = (
             [double]$d.forced_aligned_independent_der -lt 0.10
         )
@@ -187,6 +231,7 @@ try {
         Write-Host "Independent Nemotron report: $score"
         Write-Host "ASR missing-caption report: $gaps"
         Write-Host "Paired forced-reference comparison: $forced"
+        Write-Host "Forced-reference ASR-stage gaps: $forcedGaps"
         Write-Host "Backend logs: $errLog"
         Write-Host ("Original only_words independent DER: {0:P3}" -f ([double]$d.original_only_words_independent_der))
         Write-Host ("Forced reference independent DER: {0:P3}" -f ([double]$d.forced_aligned_independent_der))
@@ -194,6 +239,11 @@ try {
         Write-Host ("Forced reference ACTUAL published-caption DER: {0:P3}" -f ([double]$d.forced_aligned_caption_der))
         Write-Host ("Forced reference published speaker count: {0}" -f ([int]$d.forced_aligned_caption_metrics.predicted_speaker_count))
         Write-Host ("Word-aligned caption bounds active: {0}" -f $WordBounds.IsPresent)
+        Write-Host ("Inner Whisper window VAD bypassed: {0}" -f $BypassWindowVad.IsPresent)
+        Write-Host ("Bounded VAD-gap ASR retries: {0}" -f $RecoverVadGaps.IsPresent)
+        Write-Host ("Forced-reference no-caption clock seconds: {0}" -f $g.reference_clock_no_caption_seconds)
+        Write-Host ("Forced-reference VAD-without-raw-model seconds: {0}" -f $g.gap_causes_seconds.vad_without_raw_model_timestamp)
+        Write-Host ("ASR recovery attempted / confirmed: {0} / {1}" -f $g.recovery_counts.recovery_attempted, $g.recovery_counts.recovery_confirmed)
 
         if ($RequirePublishedForcedUnder10.IsPresent -and -not $publishedForcedPass) {
             throw "Forced-reference PUBLISHED caption DER remains >=10%; NOT accepted."
