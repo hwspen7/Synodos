@@ -147,8 +147,14 @@ class MeetingStore:
             "speaker_evidence_count": s.get("speaker_evidence_count", 0),
             "speaker_evidence_status": s.get("speaker_evidence_status", "unavailable"),
             "speaker_score_kind": (
-                "nemotron_frame_activity_not_identity_probability"
-                if s.get("speaker_diarization_source") == "nemotron3"
+                "nemotron_official_turn_coverage_not_probability"
+                if str(s.get("speaker_activity_status", "")).startswith(
+                    "official_turn_"
+                )
+                else "nemotron_frame_activity_not_identity_probability"
+                if s.get("speaker_diarization_source") in (
+                    "nemotron3", "nemotron3_uncertain",
+                )
                 else "raw_cosine_not_probability"
             ),
             "speaker_diarization_source": s.get(
