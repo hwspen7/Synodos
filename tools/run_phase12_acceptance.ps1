@@ -17,6 +17,7 @@ param(
     [string]$Phase2Holdout = "",
     [string]$PyannoteModelPath = "",
     [string]$DiarizenModelPath = "",
+    [string]$DiarizenEmbeddingModelPath = "",
     [string]$QwenModelPath = "",
     [ValidateSet("cpu", "cuda")][string]$ExperimentDevice = "cuda",
     [switch]$AllowModelDownload
@@ -89,6 +90,9 @@ if ($FullEvaluation.IsPresent) {
     }
     if ($PyannoteModelPath) { $comparison.PyannoteModelPath = $PyannoteModelPath }
     if ($DiarizenModelPath) { $comparison.DiarizenModelPath = $DiarizenModelPath }
+    if ($DiarizenEmbeddingModelPath) {
+        $comparison.DiarizenEmbeddingModelPath = $DiarizenEmbeddingModelPath
+    }
     if ($AllowModelDownload.IsPresent) { $comparison.AllowModelDownload = $true }
     & (Join-Path $PSScriptRoot "run_phase1b_compare.ps1") @comparison
 
