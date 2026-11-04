@@ -66,15 +66,15 @@ function wrapLongSentence(sentence: string, maxChars = 100): string[] {
     let breakAt = -1
     // Prefer a clause boundary that still yields a reasonably sized line.
     for (let index = minBreak; index < maxChars && index < rest.length; index++) {
-      if (/[,;\uff0c\uff1b\uff1a\u3001:]/u.test(rest[index]) &&
-          (index + 1 === rest.length || /[\s\u3400-\u9fff]/u.test(rest[index + 1]))) {
+      if (/[,;\uff0c\uff1b\uff1a\u3001:]/u.test(rest[index] ?? '') &&
+          (index + 1 === rest.length || /[\s\u3400-\u9fff]/u.test(rest[index + 1] ?? ''))) {
         breakAt = index + 1
       }
     }
     if (breakAt < 0) {
       // Choose the last word boundary to avoid breaking Latin words.
       for (let index = minBreak; index < maxChars && index < rest.length; index++) {
-        if (/\s/u.test(rest[index])) breakAt = index
+        if (/\s/u.test(rest[index] ?? '')) breakAt = index
       }
     }
     if (breakAt < 0) {
