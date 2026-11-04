@@ -265,8 +265,10 @@ class SessionProcessor(threading.Thread):
             closed_payload = {"type": "closed", "saved": self._final_save_ok}
             if self._ecapa_shadow is not None:
                 try:
+                    # Final transcript is already saved. Wait at most 1.5s for
+                    # pending diagnostics, then account for any discarded work.
                     closed_payload["speaker_shadow_diagnostics"] = (
-                        self._ecapa_shadow.status()
+                        self._ecapa_shadow.finish(wait_seconds=1.5)
                     )
                 except Exception:
                     logger.warning("Optional ECAPA shadow diagnostics unavailable")
