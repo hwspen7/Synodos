@@ -51,6 +51,10 @@ def assess(
 
     lg = language.get("gates") or {}
     real = human.get("gates") or {}
+    overall = language.get("overall") or {}
+    supported = language.get("supported_language_codes") or []
+    required_ten = {"en", "zh", "fr", "es", "ar",
+                    "id", "ja", "ru", "de", "hi"}
     acoustic_metrics = acoustic.get("independent_acoustic_metrics") or {}
     checked_runs = ci.get("checks") or []
     completed_checks = {
@@ -68,10 +72,14 @@ def assess(
     asr_cer = real.get("character_error_at_most_threshold") is True
     gates = {
         "ten_language_frozen_cer": (
-            language.get("pass") is True
-            and lg.get("exactly_ten_supported_languages") is True
-            and lg.get("exactly_110_frozen_reference_clips") is True
-            and lg.get("weighted_cer_within_limit") is True
+            language.get("schema") == "meeting-phase1-ten-language-text-gate-v1"
+            and language.get("pass") is True
+            and set(supported) == required_ten
+            and language.get("selected_reference_case_count") == 110
+            and all(value is True for value in lg.values())
+            and len(lg) == 7
+            and type(overall.get("cer")) in (int, float)
+            and 0 <= overall["cer"] < 0.10
         ),
         "reviewed_real_meeting_text": (
             human.get("pass") is True
