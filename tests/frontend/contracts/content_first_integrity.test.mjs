@@ -45,6 +45,6 @@ test('unsafe timing or zero split fails rather than mutating source', () => {
   assert.equal(isExactContentProjection('a b', 0, 1000, []), false)
   assert.equal(isExactContentProjection('a b', 0, 1000, [
     { start_ms: 0, end_ms: 300, text: 'a' },
-    { start_ms: 1000, end_ms: 1100, text: ' b' },
+    { start_ms: 1000, end_ms: 1200, text: ' b' },
   ]), false)
 })
