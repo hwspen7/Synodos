@@ -68,6 +68,8 @@ def recover_missing_voice(
     language: str,
     sample_rate: int = 16000,
     max_windows: int = MAX_RECOVERY_WINDOWS,
+    min_uncovered_ms: int = MIN_UNCOVERED_MS,
+    short_voice_support_ms: int = 160,
 ) -> tuple[tuple[Utterance, ...], dict]:
     """Retry only acoustically supported uncovered windows using the ASR.
 
@@ -77,12 +79,16 @@ def recover_missing_voice(
     """
     if sample_rate != 16000 or not 0 <= max_windows <= 4:
         raise ValueError("Unsupported recovery sample rate or budget")
+    if not 200 <= min_uncovered_ms <= 10000:
+        raise ValueError("Invalid recovery voice gap threshold")
     audio = np.asarray(samples, dtype=np.float32)
     if audio.ndim != 1 or not np.isfinite(audio).all():
         raise ValueError("Require finite mono audio")
     duration_ms = round(len(audio) * 1000 / sample_rate)
     regions = tuple(dict(item) for item in speech_regions)
-    missing = uncovered_voice_intervals(regions, primary, duration_ms)
+    missing = uncovered_voice_intervals(
+        regions, primary, duration_ms, min_uncovered_ms=min_uncovered_ms,
+    )
     if max_windows == 0 or not missing:
         return primary, {
             "uncovered_speech_intervals": missing,
@@ -102,7 +108,7 @@ def recover_missing_voice(
             if budget == 0:
                 break
             b = min(end, a + MAX_GAP_MS)
-            if b - a < MIN_UNCOVERED_MS:
+            if b - a < min_uncovered_ms:
                 continue
             clip_a = max(0, a - EDGE_PAD_MS)
             clip_b = min(duration_ms, b + EDGE_PAD_MS)
@@ -133,6 +139,7 @@ def recover_missing_voice(
                 candidates = verify_utterances(
                     list(chunks), local, clip_b - clip_a, detected,
                     preserve_disputed_text=True,
+                    short_voice_support_ms=short_voice_support_ms,
                 )
             except Exception:
                 failed += 1
