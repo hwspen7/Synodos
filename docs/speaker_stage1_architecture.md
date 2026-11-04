@@ -44,6 +44,26 @@ additionally needs a compatible torchaudio build. The requirements are
 candidates, not a tested lockfile for this Windows GPU. Test these
 dependencies separately rather than force-installing into the current app.
 
+### First-run Transformers processor dependency: librosa
+
+Nemotron's `NemotronAsrStreamingFeatureExtractor` requires `librosa`.
+The candidate requirements now include it and the doctor will flag it
+before the model tries to download weights. To install the missing
+dependency into **only** the E: drive Nemotron environment, use:
+
+    $env:UV_CACHE_DIR = "E:\Meeting-AI-Cache\uv"
+    $env:HF_HOME = "E:\Meeting-AI-Cache\huggingface"
+    $env:HF_HUB_CACHE = "E:\Meeting-AI-Cache\huggingface\hub"
+    $env:TEMP = "E:\Meeting-AI-Cache\temp"
+    $env:TMP = "E:\Meeting-AI-Cache\temp"
+    New-Item -ItemType Directory -Force $env:UV_CACHE_DIR, $env:HF_HUB_CACHE, $env:TEMP | Out-Null
+    uv pip install --python .\.venv-speaker-nemotron\Scripts\python.exe -r requirements-speaker-nemotron.txt
+
+The Hugging Face unauthenticated warning affects rate limits; the Windows
+symlink warning affects disk space and cache efficiency. Neither one
+explains a missing librosa import. Do not delete the model cache to fix
+this issue or install packages into the main backend environment.
+
 Before downloading candidate weights, run the no-download environment check:
 
     .venv-speaker-ecapa\Scripts\python.exe -m tools.speaker_stage1_doctor --model ecapa --device cuda
