@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from collections import Counter
+from hashlib import sha256
 import json
 import math
 from statistics import median
@@ -79,6 +80,15 @@ def preflight_private_exports(args) -> None:
                 "Choose a new filename (for example, append a timestamp). "
                 "No audio has been replayed."
             )
+
+
+def _audio_checksum(path: Path) -> str:
+    """Fingerprint the exact WAV played, without storing waveform samples."""
+    digest = sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def pcm_packet(pcm, seq: int, offset: int) -> bytes:
@@ -492,6 +502,7 @@ async def replay(args) -> dict:
     summary = {
         "schema": SCHEMA,
         "source_audio": str(source),
+        "source_audio_sha256": _audio_checksum(source),
         "source_audio_duration_s": round(len(wave) / SAMPLE_RATE, 2),
         "loops": args.loops, "gap_ms": args.gap_ms, "playback_speed": args.speed,
         "real_time_latency_evaluable": args.speed == 1.0,
