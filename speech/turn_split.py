@@ -5,7 +5,6 @@ not inferred from the language or wording of the transcript.
 """
 from __future__ import annotations
 
-from difflib import SequenceMatcher
 import math
 import os
 import unicodedata
@@ -26,8 +25,14 @@ def _vector(raw: object) -> np.ndarray | None:
     return a / n if a.size and np.all(np.isfinite(a)) and n > 1e-7 else None
 
 
-def _letters(text: str) -> str:
-    return "".join(ch for ch in unicodedata.normalize("NFKC", text).casefold() if ch.isalnum())
+def _surface(text: str) -> str:
+    """Compare recognized text while ignoring only layout whitespace.
+
+    Do not silently replace source words or punctuation because a word
+    alignment looks approximately similar.
+    """
+    return "".join(ch for ch in unicodedata.normalize("NFKC", text)
+                   if not ch.isspace())
 
 
 def split_by_acoustic_turns(
@@ -102,8 +107,10 @@ def split_by_acoustic_turns(
     joined = ""
     for _, _, t in valid:
         joined = join_transcript_text(joined, t)
-    source, reconstructed = _letters(original), _letters(joined)
-    if not source or SequenceMatcher(None, source, reconstructed, autojunk=False).ratio() < 0.91:
+    # A forced alignment is timing evidence, not permission to rewrite
+    # Whisper's confirmed transcript. Require source text and all punctuation
+    # to reconstruct exactly (except spacing / Unicode compatibility).
+    if not _surface(original) or _surface(original) != _surface(joined):
         return [dict(fallback[0], ambiguous=True)]
     cuts = [start + int(windows[index][0] * 1000 / sample_rate) for index in changes]
     groups: list[list[tuple[int, int, str]]] = []
@@ -150,6 +157,6 @@ def split_by_acoustic_turns(
     reconstructed = ""
     for piece in result:
         reconstructed = join_transcript_text(reconstructed, piece["text"])
-    if _letters(reconstructed) != _letters(joined):
+    if _surface(reconstructed) != _surface(original):
         return [dict(fallback[0], ambiguous=True)]
     return result
