@@ -196,6 +196,30 @@ class ModelManager:
         embeddings = np.asarray(embeddings, dtype=np.float32)
         if embeddings.ndim != 2:
             raise ValueError("embeddings must be a [N, D] matrix")
+        strategy = os.getenv(
+            "MEETING_SPEAKER_CLUSTER_STRATEGY", "bootstrap"
+        ).strip().lower()
+        if strategy not in ("legacy", "bootstrap", "candidate"):
+            raise ValueError("Invalid speaker cluster strategy")
+        from speech.adaptive_cluster import complete_link_clusters
+        threshold = float(os.getenv(
+            "MEETING_SPEAKER_BOOTSTRAP_SIMILARITY", "0.76"
+        ))
+        if strategy != "legacy" and (
+            len(embeddings) < 20
+            or (strategy == "candidate" and len(embeddings) <= 256)
+        ):
+            try:
+                return complete_link_clusters(
+                    embeddings, threshold=threshold,
+                )
+            except ValueError:
+                # The candidate algorithm must never block live transcription:
+                # preserve established legacy behavior and surface the cause.
+                logger.warning(
+                    "Acoustic cluster candidate rejected for %d embeddings",
+                    len(embeddings),
+                )
         with self._infer_lock:
             labels = self._load_cluster()(embeddings, oracle_num=None)
         return np.asarray(labels).reshape(-1).astype(int)
