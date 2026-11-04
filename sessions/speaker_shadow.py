@@ -232,6 +232,11 @@ class EcapaShadowSession:
             finally:
                 self._jobs.task_done()
 
+    def note_no_active_window(self) -> None:
+        """Count ASR-confirmed turns too quiet or sparse for shadow analysis."""
+        with self._lock:
+            self._counts["no_active_window"] += 1
+
     def status(self) -> dict:
         with self._lock:
             return {
@@ -247,6 +252,7 @@ class EcapaShadowSession:
                 "skipped_queue_full": self._counts["queue_full"],
                 "skipped_invalid_audio": self._counts["invalid_audio"],
                 "skipped_low_energy": self._counts["low_energy"],
+                "skipped_no_active_window": self._counts["no_active_window"],
                 "errors": self._counts["errors"],
                 "worker_available": self._available,
                 "remaining": self._jobs.qsize(),
