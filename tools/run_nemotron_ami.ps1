@@ -83,7 +83,8 @@ if (-not $SkipUnitTests) {
         "tests.quality.test_asr_priority_vs_nemotron",
         "tests.quality.test_caption_word_bounds_and_official_turns",
         "tests.quality.test_ami_nemotron_reference_diagnostic",
-        "tests.quality.test_whisper_window_vad_ablation"
+        "tests.quality.test_whisper_window_vad_ablation",
+        "tests.quality.test_caption_acoustic_alignment"
     )
     foreach ($module in $modules) {
         & $PythonExe -m unittest $module -v
