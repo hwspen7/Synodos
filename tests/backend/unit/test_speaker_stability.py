@@ -199,21 +199,23 @@ class StabilityUnitContracts(unittest.TestCase):
              "emb": np.array([0.707, 0.707]), "speaker_uncertain": False},
             {"id": 5, "start_sample": sr * 6, "end_sample": sr * 6 + 3200,
              "emb": np.array([-0.9, -0.1]), "speaker_uncertain": True},
+            {"id": 6, "start_sample": sr * 7, "end_sample": sr * 7 + 3200,
+             "emb": np.array([1., 0.]), "speaker_uncertain": True},
         ]
         calls = []
         def cluster(vectors):
             calls.append(vectors.copy())
             return np.where(vectors[:, 0] > vectors[:, 1], 3, 8)
         stats = assign_acoustic_anchor_clusters(
-            records, list(range(5)), cluster, sr)
+            records, list(range(6)), cluster, sr)
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0].shape, (2, 2))
         self.assertEqual(stats, {
             "anchor_segments": 2, "short_assigned": 1,
-            "unassigned": 2, "raw_clusters": 2,
+            "unassigned": 3, "raw_clusters": 2,
         })
         self.assertEqual(
-            [r["cluster"] for r in records], [3, 8, 3, -3, -3])
+            [r["cluster"] for r in records], [3, 8, 3, -3, -3, -3])
 
     def test_anchor_mode_skips_spectral_backend_for_one_anchor(self):
         sr = 16000
