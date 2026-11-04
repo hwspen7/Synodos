@@ -54,7 +54,7 @@ from sessions.speaker_fallback import (
 )
 from sessions.speaker_stability import (
     collect_mature_labels, restore_mature_labels, stabilized_cluster_ids,
-    summarize_cluster_fragmentation,
+    summarize_cluster_fragmentation, diagnose_cluster_merge_thresholds,
 )
 
 logger = logging.getLogger(__name__)
@@ -252,11 +252,19 @@ class SessionProcessor(threading.Thread):
             if os.getenv("MEETING_DIARIZATION_DIAGNOSTICS", "0").lower() in (
                 "1", "true", "yes"
             ):
-                # Opt-in: only non-identifying cluster/label counts. No
-                # voiceprints, participant names or transcript content.
-                closed_payload["diarization_diagnostics"] = (
-                    summarize_cluster_fragmentation(self.segments)
-                )
+                # End-of-session diagnostic only; never let profiling prevent
+                # closing an otherwise successfully processed meeting.
+                try:
+                    summary = summarize_cluster_fragmentation(self.segments)
+                    summary["configured_merge_threshold"] = (
+                        self.settings.cluster_merge_thr
+                    )
+                    summary["posthoc_merge_sweep"] = (
+                        diagnose_cluster_merge_thresholds(self.segments)
+                    )
+                    closed_payload["diarization_diagnostics"] = summary
+                except Exception:
+                    logger.exception("Optional diarization diagnostics failed")
             self._put(closed_payload)
 
     def _finalize(self) -> None:
