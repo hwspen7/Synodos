@@ -897,8 +897,10 @@ class SessionProcessor(threading.Thread):
         # A segment's asynchronous turn analysis can finish AFTER the
         # acoustic windows that cover it. Reconcile against existing windows
         # even when no new acoustic result arrived on this processor cycle.
-        backfilled = self._backfill_acoustic_missing()
-        return added or backfilled
+        # Adding a window alone does not change any published speaker
+        # embedding. Trigger reclustering only if backfill actually updates
+        # a segment; otherwise new 1.5s windows cause needless churn.
+        return self._backfill_acoustic_missing()
 
     def _backfill_acoustic_missing(self) -> bool:
         """Use existing acoustics for unmatched segments after async work.
