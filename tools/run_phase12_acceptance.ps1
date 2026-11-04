@@ -82,7 +82,33 @@ if ($FullEvaluation.IsPresent) {
         -not $Phase2Dev -or -not $Phase2Holdout) {
         throw "FullEvaluation requires all three optional Python environments, a ten-meeting replay manifest, a Qwen audio/segment audit pair, and separate Phase 2 dev/holdout manifests."
     }
-    Write-Host "Phase 1A: independent Whisper ablations"
+    # Run all cheap input checks BEFORE any long, paid or GPU-heavy jobs.
+    $privateRoot = ([IO.Path]::GetFullPath(
+        (Join-Path $repo "benchmark\fixed195")
+    )).TrimEnd('\') + '\'
+    foreach ($value in @($NemotronReplayManifest, $QwenAudio,
+                         $QwenSegmentAudit, $Phase2Dev, $Phase2Holdout)) {
+        $candidate = if ([IO.Path]::IsPathRooted($value)) { $value }
+                     else { Join-Path $repo $value }
+        $sourcePath = [IO.Path]::GetFullPath($candidate)
+        if (-not $sourcePath.StartsWith(
+            $privateRoot, [StringComparison]::OrdinalIgnoreCase
+        ) -or -not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+            throw "A required private full-evaluation evidence file is missing or outside the E-drive benchmark: $value"
+        }
+    }
+    foreach ($value in @($PyannotePython, $DiarizenPython, $QwenPython)) {
+        $candidate = if ([IO.Path]::IsPathRooted($value)) { $value }
+                     else { Join-Path $repo $value }
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            throw "A dedicated Phase 1B model Python environment is missing: $value"
+        }
+    }
+    if ($DiarizenModelPath -and (Test-Path -LiteralPath $DiarizenModelPath -PathType Container) -and
+        (-not $DiarizenEmbeddingModelPath -or -not (Test-Path -LiteralPath $DiarizenEmbeddingModelPath -PathType Leaf))) {
+        throw "Local DiariZen model requires a local Wespeaker embedding .bin file."
+    }
+        Write-Host "Phase 1A: independent Whisper ablations"
     $ablation = @{
         PythonExe = $PythonExe
         Port = $Port
