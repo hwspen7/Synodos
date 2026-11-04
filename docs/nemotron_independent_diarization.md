@@ -491,6 +491,29 @@ caption activity) and
 parent in this review-only calculation to prevent double-counting
 voices. Neither definition counts missing *words*.
 
+To compare canonical versus actual UI-displayed overlapping-speaker
+activity on this **already completed** replay, without invoking CUDA or
+re-running the audio, use:
+
+```powershell
+cd E:\Meeting-Fixed10-Test
+$PY = "E:\Meeting-Fixed10-Test\.venv\Scripts\python.exe"
+& $PY -m unittest tests.quality.test_content_first_projection tests.quality.test_ami_offline_display_overlap -v
+if ($LASTEXITCODE -ne 0) { throw "Content-first audit tests failed" }
+$root = "benchmark/fixed195/ami_shadow10"
+$tag = Get-Date -Format "yyyyMMdd-HHmmss"
+& $PY -m tools.ami_offline_display_overlap `
+    --root $root --meeting TS3003b `
+    --replay "$root/replay_TS3003b_nemotron_20261104-152102.json" `
+    --output "$root/audit_TS3003b_display_overlap_$tag.json"
+if ($LASTEXITCODE -ne 0) { throw "Offline overlap audit failed" }
+```
+
+This new offline audit reads and validates the immutable original AMI source
+with `score_case`, computes canonical and actual-display acoustic overlap
+under identical model output, and refuses to silently overwrite a report.
+Its measurements are **not** double-stream transcribed word coverage.
+
 The valid next acceptance requires held-out multilingual transcription
 references to evaluate WER/CER and missed words, plus source-separated
 overlap speech samples with independent word annotations. Do not
