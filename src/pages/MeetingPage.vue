@@ -12,6 +12,9 @@ import AppIcon from '@/components/AppIcon.vue'
 import { speakerColor } from '@/speaker/clustering'
 import { splitDisplaySentences } from '@/transcript/display'
 import { expandContentFirstSegments } from '@/transcript/contentFirst'
+import {
+  supportedLanguages, restoredSpeechChoices,
+} from '@/config/phase1Languages'
 import type {
   HotwordLibrary,
   Paragraph,
@@ -33,19 +36,6 @@ const partialText = ref('')
 const partialLanguage = ref('')
 const audioAnalysis = ref('')
 const recordingList = ref<Array<{ name: string, bytes: number, duration_s: number | null, modified_at: string }>>([])
-const supportedLanguages = [
-  ['auto', 'Detect automatically'], ['ar', 'Arabic'], ['bn', 'Bengali'],
-  ['bg', 'Bulgarian'], ['ca', 'Catalan'], ['zh', 'Chinese'], ['hr', 'Croatian'],
-  ['cs', 'Czech'], ['da', 'Danish'], ['nl', 'Dutch'], ['en', 'English'],
-  ['fi', 'Finnish'], ['fr', 'French'], ['de', 'German'], ['el', 'Greek'],
-  ['he', 'Hebrew'], ['hi', 'Hindi'], ['hu', 'Hungarian'], ['id', 'Indonesian'],
-  ['it', 'Italian'], ['ja', 'Japanese'], ['ko', 'Korean'], ['ms', 'Malay'],
-  ['mr', 'Marathi'], ['no', 'Norwegian'], ['fa', 'Persian'], ['pl', 'Polish'],
-  ['pt', 'Portuguese'], ['ro', 'Romanian'], ['ru', 'Russian'], ['sr', 'Serbian'],
-  ['sk', 'Slovak'], ['es', 'Spanish'], ['sv', 'Swedish'], ['ta', 'Tamil'],
-  ['te', 'Telugu'], ['th', 'Thai'], ['tr', 'Turkish'], ['uk', 'Ukrainian'],
-  ['ur', 'Urdu'], ['vi', 'Vietnamese'],
-]
 
 type Status = 'idle' | 'connecting' | 'recording' | 'stopping' | 'disconnected'
 
@@ -314,8 +304,18 @@ async function loadMeetingConfig(): Promise<void> {
     selectedParticipantIds.value = meeting.ui_settings?.participant_ids ?? meeting.participant_ids ?? []
     selectedHotwordIds.value = meeting.ui_settings?.hotword_ids ?? meeting.hotword_ids ?? []
     spkThreshold.value = meeting.ui_settings?.spk_threshold ?? meeting.spk_threshold ?? 0.3
-    language.value = meeting.ui_settings?.language ?? 'auto'
-    translationTarget.value = meeting.ui_settings?.translate_to ?? ''
+    const restored = restoredSpeechChoices(
+      meeting.ui_settings?.language ?? 'auto',
+      meeting.ui_settings?.translate_to ?? '',
+    )
+    language.value = restored.language
+    translationTarget.value = restored.translate_to
+    if (restored.hadUnsupportedSavedChoice) {
+      // Never rewrite historic saved content or claim support for old
+      // language selections. Recording starts with explicitly supported
+      // settings instead.
+      showToast('Previous language selection is outside the Phase 1 ten-language list. Auto detection and no translation selected.')
+    }
     recordAudio.value = meeting.ui_settings?.record_audio ?? true
     vadThreshold.value = meeting.ui_settings?.vad_threshold ?? 4
     recThreshold.value = meeting.ui_settings?.rec_threshold ?? 1.5
