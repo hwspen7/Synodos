@@ -429,6 +429,7 @@ async def replay(args) -> dict:
         ready = {
             "engine": opening.get("asr_engine"),
             "asr_quality_candidate": opening.get("asr_quality_candidate"),
+            "speaker_cluster_strategy": opening.get("speaker_cluster_strategy"),
             "model": opening.get("asr_model"),
             "diarization_mode": opening.get("diarization_mode"),
             "processing_window_s": opening.get("processing_window_s"),
