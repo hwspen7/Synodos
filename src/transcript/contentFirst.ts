@@ -71,5 +71,3 @@ function speakerColorForCue(speakerId: number): string {
   // identity in canonical segments.
   return speakerColor(speakerId)
 }
-
-import { speakerColor } from '@/speaker/clustering'
