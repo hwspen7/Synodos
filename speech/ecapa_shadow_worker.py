@@ -96,7 +96,9 @@ def main() -> int:
             label = message.get("label")
             samples = decode_audio(message)
             rms = float(np.sqrt(np.mean(samples * samples)))
-            if rms < 0.008:
+            # Match the producer's conservative PCM minimum. This is a
+            # near-silence guard, not a speaker activity classifier.
+            if rms < 0.001:
                 outcome = "low_energy"
             else:
                 vector = backend.embed(samples)
