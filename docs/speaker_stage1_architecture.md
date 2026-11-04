@@ -855,3 +855,49 @@ The live transcript still cannot represent all three
 simultaneous speaker word streams; V6 is *not* a complete
 three-way separation fix and does not fabricate missing ASR
 words in the 29-second annotation gap.
+
+
+## Back to stable V6 baseline: per-reference-speaker evidence audit
+
+The separate `codex/fixed10-quality-repair-12lang` experiment produced
+TS3003b DER 0.46707, worse than V6's reference-backed 0.40534, and
+both still assigned only two speakers to a four-person AMI meeting.
+Do not merge that branch into this one based on code-contract CI alone.
+
+The first improvement on this baseline is deliberately **offline-only**.
+The AMI audit now includes `reference_speaker_coverage`, which reports
+for each human-annotated voice:
+- Annotated speaking seconds, number of RTTM speech intervals and the
+  number of intervals shorter than 1.2 seconds.
+- Reference speaking time with no caption, an unknown-only caption,
+  and a positive published speaker label.
+- Caption-covered reference time with and without an available speaker
+  embedding, and time overlapping another reference speaker.
+- Temporal contact with each anonymous published label.
+
+The contact counts are NOT verified identity assignments: a label
+could belong to a different person, especially during overlapping
+speech. The RTTM is human-annotation-derived only_words, so short
+interval counts are **not** guaranteed counts of complete utterances.
+The report never copies recognized transcript words or embeddings.
+
+You can re-score the existing immutable V6 replay WITHOUT launching
+models, replaying audio, or overwriting prior reports:
+
+    cd E:\Meeting-Fixed10-Test
+    git switch feature/multilingual-fixed10-ui-refresh
+    git pull --ff-only origin feature/multilingual-fixed10-ui-refresh
+    python -m unittest tests.quality.test_ami_shadow10_score -v
+    python -m tools.ami_shadow10_score --root benchmark/fixed195/ami_shadow10 --meeting TS3003b --replay benchmark/fixed195/ami_shadow10/replay_TS3003b_v6.json --output benchmark/fixed195/ami_shadow10/audit_TS3003b_v6_per_speaker.json
+
+In PowerShell:
+
+    $a = Get-Content benchmark/fixed195/ami_shadow10/audit_TS3003b_v6_per_speaker.json -Raw | ConvertFrom-Json
+    $a.reference_speaker_coverage.speakers | Format-Table -AutoSize
+    $a.reference_speaker_coverage.speakers | ConvertTo-Json -Depth 6
+
+Use this to decide whether missing speakers are mostly absent from
+captions, present as unknown with missing voiceprints, or frequently
+present during simultaneous speech. Do not force K=4, lower the
+identity-confidence threshold or promote ECAPA automatically before
+this diagnosis is compared across other AMI recordings.
