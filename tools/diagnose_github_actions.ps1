@@ -43,7 +43,18 @@ function Get-RepoApi([string]$Endpoint) {
         "X-GitHub-Api-Version" = "2022-11-28"
         "User-Agent" = "meeting-phase1-ci-audit"
     }
-    return Invoke-RestMethod -Uri $uri -Headers $headers -Method Get -TimeoutSec 20
+    $secret = if ($env:GH_TOKEN) { $env:GH_TOKEN } else { $env:GITHUB_TOKEN }
+    if ($secret) {
+        $headers["Authorization"] = "Bearer $secret"
+    }
+    try {
+        return Invoke-RestMethod -Uri $uri -Headers $headers -Method Get -TimeoutSec 20
+    } catch {
+        if (-not $secret -and $null -eq $gh) {
+            throw "This is a private GitHub repository. Install/authenticate GitHub CLI (gh auth login), or provide GH_TOKEN in the environment. Never paste the token into logs."
+        }
+        throw
+    }
 }
 
 $checks = Get-RepoApi "commits/$Commit/check-runs?per_page=100"
