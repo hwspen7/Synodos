@@ -786,7 +786,13 @@ class SessionProcessor(threading.Thread):
         """
         updated = False
         for segment in self.segments:
-            if segment.get("emb") is not None or segment.get("speaker_override"):
+            if segment.get("speaker_override"):
+                continue
+            short_probe = (
+                segment.get("speaker_evidence_status") == "short_probe"
+                and segment.get("speaker_uncertain")
+            )
+            if segment.get("emb") is not None and not short_probe:
                 continue
             if segment["id"] in self._speaker_tasks:
                 continue
@@ -795,9 +801,26 @@ class SessionProcessor(threading.Thread):
             )
             if embedding is None:
                 continue
-            segment["emb"] = embedding
+            if short_probe:
+                candidate = normalized_embedding(segment.get("emb"))
+                if candidate is None or candidate.shape != embedding.shape:
+                    continue
+                norm = float(np.linalg.norm(candidate))
+                if norm <= 1e-8 or not np.isfinite(norm):
+                    continue
+                similarity = float(np.dot(candidate / norm, embedding))
+                # Do not promote an uncertain <1.2s candidate on its
+                # own; require independent, time-aligned CAM++ support.
+                if not np.isfinite(similarity) or similarity < 0.82:
+                    continue
+                segment["emb"] = normalized_embedding(
+                    candidate / norm + embedding
+                )
+                segment["speaker_evidence_status"] = "short_probe_corroborated"
+            else:
+                segment["emb"] = embedding
+                segment["speaker_evidence_status"] = "acoustic_backfill"
             segment["speaker_uncertain"] = False
-            segment["speaker_evidence_status"] = "acoustic_backfill"
             updated = True
             metrics.increment("speaker_acoustic_timeline_resolved")
         if updated:
@@ -970,7 +993,10 @@ class SessionProcessor(threading.Thread):
         matched: dict[int, str] = {}
         pool: list[int] = []
         for i, seg in enumerate(self.segments):
-            if seg["emb"] is None:
+            if (seg["emb"] is None
+                    or (seg.get("speaker_evidence_status") == "short_probe"
+                        and seg.get("speaker_uncertain"))):
+                # A lone short probe must not create or hijack an identity.
                 seg["cluster"] = UNIDENTIFIED_CLUSTER
                 continue
             participant_id, sim = self._match_participant(seg["emb"])
