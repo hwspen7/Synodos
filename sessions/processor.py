@@ -988,7 +988,7 @@ class SessionProcessor(threading.Thread):
         """Recompute speaker assignments for all confirmed segments.
 
         Match segments to participants when cosine similarity is high enough.
-        Cluster unmatched segments with the FunASR clustering backend.
+        Cluster unmatched segments with the configured acoustic strategy.
         Map cluster labels to stable speaker IDs.
         """
         if not self.segments:
@@ -1014,7 +1014,7 @@ class SessionProcessor(threading.Thread):
                 seg["cluster"] = -2
                 pool.append(i)
 
-        # The standard global acoustic clustering remains the default.
+        # Use the configured global acoustic clustering strategy.
         if pool:
             embs = np.stack([self.segments[i]["emb"] for i in pool]).astype(np.float32)
             detailed_cluster = getattr(
