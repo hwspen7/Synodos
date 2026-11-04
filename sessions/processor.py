@@ -708,6 +708,14 @@ class SessionProcessor(threading.Thread):
                     ):
                         stage[key] = shifted(trace.get(key) or [], origin_ms)
                     stage["speech_windows"] = trace.get("speech_windows", 0)
+                    stage["window_internal_vad_bypassed"] = bool(
+                        trace.get("window_internal_vad_bypassed", False)
+                    )
+                    for name in (
+                        "recovery_attempted", "recovery_confirmed",
+                        "recovery_failed",
+                    ):
+                        stage[name] = max(0, int(trace.get(name) or 0))
                     self._asr_stage_trace.append(stage)
         telemetry.observe_asr_cycle(buffer_s, time.monotonic() - phase07_asr_started)
         unconfirmed = []
