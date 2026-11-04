@@ -118,6 +118,30 @@ class PairedAmiGateTests(unittest.TestCase):
         self.assertTrue(result["diarization_coverage_improvement_pass"])
         self.assertTrue(result["non_regression_pass"])
 
+    def test_speaker_count_and_overlap_regressions_are_guarded(self):
+        before = audit()
+        after = copy.deepcopy(before)
+        after["replay_sha256"] = "new-acoustic-run"
+        before["metrics"].update({
+            "reference_speaker_count": 4,
+            "speaker_count_absolute_error": 2,
+            "overlap_all_speakers_recall": 0.20,
+        })
+        after["metrics"].update({
+            "reference_speaker_count": 4,
+            "speaker_count_absolute_error": 3,
+            "overlap_all_speakers_recall": 0.0,
+        })
+        result = compare_live_audits(before, after)
+        self.assertFalse(result["non_regression_pass"])
+        self.assertFalse(result["diarization_coverage_improvement_pass"])
+        self.assertFalse(result["gates"][
+            "speaker_count_absolute_error_not_worse"
+        ])
+        self.assertFalse(result["gates"][
+            "overlap_all_speakers_recall_not_worse"
+        ])
+
     def test_matching_metrics_without_matching_audio_are_rejected(self):
         before, after = audit(), audit()
         after["source_audio_sha256"] = "another-audio"
