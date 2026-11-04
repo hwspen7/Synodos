@@ -11,6 +11,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from core.runtime import settings, sessions, meeting_sessions, meeting_store, speaker_store, hotword_store
 from sessions.session import Session
 from speech.config import load_settings
+from speech.diarization import resolve_diarization_mode
 from speech.recording import RecordingWriter, RecordingQuotaExceeded
 from speech.streaming import NativeOnlineRecognizer, PreviewTracker
 import os
@@ -226,7 +227,9 @@ async def ws_audio(
             "min_speaker_audio_s": settings.min_speaker_audio_s,
             "asr_engine": speech_config.engine,
             "asr_model": speech_config.model if speech_config.engine != "legacy" else settings.asr_model,
-            "diarization_mode": os.getenv("MEETING_DIARIZATION_MODE", "cluster"),
+            "diarization_mode": resolve_diarization_mode(
+                os.getenv("MEETING_DIARIZATION_MODE")
+            ),
             "asr_language": session.processor.speech_language,
             "translation_target": session.processor.translate_target,
             "wav_recording_enabled": audio_archive is not None,
