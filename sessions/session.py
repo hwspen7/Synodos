@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import asyncio
+import os
 from typing import Optional
 from fastapi import WebSocket
 from audio.buffer import AudioBuffer
@@ -70,6 +71,23 @@ class Session:
             hotwords_explicit=hotwords_explicit,
             spk_threshold_explicit=spk_threshold_explicit,
         )
+        backend = os.getenv("MEETING_INDEPENDENT_DIARIZATION", "off").strip().lower()
+        if backend not in ("off", "nemotron3"):
+            raise ValueError("MEETING_INDEPENDENT_DIARIZATION must be off or nemotron3")
+        self.independent_diarization = None
+        if backend == "nemotron3":
+            from speech.nemotron_stream import NemotronRealtimeWorker
+
+            def notify_acoustic_updates():
+                self.processor._async_ready.set()
+                self.buffer.wake()
+
+            self.independent_diarization = NemotronRealtimeWorker(
+                on_update=notify_acoustic_updates,
+            )
+        # The optional track is independent of ASR sentence timestamps and
+        # never substitutes synthetic words for undecodable speech.
+        self.processor.independent_diarization = self.independent_diarization
 
     def start(self, loop: asyncio.AbstractEventLoop, state: Optional[dict] = None) -> None:
         self.lifecycle.transition(SessionPhase.STARTING)
@@ -81,6 +99,8 @@ class Session:
             self.processor.load_hotwords()
             self.processor.rebuild_labels()
             self.processor.start()
+            if self.independent_diarization is not None:
+                self.independent_diarization.start()
         except Exception:
             self.lifecycle.transition(SessionPhase.FAILED, "startup_failed")
             raise
@@ -88,4 +108,6 @@ class Session:
 
     def stop(self) -> None:
         self.lifecycle.stop()
+        if self.independent_diarization is not None:
+            self.independent_diarization.request_finish()
         self.processor.stop()
