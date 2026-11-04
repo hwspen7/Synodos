@@ -2,6 +2,7 @@
 import IntelligencePanel from '@/components/IntelligencePanel.vue'
 import ContextCorrectionPanel from '@/components/ContextCorrectionPanel.vue'
 import OfflineSpeakerPanel from '@/components/OfflineSpeakerPanel.vue'
+import Phase2IdentityReviewPanel from '@/components/Phase2IdentityReviewPanel.vue'
 import Phase07Status from '@/components/Phase07Status.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -72,6 +73,7 @@ const wavRecordingEnabled = ref(false)
 const settingsSaving = ref(false)
 const appliedSettings = ref('')
 const editingSpeakerId = ref<number | null>(null)
+const identityReviewSegmentId = ref<number | null>(null)
 const speakerChoice = ref('')
 const speakerSaving = ref(false)
 const selectedWithoutVoiceprints = computed(() => selectedParticipantIds.value
@@ -710,6 +712,12 @@ function recordingUrl(name: string): string {
   return `/api/speech/meetings/${encodeURIComponent(props.id)}/recordings/${encodeURIComponent(name)}`
 }
 
+function openIdentityEvidence(id: number): void {
+  if (recording.value || status.value === 'stopping') return
+  identityReviewSegmentId.value = id
+  showReviewPanel.value = true
+}
+
 function editSpeakerById(id: number): void {
   if (recording.value || status.value === 'stopping') return
   editingSpeakerId.value = id
@@ -959,6 +967,9 @@ onBeforeUnmount(() => stopInternal())
             <button v-for="segmentId in para.segmentIds" :key="`speaker-${segmentId}`"
               class="btn btn-ghost btn-sm" :disabled="status === 'stopping'"
               @click="editSpeakerById(segmentId)">Speaker #{{ segmentId }}</button>
+            <button v-for="segmentId in para.segmentIds" :key="`identity-${segmentId}`"
+              class="btn btn-ghost btn-sm" :disabled="status === 'stopping'"
+              @click="openIdentityEvidence(segmentId)">Evidence #{{ segmentId }}</button>
             <div v-if="editingSpeakerId !== null && para.segmentIds.includes(editingSpeakerId)" class="speaker-edit-controls">
               <select v-model="speakerChoice" aria-label="Correct speaker">
                 <option value="">Unidentified speaker</option>
@@ -997,6 +1008,13 @@ onBeforeUnmount(() => stopInternal())
       @applied="loadSavedTranscript" />
     <OfflineSpeakerPanel :meeting-id="props.id"
       :recording="recording || status === 'connecting' || status === 'stopping'" />
+    <Phase2IdentityReviewPanel
+      :meeting-id="props.id"
+      :segment-id="identityReviewSegmentId"
+      :revision="segments.find(segment => segment.id === identityReviewSegmentId)?.revision ?? null"
+      :recording="recording || status === 'connecting' || status === 'stopping'"
+      @reviewed="loadSavedTranscript"
+    />
 
       </aside>
     </div>
