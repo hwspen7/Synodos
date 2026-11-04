@@ -110,7 +110,13 @@ See [Stage 1 speaker model interfaces and paired evaluation](docs/speaker_stage1
 It adds opt-in CAM++ / ECAPA speaker verification comparisons and a
 Nemotron 3 offline diarization comparison. Candidates run in isolated
 environments and cannot silently replace production speaker identity or
-live-ASR handling. No real-model accuracy improvement is claimed until a
+live-ASR handling. A separate opt-in live ECAPA shadow worker
+(`MEETING_ECAPA_SHADOW=1`) can inspect CAM++-labeled confirmed speech in
+the background without changing captions, stored voiceprints or manual
+speaker assignments. It reports aggregate rank consistency only, not
+speaker recognition accuracy. See the Stage 1 document for the dedicated
+E-drive environment and startup configuration.
+No real-model accuracy improvement is claimed until a
 frozen, independently annotated audio set has been evaluated.
 
 ## Phase 08 quality hardening
