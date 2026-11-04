@@ -244,6 +244,10 @@ async def ws_audio(
             "spk_threshold": session.processor.spk_threshold,
             "min_speaker_audio_s": settings.min_speaker_audio_s,
             "asr_engine": speech_config.engine,
+            "independent_diarization": (
+                "nemotron3" if session.independent_diarization is not None
+                else "off"
+            ),
             "asr_quality_candidate": quality_candidate_enabled(),
             "speaker_quality_candidate": speaker_candidate_enabled(),
             "speaker_cluster_strategy": os.getenv(
@@ -269,6 +273,7 @@ async def ws_audio(
     received_samples = 0
     frame_sequence = AudioFrameSequence()
     last_progress_samples = 0
+    independent_warning_sent = False
     try:
         while True:
             message = await websocket.receive()
@@ -287,6 +292,19 @@ async def ws_audio(
                             continue
                         assert frame is not None
                         session.buffer.append(frame)
+                        if session.independent_diarization is not None:
+                            accepted = session.independent_diarization.feed(frame)
+                            if not accepted and not independent_warning_sent:
+                                independent_warning_sent = True
+                                await session.outbox.put({
+                                    "type": "feature_warning",
+                                    "feature": "independent_diarization",
+                                    "message": (
+                                        "Nemotron processing is unavailable or "
+                                        "behind input; CAM++ captions continue. "
+                                        "Independent DER cannot be scored."
+                                    ),
+                                })
                         received_samples += len(frame)
                         if audio_archive is not None:
                             # Keep the WAV archive in raw PCM even when the
@@ -387,6 +405,13 @@ async def ws_audio(
                 await asyncio.to_thread(online.finish)
             except Exception:
                 pass
+        # Finish independent acoustic inference BEFORE the caption processor
+        # emits its final snapshot and closed diagnostics. Run the wait outside
+        # the ASGI event loop, so microphone/health routes stay responsive.
+        if session.independent_diarization is not None:
+            await asyncio.to_thread(
+                session.independent_diarization.finish, 90.0,
+            )
         # Trigger final transcription and saving, then wait for outgoing messages.
         session.stop()
         # Join in an executor to avoid blocking WebSocket heartbeats.
