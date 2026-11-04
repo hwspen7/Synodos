@@ -6,7 +6,7 @@ import numpy as np
 from speech.dual_vad import crosscheck_speech_regions
 from speech.contracts import Recognition
 from speech.quality_guard import verify_utterances, speech_intervals
-from speech.gap_recovery import recover_missing_voice
+from speech.gap_recovery import recover_missing_voice, uncovered_voice_intervals
 from speech.utterance_units import split_utterances
 
 
@@ -131,6 +131,18 @@ class WhisperEngine:
                     short_voice_support_ms=short_voice_support_ms,
                 )
 
+            # End-to-end accountability starts at the acoustic speech mask,
+            # before any optional secondary recognition. These counts are
+            # advisory time geometry and never ground-truth word accuracy.
+            diagnostics_on = os.getenv(
+                "MEETING_DIARIZATION_DIAGNOSTICS", "0"
+            ).strip().lower() in ("1", "true", "yes")
+            if diagnostics_on:
+                before_gaps = uncovered_voice_intervals(
+                    speech_regions, primary, round(len(samples) * 1000 / 16000),
+                    min_uncovered_ms=300,
+                )
+                primary_count = len(primary)
             # Bounded actual ASR retry for a VAD-positive interval omitted
             # from accepted speech. No text is fabricated, and the original
             # transcription is retained if retry fails.
@@ -150,6 +162,19 @@ class WhisperEngine:
                     "recovery_failed": 0,
                     "disabled": True,
                 }
+            if diagnostics_on:
+                after_gaps = uncovered_voice_intervals(
+                    speech_regions, primary, round(len(samples) * 1000 / 16000),
+                    min_uncovered_ms=300,
+                )
+                recovery.update({
+                    "vad_region_count": len(speech_regions),
+                    "vad_voice_ms": sum(b - a for a, b in intervals_ms),
+                    "primary_utterances": primary_count,
+                    "accepted_utterances": len(primary),
+                    "primary_uncovered_vad_ms": sum(b - a for a, b in before_gaps),
+                    "final_uncovered_vad_ms": sum(b - a for a, b in after_gaps),
+                })
         return Recognition(
             utterances=split_utterances(primary),
             language=detected,
