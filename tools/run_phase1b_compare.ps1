@@ -73,56 +73,7 @@ foreach ($meeting in $meetings) {
         throw "Frozen AMI case not prepared: $case"
     }
 }
-if ($RunId -and $RunId -notmatch '^[a-zA-Z0-9_-]{1,64}
-New-Item -ItemType Directory -Path $runDir -ErrorAction Stop | Out-Null
-$results = @()
-foreach ($meeting in $meetings) {
-    foreach ($model in @("nemotron3","pyannote","diarizen")) {
-        $python = switch ($model) {
-            "pyannote" { $PyannotePython }
-            "diarizen" { $DiarizenPython }
-            default { $PythonExe }
-        }
-        $out = Join-Path $runDir ("$model-$meeting.json")
-        $args = @("-m","tools.phase1b_diarization_benchmark",
-                  "--root",$root,"--meeting",$meeting,"--model",$model,
-                  "--device",$Device,"--output",$out)
-        if ($model -eq "nemotron3") {
-            $replay = [string]$map.PSObject.Properties[$meeting].Value
-            if (-not [IO.Path]::IsPathRooted($replay)) { $replay = Join-Path $repo $replay }
-            $args += @("--replay",$replay)
-        } else {
-            $modelPath = if ($model -eq "pyannote") { $PyannoteModelPath }
-                         else { $DiarizenModelPath }
-            if ($modelPath) { $args += @("--model-id",$modelPath) }
-            if ($model -eq "diarizen" -and $DiarizenEmbeddingModelPath) {
-                $args += @("--diarizen-embedding-model",$DiarizenEmbeddingModelPath)
-            }
-            if ($AllowModelDownload.IsPresent) { $args += "--allow-model-download" }
-        }
-        Write-Host "Phase 1B: $meeting / $model"
-        & $python @args
-        # Exit 2 means that a real quality metric was computed but >=20%.
-        # Continue comparing all models, while preserving the failure status.
-        if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
-            throw "Model benchmark failed: $meeting / $model"
-        }
-        if (-not (Test-Path -LiteralPath $out)) {
-            throw "Model produced no benchmark artifact: $model"
-        }
-        $results += $out
-    }
-}
-$combined = Join-Path $runDir "paired_comparison.json"
-& $PythonExe -m tools.phase1b_compare --reports @results --output $combined --min-meetings 10
-if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
-    throw "Paired model comparison could not be scored. See $combined"
-}
-if ($LASTEXITCODE -eq 2) {
-    Write-Warning "The paired model comparison did not meet the acoustic quality target. This is valid FAIL evidence, not release acceptance."
-}
-Write-Host "All three models paired. Review $combined; never auto-promote a model."
-) {
+if ($RunId -and $RunId -notmatch '^[a-zA-Z0-9_-]{1,64}$') {
     throw "RunId must be safe for private filenames."
 }
 $runId = if ($RunId) { $RunId } else { (Get-Date -Format "yyyyMMdd-HHmmss") + "-$PID" }
@@ -168,7 +119,10 @@ foreach ($meeting in $meetings) {
 }
 $combined = Join-Path $runDir "paired_comparison.json"
 & $PythonExe -m tools.phase1b_compare --reports @results --output $combined --min-meetings 10
-if ($LASTEXITCODE -ne 0) {
-    throw "Paired model comparison did not meet the acoustic quality gate. See $combined"
+if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
+    throw "Paired model comparison could not be scored. See $combined"
+}
+if ($LASTEXITCODE -eq 2) {
+    Write-Warning "No compared candidate met the acoustic quality goal. This is valid failure evidence, not release acceptance."
 }
 Write-Host "All three models paired. Review $combined; never auto-promote a model."
