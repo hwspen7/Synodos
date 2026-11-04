@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 from api.meetings import get_segment_revisions, review_saved_segment
 from sessions.manual_review import (
-    ReviewConflict, ReviewValidationError, apply_review,
+    ReviewConflict, ReviewValidationError, apply_review, original_asr_text,
 )
 from storage.meetings import MeetingStore
 from storage.speakers import SpeakerStore
@@ -48,6 +48,20 @@ class ReviewPureTests(unittest.TestCase):
         self.assertEqual(seg["revision"], 2)
         self.assertEqual(seg["original_asr_text"], "helo")
         self.assertEqual(len(seg["corrections"]), 2)
+
+    def test_legacy_corrections_recover_original_without_fabrication(self):
+        state = sample_state("abc")
+        state["segments"][0].update({
+            "text": "first edit",
+            "revision": 1,
+            "original_asr_text": None,
+            "corrections": [
+                {"revision": 0, "text": "helo"},
+            ],
+        })
+        self.assertEqual(original_asr_text(state["segments"][0]), "helo")
+        apply_review(state, 3, 1, text="hello")
+        self.assertEqual(state["segments"][0]["original_asr_text"], "helo")
 
     def test_profile_link_preserves_local_numeric_speaker_id(self):
         state = sample_state("abc")
