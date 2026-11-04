@@ -36,7 +36,7 @@ def split_by_acoustic_turns(
     embed: Callable[[np.ndarray], object],
     *,
     sample_rate: int = 16000,
-    min_window_s: float = 1.4,
+    min_window_s: float = 1.0,
     max_windows: int = 8,
     similarity: float | None = None,
 ) -> list[dict]:
@@ -52,6 +52,9 @@ def split_by_acoustic_turns(
     if sample_rate < 1000 or not original.strip() or end <= start:
         return fallback
     n_samples = len(samples)
+    if (not 0.8 <= min_window_s <= 3.0 or max_windows < 2
+            or max_windows > 12):
+        raise ValueError("Invalid acoustic turn sampling bounds")
     count = min(max_windows, int(n_samples // (sample_rate * min_window_s)))
     if count < 2:
         return fallback
@@ -69,8 +72,15 @@ def split_by_acoustic_turns(
         if vec is None:
             return fallback
         windows.append((a, b, vec))
+    # One-second CAM++ windows can catch a quick speaker handoff that
+    # a 1.4-second window misses. Use a stronger acoustic difference gate
+    # for short windows to avoid turning ordinary vocal variation into
+    # extra speaker turns.
+    short_windows = n_samples / (sample_rate * count) < 1.4
+    change_threshold = min(threshold, 0.45) if short_windows else threshold
     changes = [i for i in range(1, len(windows))
-               if float(np.dot(windows[i-1][2], windows[i][2])) < threshold]
+               if float(np.dot(windows[i-1][2], windows[i][2]))
+               < change_threshold]
     if not changes:
         all_vectors = np.stack([v for _, _, v in windows])
         return [dict(fallback[0], emb=_vector(all_vectors.mean(axis=0)))]
@@ -111,11 +121,35 @@ def split_by_acoustic_turns(
         words_text = ""
         for _, _, text in group:
             words_text = join_transcript_text(words_text, text)
-        related = [v for x, y, v in windows
-                   if start + y * 1000 / sample_rate > a and start + x * 1000 / sample_rate < b]
-        vec = _vector(np.stack(related).mean(axis=0)) if related and b-a >= 1200 else None
+        # A neighboring window that barely touches the boundary must not
+        # contaminate the prototype for the next person's short utterance.
+        duration = b - a
+        related = []
+        for x, y, window_vector in windows:
+            wx = start + round(x * 1000 / sample_rate)
+            wy = start + round(y * 1000 / sample_rate)
+            overlap = min(wy, b) - max(wx, a)
+            if overlap >= min(250, max(1, duration // 3)):
+                related.append((overlap, window_vector))
+        vec = None
+        if duration >= 1200 and related:
+            vectors = np.stack([entry[1] for entry in related])
+            # Refuse to attach an averaged identity when the windows
+            # supporting this phrase disagree acoustically.
+            if (len(vectors) == 1
+                    or np.min((vectors @ vectors.T)[
+                        np.triu_indices(len(vectors), 1)
+                    ]) >= threshold):
+                weights = np.asarray(
+                    [entry[0] for entry in related], dtype=np.float64)
+                vec = _vector(np.average(vectors, axis=0, weights=weights))
         result.append({"start": a, "end": b, "text": words_text,
                        "emb": vec, "ambiguous": vec is None})
     if len(result) < 2:
+        return [dict(fallback[0], ambiguous=True)]
+    reconstructed = ""
+    for piece in result:
+        reconstructed = join_transcript_text(reconstructed, piece["text"])
+    if _letters(reconstructed) != _letters(joined):
         return [dict(fallback[0], ambiguous=True)]
     return result
