@@ -122,6 +122,23 @@ class AmiShadowScoreTests(unittest.TestCase):
             self.assertNotIn("speaker_mapping", result["metrics"])
             self.assertNotIn("text", json.dumps(result))
 
+    def test_missed_speaker_time_breakdown_separates_three_causes(self):
+        timeline = {"segments": [
+            {"start_ms": 0, "end_ms": 1000, "published_speaker_id": -1},
+            {"start_ms": 1000, "end_ms": 2000, "published_speaker_id": 7},
+        ]}
+        reference = [
+            {"start_ms": 0, "end_ms": 2000, "speaker": "A"},
+            {"start_ms": 1000, "end_ms": 2000, "speaker": "B"},
+            {"start_ms": 2000, "end_ms": 3000, "speaker": "B"},
+        ]
+        result = missed_speaker_time_breakdown(timeline, reference, 3000)
+        self.assertEqual(result["unidentified_transcript_s"], 1.0)
+        self.assertEqual(result["simultaneous_speaker_shortfall_s"], 1.0)
+        self.assertEqual(result["without_transcript_s"], 1.0)
+        self.assertEqual(result["total_missed_speaker_seconds"], 3.0)
+        self.assertEqual(result["reference_speaker_seconds"], 4.0)
+
     @patch("tools.ami_shadow10_score.load_wav")
     def test_missing_diagnostics_requires_new_replay(self, fake_audio):
         fake_audio.return_value = np.zeros(240 * 16000, dtype=np.float32)
