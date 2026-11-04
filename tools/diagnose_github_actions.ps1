@@ -31,7 +31,8 @@ function Get-RepoApi([string]$Endpoint) {
     # private repository, GitHub CLI is used with its local authorization.
     $gh = Get-Command gh -ErrorAction SilentlyContinue
     if ($null -ne $gh) {
-        $raw = & $gh.Source api "repos/$Repository/$Endpoint" 2>&1
+        $ghPath = $gh.Source
+        $raw = & $ghPath api "repos/$Repository/$Endpoint" 2>&1
         if ($LASTEXITCODE -eq 0) {
             return ($raw -join "`n" | ConvertFrom-Json)
         }
@@ -46,6 +47,9 @@ function Get-RepoApi([string]$Endpoint) {
 }
 
 $checks = Get-RepoApi "commits/$Commit/check-runs?per_page=100"
+if ($null -eq $checks -or @($checks.check_runs).Count -eq 0) {
+    throw "GitHub returned no check runs for this commit; cannot certify CI."
+}
 $rows = @()
 foreach ($check in @($checks.check_runs)) {
     $annotations = @()
@@ -73,7 +77,7 @@ foreach ($check in @($checks.check_runs)) {
         [string]$job.runner_id
     } else { "" }
     $stepCount = if ($null -ne $job) {
-        @($job.steps).Count
+        if ($null -eq $job.steps) { 0 } else { @($job.steps).Count }
     } else { $null }
     $schedulerBlocked = ($check.conclusion -eq "failure" -and
         $null -ne $job -and ($runnerId -eq "" -or $runnerId -eq "0") -and
