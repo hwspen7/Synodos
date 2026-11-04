@@ -54,6 +54,19 @@ class SpeakerEvidenceTests(unittest.TestCase):
         self.assertEqual(result[3]["speaker_similarity"], 0.73)
         self.assertEqual(result[4]["speaker_status"], "uncertain")
 
+    def test_mixed_voiceprint_model_sizes_cannot_break_transcript(self):
+        records = [
+            {"id": 1, "speaker_id": 1, "cluster": 0, "emb": vec(0, dim=64)},
+            {"id": 2, "speaker_id": 1, "cluster": 0, "emb": vec(0, dim=64)},
+            {"id": 3, "speaker_id": 1, "cluster": 0, "emb": vec(0, dim=128)},
+            {"id": 4, "speaker_id": 2, "cluster": 1, "emb": vec(1, dim=128)},
+        ]
+        output = speaker_evidence(records)
+        self.assertEqual(output[1]["speaker_similarity"], 1.0)
+        self.assertEqual(output[3]["speaker_status"], "tentative")
+        self.assertEqual(output[3]["speaker_evidence_count"], 0)
+        self.assertEqual(output[4]["speaker_status"], "tentative")
+
     def test_transcript_exposes_raw_similarity_and_asr_provenance(self):
         settings = Settings()
         with patch("sessions.processor.load_settings",
