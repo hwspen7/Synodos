@@ -368,6 +368,13 @@ class SessionProcessor(threading.Thread):
                             ]
                         if segment["id"] in self._independent_support:
                             item.update(self._independent_support[segment["id"]])
+                        if segment["id"] in self._content_first_projection:
+                            p = self._content_first_projection[segment["id"]]
+                            item["caption_cues"] = p["cues"]
+                            item["overlap_intervals_ms"] = p[
+                                "overlap_intervals_ms"
+                            ]
+                            item["caption_projection_status"] = p["status"]
                         timeline_records.append(item)
                     summary["anonymous_timeline"] = anonymous_speaker_timeline(
                         timeline_records, self.settings.sample_rate
