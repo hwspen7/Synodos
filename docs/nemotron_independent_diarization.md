@@ -97,7 +97,7 @@ $tag = Get-Date -Format "yyyyMMdd-HHmmss"
 $replay = "$root/replay_TS3003b_nemotron_$tag.json"
 $independent = "$root/audit_TS3003b_nemotron_$tag.json"
 $gaps = "$root/audit_TS3003b_asr_stages_$tag.json"
-& $PY -m tools.live_caption_ws_replay --audio $audio --loops 1 --speed 1.0 --output $replay
+& $PY -m tools.live_caption_ws_replay --audio $audio --loops 1 --speed 1.0 --final-timeout 240 --output $replay
 if ($LASTEXITCODE -ne 0) { throw "Realtime replay failed" }
 
 $r = Get-Content $replay -Raw | ConvertFrom-Json
