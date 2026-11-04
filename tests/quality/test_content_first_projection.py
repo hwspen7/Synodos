@@ -11,7 +11,10 @@ from unittest.mock import patch
 
 import numpy as np
 
-from speech.content_first_projection import project_confirmed_caption
+from speech.content_first_projection import (
+    project_confirmed_caption, project_caption_activity_for_audit,
+)
+from speech.overlap_content_risk import overlap_content_risk
 from tests.quality.test_nemotron_processor_fusion import (
     FakeAcoustics, processor_for_test,
 )
@@ -97,6 +100,46 @@ class ContentFirstProjectionTests(unittest.TestCase):
             ],
         )
         self.assertEqual([x["speaker_id"] for x in p["cues"]], [4, 5])
+
+    def test_projected_overlap_does_not_count_both_parent_and_child(self):
+        original = [
+            {"id": 8, "start_ms": 0, "end_ms": 1000,
+             "speaker_id": 1},
+        ]
+        result = projection()
+        display = project_caption_activity_for_audit(
+            original, {8: result},
+        )
+        self.assertEqual(len(display), 2)
+        self.assertEqual([item["speaker_id"] for item in display], [1, 2])
+        self.assertEqual(
+            [(item["start_ms"], item["end_ms"]) for item in display],
+            [(0, 430), (600, 980)],
+        )
+        acoustic = [
+            {"speaker_id": 1, "start_ms": 0, "end_ms": 800},
+            {"speaker_id": 2, "start_ms": 600, "end_ms": 1000},
+        ]
+        old_risk = overlap_content_risk(acoustic, original, min_overlap_ms=100)
+        new_risk = overlap_content_risk(acoustic, display, min_overlap_ms=100)
+        self.assertEqual(old_risk["overlap_acoustic_clock_ms"], 200)
+        self.assertEqual(new_risk["overlap_acoustic_clock_ms"], 200)
+        self.assertEqual(old_risk["overlap_clock_underrepresented_ms"], 200)
+        self.assertEqual(new_risk["overlap_clock_underrepresented_ms"], 200)
+        # A source-language ASR caption was not duplicated into two
+        # simultaneous transcripts. Partial attribution is still partial.
+
+    def test_projected_activity_without_split_is_exactly_canonical(self):
+        original = [
+            {"id": 8, "start_ms": 0, "end_ms": 1000,
+             "speaker_id": 1},
+        ]
+        result = project_caption_activity_for_audit(
+            original, {8: {"cues": [], "status": "unaligned"}},
+        )
+        self.assertEqual(result, [{
+            "start_ms": 0, "end_ms": 1000, "speaker_id": 1,
+        }])
 
     def test_processor_preserves_editable_canonical_segment(self):
         class Final(FakeAcoustics):
