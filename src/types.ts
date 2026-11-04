@@ -44,6 +44,24 @@ export interface TranscriptSegment {
   speaker_activity_intervals_ms?: Array<[number, number]>
   speaker_activity_fraction?: number | null
   speaker_activity_time_source?: 'nemotron3_official_turns'
+  /** Optional display-only word-conserving speaker cues; original text is canonical. */
+  caption_cues?: Array<{
+    speaker_id: number
+    speaker_name: string
+    start_ms: number
+    end_ms: number
+    text: string
+    word_count: number
+  }>
+  overlap_intervals_ms?: Array<{
+    start_ms: number
+    end_ms: number
+    speaker_ids: number[]
+  }>
+  caption_projection_status?: string
+  speaker_diarization_source?: string
+  /** UI-only pointer to the editable canonical ASR segment. */
+  source_segment_id?: number
   revision?: number
 }
 
