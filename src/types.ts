@@ -39,6 +39,10 @@ export interface TranscriptSegment {
   language_confidence?: number | null
   translation?: string
   timestamp_quality?: string
+  /** Optional acoustic voice intervals, separate from the ASR text bounds. */
+  speaker_activity_intervals_ms?: Array<[number, number]>
+  speaker_activity_fraction?: number | null
+  speaker_activity_time_source?: 'nemotron3_official_turns'
   revision?: number
 }
 
