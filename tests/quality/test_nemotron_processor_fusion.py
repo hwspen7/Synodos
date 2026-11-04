@@ -69,6 +69,7 @@ class LiveFusionTests(unittest.TestCase):
             "speaker_override": True,
             "speaker_override_id": 8,
             "speaker_override_name": "Manual",
+            "saved_nemotron_id": 3,
         })
         activity = np.zeros((100, 8), dtype=np.float32)
         activity[:, 0] = 0.98
