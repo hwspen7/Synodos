@@ -76,8 +76,8 @@ may require Python 3.10. Confirm its current README and license first.
 - DiariZen:
   use the official `BUTSpeechFIT/DiariZen` install procedure in a separate
   compatible environment. The **code is MIT**, but the pretrained
-  `BUT-FIT/diarizen-wavlm-large-s80-md` weights are **CC BY-NC 4.0**.
-  They are not embedded, redistributed or enabled by default. Local DiariZen
+  `BUT-FIT/diarizen-wavlm-large-s80-md-v2` weights are **CC BY-NC 4.0**.
+  The v2 large-s80 weights are the default research candidate. The older large-s80 model remains an allowed alternative. They are not embedded, redistributed or enabled by default. Local DiariZen
   loading also needs a separate local
   `pyannote/wespeaker-voxceleb-resnet34-LM` `pytorch_model.bin`; use
   `-DiarizenEmbeddingModelPath`. Its upstream from_pretrained() downloader
