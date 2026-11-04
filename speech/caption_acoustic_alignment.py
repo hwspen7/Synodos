@@ -33,8 +33,9 @@ def speaker_support_intervals(
         channel, start, end = (
             row.get("speaker_id"), row.get("start_ms"), row.get("end_ms"),
         )
-        if (type(channel) is not int or type(start) is not int
-                or type(end) is not int or start < 0 or end <= start):
+        if (type(channel) is not int or not 1 <= channel <= 8
+                or type(start) is not int or type(end) is not int
+                or start < 0 or end <= start):
             raise ValueError("Invalid finalized speaker turn")
         if channel != speaker_id:
             continue
