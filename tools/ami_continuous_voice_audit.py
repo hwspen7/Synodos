@@ -22,6 +22,7 @@ from speech.spherical_cluster import spherical_speaker_candidates
 from tools.ami_oracle_cluster_eval import (
     provisional_isolated_members, score_reference_partition,
 )
+from tools.ami_cluster_substructure import explore_speaker_substructure
 from tools.ami_shadow10_prepare import SELECTED
 from tools.ami_shadow10_score import score_case
 from tools.phase07_benchmark import load_wav
@@ -201,6 +202,10 @@ def audit_continuous_windows(
     provisional, flags = provisional_isolated_members(
         array, candidate.labels
     )
+    substructure = explore_speaker_substructure(
+        array, candidate.labels
+    )
+    result["substructure_diagnostics"] = substructure.details
     result["provisional_outlier_count"] = len(flags)
     result["provisional_outliers"] = [{
         **flag,
@@ -240,6 +245,21 @@ def audit_continuous_windows(
         ],
     } for speaker in sorted(per_person)]
     if len(reference_ids) >= 2:
+        pure_vector_indices = [
+            index for index, info in evaluations
+            if info["reference_speaker"] is not None
+        ]
+        result["substructure_pure_window_scores"] = [
+            {
+                "variant": name,
+                "all_window_cluster_count": len(set(map(int, assignments))),
+                "pure_window_score": score_reference_partition(
+                    reference_ids,
+                    assignments[pure_vector_indices],
+                ),
+            }
+            for name, assignments in substructure.variants.items()
+        ]
         result["pure_window_sample_scores"] = {
             "spherical": score_reference_partition(
                 reference_ids, np.asarray(original_labels)
