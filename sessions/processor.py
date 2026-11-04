@@ -898,7 +898,26 @@ class SessionProcessor(threading.Thread):
                 pool.append(i)
 
         # Handle transcripts and speaker assignments.
-        if pool:
+        if pool and mode == "cluster_anchors":
+            # Experiment only: trusted long utterances determine the raw
+            # clusters. Short segments may match, never create identities.
+            from speech.diarization import assign_acoustic_anchor_clusters
+            stats = assign_acoustic_anchor_clusters(
+                self.segments, pool, self.models.cluster,
+                self.settings.sample_rate,
+                min_anchor_s=float(os.getenv(
+                    "MEETING_ANCHOR_MIN_DURATION_S", "1.2")),
+                short_match_similarity=float(os.getenv(
+                    "MEETING_ANCHOR_SHORT_SIMILARITY", "0.72")),
+                short_match_margin=float(os.getenv(
+                    "MEETING_ANCHOR_SHORT_MARGIN", "0.08")),
+            )
+            if stats["unassigned"]:
+                metrics.increment(
+                    "speaker_anchor_insufficient_evidence",
+                    stats["unassigned"],
+                )
+        elif pool:
             embs = np.stack([self.segments[i]["emb"] for i in pool]).astype(np.float32)
             labels = self.models.cluster(embs)
             for idx, label in zip(pool, labels):
