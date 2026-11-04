@@ -9,7 +9,12 @@ _POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="meeting-acoustic-s
 _SLOTS = threading.BoundedSemaphore(24)
 
 
-def submit_speaker_analysis(sentence: dict, samples: np.ndarray, embed, sample_rate: int) -> Future | None:
+def submit_speaker_analysis(
+    sentence: dict, samples: np.ndarray, embed, sample_rate: int,
+    *, minimum_embedding_seconds: float = 1.2,
+) -> Future | None:
+    if not 0.8 <= minimum_embedding_seconds <= 1.2:
+        raise ValueError("Speaker embedding duration floor must be 0.8..1.2s")
     """Queue isolated audio analysis. No text is discarded when at capacity."""
     if not _SLOTS.acquire(blocking=False):
         return None
@@ -23,9 +28,13 @@ def submit_speaker_analysis(sentence: dict, samples: np.ndarray, embed, sample_r
             pieces = split_by_acoustic_turns(fields, audio, embed, sample_rate=sample_rate)
             if (len(pieces) == 1 and pieces[0].get("emb") is None
                     and not pieces[0].get("ambiguous")
-                    and len(audio) >= int(sample_rate * 1.2)):
+                    and len(audio) >= int(sample_rate * minimum_embedding_seconds)):
                 try:
                     pieces[0]["emb"] = normalized_embedding(embed(audio))
+                    if len(audio) < int(sample_rate * 1.2):
+                        # Explicit candidate under the normal safe floor.
+                        # Such samples must not seed trusted ECAPA prototypes.
+                        pieces[0]["short_probe"] = True
                 except Exception:
                     pieces[0]["ambiguous"] = True
             return pieces
