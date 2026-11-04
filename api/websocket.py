@@ -243,6 +243,7 @@ async def ws_audio(
             "spk_threshold": session.processor.spk_threshold,
             "min_speaker_audio_s": settings.min_speaker_audio_s,
             "asr_engine": speech_config.engine,
+            "asr_quality_candidate": os.getenv("MEETING_ASR_QUALITY_CANDIDATE", "0").strip().lower() in ("1", "true", "yes"),
             "asr_model": speech_config.model if speech_config.engine != "legacy" else settings.asr_model,
             "diarization_mode": resolve_diarization_mode(
                 os.getenv("MEETING_DIARIZATION_MODE")
