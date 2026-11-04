@@ -44,6 +44,31 @@ def summary():
 
 
 class LiveCaptionSegmentAuditTests(unittest.TestCase):
+    def test_real_replay_capture_only_records_when_explicitly_enabled(self):
+        from tools.live_caption_ws_replay import capture_event, new_capture
+
+        entry = segment(10, "Alpha", 1)
+        for enabled in (False, True):
+            stream = new_capture(segment_audit_enabled=enabled)
+            capture_event(
+                stream, {"type": "transcript", "version": 1,
+                         "segments": [entry]}, 2000, sent_samples=32000
+            )
+            capture_event(
+                stream, {"type": "transcript", "version": 2,
+                         "segments": [segment(10, "Beta", 2)]},
+                25000, sent_samples=400000
+            )
+            self.assertEqual(
+                len(stream["segment_audit_events"]), 2 if enabled else 0
+            )
+            self.assertEqual(
+                len(stream["segment_audit_segments"]), 1 if enabled else 0
+            )
+            self.assertEqual(stream["confirmed_text_changes"], 1)
+            self.assertEqual(stream["speaker_reassignments"], 1)
+
+
     def test_disabled_does_not_record_any_content(self):
         sample = state()
         sample["segment_audit_enabled"] = False
