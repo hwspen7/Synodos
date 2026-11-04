@@ -121,7 +121,14 @@ class WhisperEngine:
                 # Under the paired quality candidate, do not apply a second
                 # VAD crop inside each short Whisper decoder window.
                 window_kwargs = dict(kwargs, multilingual=True)
-                if quality_candidate:
+                # Silero already supplied bounded speech windows. Running
+                # Faster-Whisper VAD again inside each short window may
+                # remove quiet onsets, but bypassing it is an A/B candidate,
+                # not an assumed accuracy improvement.
+                window_vad_bypass = os.getenv(
+                    "MEETING_WHISPER_WINDOW_VAD_BYPASS", "0"
+                ).strip().lower() in ("1", "true", "yes")
+                if quality_candidate or window_vad_bypass:
                     window_kwargs["vad_filter"] = False
                 recognized = recognize_windows(
                     samples, speech_regions,
@@ -183,6 +190,22 @@ class WhisperEngine:
                     "disabled": True,
                 }
         if trace_enabled and stage_trace is not None:
+            stage_trace["window_internal_vad_bypassed"] = bool(
+                window_lid and (
+                    quality_candidate or os.getenv(
+                        "MEETING_WHISPER_WINDOW_VAD_BYPASS", "0"
+                    ).strip().lower() in ("1", "true", "yes")
+                )
+            )
+            stage_trace["recovery_attempted"] = recovery.get(
+                "recovery_attempted", 0,
+            )
+            stage_trace["recovery_confirmed"] = recovery.get(
+                "recovery_confirmed", 0,
+            )
+            stage_trace["recovery_failed"] = recovery.get(
+                "recovery_failed", 0,
+            )
             stage_trace["after_recovery_intervals_ms"] = utterance_intervals(
                 primary, duration_ms=round(len(samples) * 1000 / 16000),
             )
