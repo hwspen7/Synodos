@@ -49,6 +49,7 @@ from sessions.outbox import enqueue_message
 from sessions.translation_tasks import submit_translation
 from sessions.speaker_tasks import submit_speaker_analysis, submit_acoustic_window
 from speech.acoustic_timeline import AcousticTimeline
+from speech.diarization import resolve_diarization_mode
 from sessions.speaker_fallback import (
     UNIDENTIFIED_CLUSTER, fallback_speaker_id, normalized_embedding,
 )
@@ -818,15 +819,17 @@ class SessionProcessor(threading.Thread):
 
     # --------------------------------------------------------------- cluster
     def _recluster(self) -> None:
-        import os
+        mode = resolve_diarization_mode(
+            os.getenv("MEETING_DIARIZATION_MODE")
+        )
         # Explicit single-speaker mode is intended for one-person test meetings.
-        if os.getenv("MEETING_DIARIZATION_MODE", "cluster") == "single":
+        if mode == "single":
             for record in self.segments:
                 record["cluster"] = 1
                 record["speaker_id"] = 1
                 record["speaker_name"] = "Speaker 1"
             return
-        if os.getenv("MEETING_DIARIZATION_MODE", "cluster") == "centroid":
+        if mode == "centroid":
             from speech.diarization import SpeakerCentroidTracker
             tracker = SpeakerCentroidTracker(threshold=float(os.getenv("MEETING_SPEAKER_SIMILARITY", "0.72")))
             for record in self.segments:
@@ -860,25 +863,6 @@ class SessionProcessor(threading.Thread):
         """
         if not self.segments:
             return
-        mode = os.getenv("MEETING_DIARIZATION_MODE", "cluster")
-        # Experimental comparator: use the same global acoustic clustering
-        # but avoid repeatedly rewriting already reliable live speaker IDs.
-        # This is presentation stability, not a guarantee of diarization
-        # accuracy. Unidentified and uncertain labels remain revisable.
-        sticky_labels = (
-            {
-                int(s["id"]): (
-                    int(s["speaker_id"]),
-                    str(s.get("speaker_name") or f'Speaker {s["speaker_id"]}'),
-                )
-                for s in self.segments
-                if type(s.get("speaker_id")) is int and s["speaker_id"] > 0
-                and s.get("emb") is not None
-                and not s.get("speaker_uncertain", False)
-                and not s.get("speaker_override", False)
-            }
-            if mode == "cluster_sticky" else {}
-        )
         mature_labels = collect_mature_labels(
             self.segments, self.settings.sample_rate,
             self._speaker_relabel_horizon_s,
@@ -897,27 +881,8 @@ class SessionProcessor(threading.Thread):
                 seg["cluster"] = -2
                 pool.append(i)
 
-        # Handle transcripts and speaker assignments.
-        if pool and mode == "cluster_anchors":
-            # Experiment only: trusted long utterances determine the raw
-            # clusters. Short segments may match, never create identities.
-            from speech.diarization import assign_acoustic_anchor_clusters
-            stats = assign_acoustic_anchor_clusters(
-                self.segments, pool, self.models.cluster,
-                self.settings.sample_rate,
-                min_anchor_s=float(os.getenv(
-                    "MEETING_ANCHOR_MIN_DURATION_S", "1.2")),
-                short_match_similarity=float(os.getenv(
-                    "MEETING_ANCHOR_SHORT_SIMILARITY", "0.72")),
-                short_match_margin=float(os.getenv(
-                    "MEETING_ANCHOR_SHORT_MARGIN", "0.08")),
-            )
-            if stats["unassigned"]:
-                metrics.increment(
-                    "speaker_anchor_insufficient_evidence",
-                    stats["unassigned"],
-                )
-        elif pool:
+        # The standard global acoustic clustering remains the default.
+        if pool:
             embs = np.stack([self.segments[i]["emb"] for i in pool]).astype(np.float32)
             labels = self.models.cluster(embs)
             for idx, label in zip(pool, labels):
@@ -925,10 +890,6 @@ class SessionProcessor(threading.Thread):
 
         self._remap_speakers()
         self._assign_labels(matched)
-        if sticky_labels:
-            prevented = restore_mature_labels(self.segments, sticky_labels)
-            if prevented:
-                metrics.increment("speaker_sticky_relabels_prevented", prevented)
         # Do not rewrite a user's already displayed historical transcript
         # on every later global clustering pass. Recent and uncertain
         # segments still receive new evidence and revisions.
