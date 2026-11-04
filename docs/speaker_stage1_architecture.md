@@ -1254,3 +1254,95 @@ group, even if the TS3003b subset score reaches 1.0.
 The next real decision requires consistent improvement
 across held-out AMI meetings and the real-time 240s
 speaker DER baseline of 0.40534.
+
+
+## Phase-one speech-content retention and evidence-first summary contract
+
+The product no longer treats perfect speaker identity as a precondition
+for preserving meeting content. This change protects transcript coverage
+without ever inferring missing words from a voiceprint, speaker cluster,
+language selection, or VAD event.
+
+### Backend fixes in the stable feature branch
+
+1. Whisper uses ONE externally inspected Silero VAD pass, rather than
+   a second internal faster-whisper VAD crop. Verified segment text
+   survives disagreement with forced word timestamps, by default.
+   Strict segment-level VAD and decoder checks still apply. A long
+   segment with no accurate per-word timing remains segment-timed.
+2. Where the verifier finds a substantial VAD-supported speech
+   interval without a verified utterance, Whisper may retry up to
+   TWO 10-second subwindows per inference cycle, without second
+   internal VAD filtering. Recovery uses the real model and the
+   same acoustic verification. Its source is recorded as
+   recognition_origin=gap_recovery. Failed recovery cannot delete
+   previously confirmed words or fabricate spoken language.
+3. Rolling audio reclamation now protects speech detected by VAD
+   but not yet covered by transcripts, allowing two additional
+   inference opportunities before advancing beyond it. If speech
+   remains undecodable, a timestamp-only
+   voice_detected_transcript_unavailable gap is explicitly
+   published and saved under speech_coverage_gaps. ASR cannot
+   guarantee that every sound is intelligible or that a VAD
+   detects every human voice. This evidence is not an utterance.
+4. Each transcript segment includes recognition_origin,
+   text_confidence (null when uncalibrated), speaker_status,
+   speaker_similarity, speaker_margin, speaker_evidence_count,
+   speaker_evidence_status, and speaker_score_kind. Raw cosine
+   numbers are NOT probabilities. Undecidable speaker identity
+   should remain unknown rather than being force-assigned.
+   Manual speaker overrides are explicitly distinguished.
+5. Saved meeting segment API and JSON export carry the same safe
+   evidence, and include speech_coverage_gaps. Voiceprint vectors
+   are never exposed in these outputs. The saved user audio
+   recording choice is honored when a named meeting reconnects;
+   explicit connection-level record_audio=false still disables
+   recording. Source WAV is critical if an eventual manual or
+   offline rescue is required: a gap timestamp alone cannot
+   reconstruct speech whose audio was not saved.
+6. Review-only AMI nested-cluster and rare-voice experiments
+   remain offline. They do not alter published speaker IDs.
+
+Configuration for an explicitly consented audio-preserving meeting
+(honoring user/privacy policy and available disk quota):
+
+    MEETING_ASR_ENGINE=whisper
+    MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT=1
+    MEETING_WHISPER_GAP_RECOVERY=1
+    MEETING_WHISPER_DUAL_VAD=0
+    MEETING_RECORD_AUDIO=1
+    MEETING_DIARIZATION_DIAGNOSTICS=1
+
+For a controlled TS3003b comparison with the original V6 0.40534
+DER reference, replay on the new code under the SAME language and
+clustering variables as V6:
+
+    cd E:\Meeting-Fixed10-Test
+    git pull --ff-only origin feature/multilingual-fixed10-ui-refresh
+    python -m unittest tests.backend.unit.test_speech_gap_recovery tests.backend.unit.test_speech_coverage_retention tests.backend.unit.test_speaker_evidence_metadata tests.backend.integration.test_meeting_evidence_export -v
+    python -m tools.live_caption_ws_replay --audio benchmark/fixed195/ami_shadow10/audio/ami-TS3003b-1500-1740.wav --loops 1 --speed 1.0 --output benchmark/fixed195/ami_shadow10/replay_TS3003b_content_retention.json
+    python -m tools.ami_shadow10_score --root benchmark/fixed195/ami_shadow10 --meeting TS3003b --replay benchmark/fixed195/ami_shadow10/replay_TS3003b_content_retention.json --output benchmark/fixed195/ami_shadow10/audit_TS3003b_content_retention.json
+
+The WebSocket server must be restarted after changing environment
+variables, before replay. Do NOT compare metrics from a different
+clustering configuration or overlapping experiment. Inspect
+DER, missed/FA/confusion, unknown identity time, transcript-gap time,
+latency, duplicate caption count, audio delivery, and the final JSON
+speech_coverage_gaps. WER/CER requires a suitable independent human
+word transcript; AMI RTTM alone is NOT text ground truth.
+
+Release gate: NO claim of real DER improvement solely from CI. A
+bounded retry necessarily spends additional model inference work;
+monitor ASR cycle runtime, latency and audio backpressure. A decrease
+in timing-based no-caption seconds might reflect different word/segment
+timestamps, not more true words. Human content review and independent
+multi-meeting replay must corroborate the gain. Unknown identity
+remains an acceptable product outcome; missing contents are reported,
+never quietly treated as complete.
+
+Future AI summaries should use recognized text normally, reduce
+attribution confidence when speaker_status is uncertain/tentative,
+avoid named-person commitments on unknown IDs, and highlight
+speech_coverage_gaps as incomplete evidence. Do not treat raw
+speaker_similarity or language_confidence as directly calibrated
+statistical probabilities.
