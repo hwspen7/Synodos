@@ -5,11 +5,7 @@
  */
 import type { Segment } from '@/types'
 import { speakerColor } from '@/speaker/clustering'
-
-function plain(text: string): string {
-  // No Unicode compatibility rewriting: original graphemes are canonical.
-  return text.trim()
-}
+import { isExactContentProjection } from './contentProof'
 
 export function expandContentFirstSegments(
   canonical: Segment[], useTranslation: boolean,
@@ -22,19 +18,10 @@ export function expandContentFirstSegments(
       segment.caption_projection_status !== 'split_verified' ||
       segment.speaker_diarization_source === 'manual_override' ||
       (useTranslation && !!segment.translation?.trim()) ||
-      cues.some((cue) =>
-        !Number.isInteger(cue.speaker_id) ||
-        !Number.isInteger(cue.start_ms) ||
-        !Number.isInteger(cue.end_ms) ||
-        cue.end_ms <= cue.start_ms ||
-        cue.start_ms < segment.start_ms - 150 ||
-        cue.end_ms > segment.end_ms + 150 ||
-        !cue.text?.trim()
-      ) ||
-      cues.some((cue, index) =>
-        index > 0 && cue.start_ms < cues[index - 1]!.end_ms
-      ) ||
-      plain(cues.map((cue) => cue.text).join('')) !== plain(segment.text)
+      cues.some((cue) => !Number.isInteger(cue.speaker_id)) ||
+      !isExactContentProjection(
+        segment.text, segment.start_ms, segment.end_ms, cues,
+      )
     ) {
       out.push(segment)
       continue
@@ -52,7 +39,7 @@ export function expandContentFirstSegments(
       ...segment,
       id: -(segment.id * 64 + index + 1),
       source_segment_id: segment.id,
-      text: cue.text.trim(),
+      text: cue.text,
       start_ms: cue.start_ms,
       end_ms: cue.end_ms,
       speaker_id: cue.speaker_id,
