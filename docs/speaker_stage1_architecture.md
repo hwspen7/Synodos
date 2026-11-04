@@ -757,3 +757,25 @@ voices. The experimental Sepformer source separator is two-source
 only; the offline review now preserves the full overlap timeline, not
 three independent separated word streams. No automatic ECAPA production
 identity promotion or cross-meeting threshold calibration is claimed.
+
+
+### Experimental short-interjection probes
+
+The default direct voiceprint minimum remains 1.2 seconds because
+sub-second voice embeddings are less stable. A bounded, opt-in trial
+can lower the input floor to 0.9 seconds for the same AMI benchmark:
+
+    $env:MEETING_SPEAKER_PROBE_MIN_S = "0.9"
+
+Values outside 0.8 through 1.2 are rejected. Candidate embeddings
+below 1.2 seconds are always flagged with speaker_uncertain=true
+and speaker_evidence_status=short_probe, and they cannot seed the
+trusted ECAPA shadow speaker prototypes. This mode can increase
+the number of tentative acoustic groups and may worsen false
+identifications. Run an independent A/B against the same frozen
+human annotation; do not enable in production until confusion
+and DER both improve. The default is still 1.2 seconds.
+
+The new AMI reference audit also includes
+reference_speech_without_captions.longest_gaps. They are 100ms
+frame-derived *review intervals*, not automatically generated text.
