@@ -7,6 +7,7 @@ import re
 import time
 
 from intelligence.config import load_config
+from speech.supported_languages import translation_target
 from intelligence.contracts import build_chunks, safe_artifact, ALLOWED_MODES
 from intelligence.model_gateway import ModelGateway
 from intelligence.prompts import SYSTEM, transcript_prompt, answer_prompt
@@ -139,9 +140,9 @@ def process(job, gateway):
         )
         return result
     if kind=='live_translate':
-        target=str(job['payload'].get('target') or '').lower()
-        if not re.fullmatch(r'[a-z]{2,3}(-[a-z]{2,4})?',target):
-            raise ValueError('Invalid translation target')
+        target=translation_target(job['payload'].get('target'))
+        if not target:
+            raise ValueError('A supported translation target is required')
         fragments=job['payload'].get('segments')
         if not isinstance(fragments,list) or not 1<=len(fragments)<=8:
             raise ValueError('A live translation requires 1-8 segments')
@@ -160,9 +161,9 @@ def process(job, gateway):
         return {'target':target,'translations':results,'source':'live_unverified'}
     if kind=='translate':
         _,segments=_context(job)
-        target=str(job['payload'].get('target') or '').lower()
-        if not re.fullmatch(r'[a-z]{2,3}(-[a-z]{2,4})?',target):
-            raise ValueError('Invalid translation target')
+        target=translation_target(job['payload'].get('target'))
+        if not target:
+            raise ValueError('A supported translation target is required')
         requested=job['payload'].get('segment_ids')
         if not isinstance(requested,list) or not 1<=len(requested)<=12:
             raise ValueError('Translation requires 1-12 saved segment IDs')
