@@ -55,6 +55,7 @@ from sessions.speaker_fallback import (
 from sessions.speaker_stability import (
     collect_mature_labels, restore_mature_labels, stabilized_cluster_ids,
     summarize_cluster_fragmentation, diagnose_cluster_merge_thresholds,
+    anonymous_speaker_timeline,
 )
 
 logger = logging.getLogger(__name__)
@@ -261,6 +262,11 @@ class SessionProcessor(threading.Thread):
                     )
                     summary["posthoc_merge_sweep"] = (
                         diagnose_cluster_merge_thresholds(self.segments)
+                    )
+                    # Review speaker-turn alignment against the original
+                    # recording without transmitting any recognized text.
+                    summary["anonymous_timeline"] = anonymous_speaker_timeline(
+                        self.segments, self.settings.sample_rate
                     )
                     closed_payload["diarization_diagnostics"] = summary
                 except Exception:
