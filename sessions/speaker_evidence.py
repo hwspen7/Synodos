@@ -29,7 +29,10 @@ def speaker_evidence(segments: list[dict]) -> dict[int, dict]:
     confirmed. Similarity is compared to other samples of the existing
     published identity, not to a human ground-truth voice.
     """
-    groups: dict[int, list[tuple[int, np.ndarray]]] = {}
+    # Maintain per-person, per-embedding-dimension accumulators. This
+    # makes a snapshot linear in the transcript length and cannot fail
+    # when an old saved meeting used a different embedding model.
+    groups: dict[tuple[int, int], dict] = {}
     embeddings: dict[int, np.ndarray | None] = {}
     for segment in segments:
         sid = int(segment["id"])
@@ -37,29 +40,34 @@ def speaker_evidence(segments: list[dict]) -> dict[int, dict]:
         embeddings[sid] = vector
         person = segment.get("speaker_id")
         if type(person) is int and person > 0 and vector is not None:
-            groups.setdefault(person, []).append((sid, vector))
-    centers = {}
-    for person, members in groups.items():
-        vectors = np.stack([item[1] for item in members])
-        centers[person] = _unit(vectors.mean(axis=0))
+            key = (person, vector.size)
+            entry = groups.setdefault(key, {
+                "count": 0,
+                "sum": np.zeros(vector.size, dtype=np.float64),
+            })
+            entry["count"] += 1
+            entry["sum"] += vector
 
+    centers = {
+        key: _unit(entry["sum"])
+        for key, entry in groups.items()
+    }
     results = {}
     for seg in segments:
         sid = int(seg["id"])
         person = seg.get("speaker_id")
         vector = embeddings[sid]
-        own = groups.get(person, []) if type(person) is int else []
-        support = len(own)
+        key = (person, vector.size) if (
+            type(person) is int and vector is not None
+        ) else None
+        own = groups.get(key) if key is not None else None
+        support = own["count"] if own is not None else 0
         raw_score = None
         if vector is not None and support >= 2:
-            companions = [
-                other for other_sid, other in own
-                if other_sid != sid
-            ]
-            if companions:
-                center = _unit(np.mean(companions, axis=0))
-                if center is not None:
-                    raw_score = float(np.dot(vector, center))
+            # Exclude this utterance from its own comparison template.
+            center = _unit(own["sum"] - vector)
+            if center is not None:
+                raw_score = float(np.dot(vector, center))
         enrolled_score = seg.get("speaker_match_similarity")
         if (seg.get("cluster") == -1
                 and isinstance(enrolled_score, (int, float))
@@ -67,11 +75,11 @@ def speaker_evidence(segments: list[dict]) -> dict[int, dict]:
             raw_score = float(enrolled_score)
         alternatives = []
         if vector is not None:
-            for other_person, center in centers.items():
-                if other_person == person or center is None:
+            for (other_person, dimension), center in centers.items():
+                if (other_person == person or dimension != vector.size
+                        or center is None):
                     continue
-                if center.shape == vector.shape:
-                    alternatives.append(float(np.dot(vector, center)))
+                alternatives.append(float(np.dot(vector, center)))
         margin = raw_score - max(alternatives) if (
             raw_score is not None and alternatives
         ) else None
