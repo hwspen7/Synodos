@@ -482,3 +482,34 @@ cross-session verification trials without an explicit participant
 mapping and source-session split. They are excellent longer-form live
 pipeline stress and diarization tests, not a calibrated voiceprint
 verification benchmark.
+
+
+### Quiet-voice shadow acceptance repair
+
+A real 240-second AMI replay initially submitted just one sample, seeded one
+ECAPA prototype and skipped 21 samples due to the original 0.008 RMS gate.
+This confirmed a live model call but **not** a useful two-speaker comparison.
+The live shadow path now holds up to the first 20 seconds of each eligible
+confirmed segment in memory, then selects a high-activity 2-3 second excerpt
+rather than blindly sending the earliest 6 seconds. It uses an RMS floor of
+0.001 and a minimum fraction of active short frames instead of the old
+0.008 gate. This remains an energy-based heuristic, not a trained VAD, and
+must never turn low-energy noise into verified enrollment.
+
+The aggregate-only diagnostics now include:
+
+- `observed_camplus_speaker_count` (distinct label IDs sent to ECAPA)
+- `accepted_quiet_speech` (accepted excerpts below the former 0.008 RMS)
+- `skipped_no_active_window` (unusable 2-3 second excerpt)
+
+Only an ECAPA result with at least two existing prototypes can produce
+`rank_match` or `rank_conflict`. If no such results appear, examine
+`final_assigned_speaker_count` in the replay report and
+`observed_camplus_speaker_count` in the shadow diagnostics. The underlying
+CAM++ model may have collapsed real speakers into one label; that cannot
+be fixed by lowering the ECAPA sample energy gate.
+
+After pulling, **restart the backend** and replay the same WAV under a
+NEW report filename. An old backend keeps its previous module versions
+even when the checkout has changed. This repair does not alter CAM++,
+published captions, stored identities or manually corrected labels.
