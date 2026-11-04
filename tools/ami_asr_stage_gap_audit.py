@@ -136,6 +136,28 @@ def audit_stages(
         key: sum(max(0, int(cycle.get(key) or 0)) for cycle in trace["cycles"])
         for key in ("recovery_attempted", "recovery_confirmed", "recovery_failed")
     }
+    receipts = [
+        cycle["commit_receipt"] for cycle in trace["cycles"]
+        if isinstance(cycle.get("commit_receipt"), dict)
+    ]
+    receipt_fields = (
+        "verified_candidates", "held", "invalid_timestamps",
+        "duplicate_skipped", "published_new", "published_from_recovery",
+    )
+    commit_totals = (
+        {name: sum(int(row.get(name, 0)) for row in receipts)
+         for name in receipt_fields}
+        if receipts else None
+    )
+    if commit_totals is not None and (
+        commit_totals["verified_candidates"] != sum(
+            commit_totals[key] for key in (
+                "held", "invalid_timestamps", "duplicate_skipped",
+                "published_new",
+            )
+        )
+    ):
+        raise ValueError("ASR commit receipt conservation failed")
     bypassed_cycles = sum(bool(cycle.get("window_internal_vad_bypassed"))
                           for cycle in trace["cycles"])
     return {
@@ -149,6 +171,14 @@ def audit_stages(
         ),
         "window_internal_vad_bypassed_cycles": bypassed_cycles,
         "recovery_counts": recoveries,
+        "commit_totals_across_cycles": commit_totals,
+        "commit_receipt_cycles": len(receipts),
+        "commit_count_note": (
+            "Candidate counts are per ASR inference cycle and may include "
+            "the same audio on multiple passes. Published_new is the count "
+            "of new canonical segments at the point of initial commit, "
+            "not word correctness, WER, or later delivery guarantee."
+        ),
         "reference_clock_no_caption_seconds": measured_missing,
         "reference_clock_covered_seconds": counts["final_caption_covered"] / 10,
         "gap_causes_seconds": {
