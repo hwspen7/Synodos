@@ -80,6 +80,12 @@ $document = [ordered]@{
 }
 $document | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $output -Encoding UTF8
 Write-Host "Private ablation inventory: $output"
+$comparePath = Join-Path $private ("phase1a_comparison_$runId.json")
+& $PythonExe -m tools.phase1a_compare --inventory $output --output $comparePath
+if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
+    throw "Phase 1A comparison failed to verify paired audit evidence."
+}
+Write-Host "Private paired acoustic/text review comparison: $comparePath"
 if (@($records | Where-Object { -not $_.independent_der_path }).Count -gt 0) {
     throw "Some Phase 1A ablations did not produce acoustic evidence."
 }
