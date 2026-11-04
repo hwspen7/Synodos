@@ -16,6 +16,9 @@ interface Result {
   source_filename: string
   relative_to_recording: boolean
   speaker_turns: SpeakerTurn[]
+  exclusive_speaker_turns?: SpeakerTurn[] | null
+  overlap_intervals?: { start_ms: number; end_ms: number; active_speaker_count: number }[]
+  overlap_turn_count?: number
   speaker_count: number
   review_required: boolean
   auto_applied: boolean
@@ -172,6 +175,17 @@ onBeforeUnmount(endPoll)
         {{ result.model }}
       </p>
       <p class="speaker-note">{{ result.notice }}</p>
+      <p v-if="result.overlap_intervals?.length" class="speaker-note">
+        {{ result.overlap_intervals.length }} simultaneous-speaking interval(s)
+        identified by the independent model (review required).
+      </p>
+      <div v-if="result.overlap_intervals?.length" class="speaker-turns">
+        <div v-for="(overlap, index) in result.overlap_intervals" :key="'overlap-' + index"
+          class="speaker-turn">
+          <span>{{ time(overlap.start_ms) }} – {{ time(overlap.end_ms) }}</span>
+          <strong>{{ overlap.active_speaker_count }} concurrent speakers</strong>
+        </div>
+      </div>
       <div class="speaker-turns">
         <div v-for="(turn, index) in result.speaker_turns" :key="index" class="speaker-turn">
           <span>{{ time(turn.start_ms) }} – {{ time(turn.end_ms) }}</span>
