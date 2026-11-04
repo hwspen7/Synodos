@@ -168,6 +168,43 @@ caption by its earliest missing observed stage. This does not reveal what
 words were omitted. That question requires source audio and a trusted word
 transcript. Raw Whisper time spans can themselves be hallucinations.
 
+## Investigating the 22.202% miss under the original only_words labels
+
+NVIDIA explicitly warns that older AMI segment references sometimes count
+within-segment silence as speech, inflating missed-speaker time. The model-card
+AMI MHM ~9.48% DER is scored with a separate forced-aligned reference,
+**not** with the project's original pinned only_words RTTM.
+
+A standalone diagnostic compares the SAME Nemotron predictions against BOTH
+reference versions. It never modifies the original audit and does NOT treat
+a lower number from changed ground truth as a model improvement:
+
+```powershell
+cd E:\Meeting-Fixed10-Test
+$root = "benchmark/fixed195/ami_shadow10"
+$replay = "$root/replay_TS3003b_nemotron_20261104-132709.json"
+if (-not (Test-Path $replay)) { throw "Original 20261104-132709 replay missing" }
+$tag = Get-Date -Format "yyyyMMdd-HHmmss"
+& $PY -m tools.ami_nemotron_reference_diagnostic `
+  --root $root --meeting TS3003b --replay $replay `
+  --output "$root/audit_TS3003b_reference_comparison_$tag.json"
+```
+
+The official-linked forced-aligned RTTM is fetched at a pinned public commit
+into **E:\\Meeting-Fixed10-Test\\benchmark\\fixed195\\ami_shadow10\\forced_aligned_reference**.
+No separate Python environment, NVIDIA model rerun, or OS cache path is
+required. The script reports original *independent* acoustic DER and
+forced-aligned *independent* acoustic DER separately, plus the caption-derived
+DER as additional context. The original 23.768% result remains canonical
+for the frozen current test. The new metric is a *reference-protocol
+comparison*, not a deployment pass.
+
+If both independent DERs are high, the issue is not primarily reference
+boundaries; investigate the model's activity decisions, decoding model,
+acoustic preprocessing, and threshold behavior on independent development
+audio. Never optimize a threshold using the one held-out TS3003b sample
+that will be used for final acceptance.
+
 ## Rollback
 
 ```powershell
