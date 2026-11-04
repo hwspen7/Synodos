@@ -11,7 +11,7 @@ import numpy as np
 from audio.buffer import AudioBuffer
 from core.config import Settings
 from speech.diarization import (
-    SpeakerCentroidTracker, assign_acoustic_anchor_clusters,
+    SpeakerCentroidTracker, resolve_diarization_mode,
 )
 from sessions.processor import SessionProcessor
 from sessions.speaker_stability import (
@@ -186,69 +186,16 @@ class StabilityUnitContracts(unittest.TestCase):
         ], (1, 2), {0: 3, 2: 4})
         self.assertGreater(new[7], 4)
 
-    def test_anchor_clusters_reject_new_identity_from_short_outliers(self):
-        sr = 16000
-        records = [
-            {"id": 1, "start_sample": 0, "end_sample": sr * 2,
-             "emb": np.array([1., 0.]), "speaker_uncertain": False},
-            {"id": 2, "start_sample": sr * 2, "end_sample": sr * 4,
-             "emb": np.array([0., 1.]), "speaker_uncertain": False},
-            {"id": 3, "start_sample": sr * 4, "end_sample": sr * 4 + 3200,
-             "emb": np.array([0.99, 0.01]), "speaker_uncertain": False},
-            {"id": 4, "start_sample": sr * 5, "end_sample": sr * 5 + 3200,
-             "emb": np.array([0.707, 0.707]), "speaker_uncertain": False},
-            {"id": 5, "start_sample": sr * 6, "end_sample": sr * 6 + 3200,
-             "emb": np.array([-0.9, -0.1]), "speaker_uncertain": True},
-            {"id": 6, "start_sample": sr * 7, "end_sample": sr * 7 + 3200,
-             "emb": np.array([1., 0.]), "speaker_uncertain": True},
-        ]
-        calls = []
-        def cluster(vectors):
-            calls.append(vectors.copy())
-            return np.where(vectors[:, 0] > vectors[:, 1], 3, 8)
-        stats = assign_acoustic_anchor_clusters(
-            records, list(range(6)), cluster, sr)
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0].shape, (2, 2))
-        self.assertEqual(stats, {
-            "anchor_segments": 2, "short_assigned": 1,
-            "unassigned": 3, "raw_clusters": 2,
-        })
-        self.assertEqual(
-            [r["cluster"] for r in records], [3, 8, 3, -3, -3, -3])
-
-    def test_anchor_mode_skips_spectral_backend_for_one_anchor(self):
-        sr = 16000
-        records = [
-            {"id": 1, "start_sample": 0, "end_sample": 2 * sr,
-             "emb": np.array([1., 0.]), "speaker_uncertain": False},
-            {"id": 2, "start_sample": 2 * sr, "end_sample": 2 * sr + 3200,
-             "emb": np.array([0.99, 0.01]), "speaker_uncertain": False},
-        ]
-        def no_singleton_eigensolver(_):
-            raise AssertionError("Cannot cluster a singleton anchor")
-        outcome = assign_acoustic_anchor_clusters(
-            records, [0, 1], no_singleton_eigensolver, sr)
-        self.assertEqual(outcome["raw_clusters"], 1)
-        self.assertEqual(outcome["short_assigned"], 1)
-        self.assertEqual([r["cluster"] for r in records], [0, 0])
-
-    def test_anchor_mode_does_not_force_ids_without_long_evidence(self):
-        records = [
-            {"id": 1, "start_sample": 0, "end_sample": 3000,
-             "emb": np.array([1., 0.]), "speaker_uncertain": False},
-        ]
-        def must_not_cluster(_):
-            raise AssertionError("Short speech must not become an anchor")
-        stats = assign_acoustic_anchor_clusters(
-            records, [0], must_not_cluster, 16000)
-        self.assertEqual(stats["raw_clusters"], 0)
-        self.assertEqual(stats["unassigned"], 1)
-        self.assertEqual(records[0]["cluster"], -3)
-        with self.assertRaises(ValueError):
-            assign_acoustic_anchor_clusters(records, [0],
-                                            must_not_cluster, 16000,
-                                            short_match_margin=-0.1)
+    def test_default_and_retired_modes_resolve_to_standard_cluster(self):
+        self.assertEqual(resolve_diarization_mode(None), "cluster")
+        self.assertEqual(resolve_diarization_mode(""), "cluster")
+        self.assertEqual(resolve_diarization_mode("cluster"), "cluster")
+        self.assertEqual(resolve_diarization_mode(" CLUSTER "), "cluster")
+        self.assertEqual(resolve_diarization_mode("cluster_sticky"), "cluster")
+        self.assertEqual(resolve_diarization_mode("cluster_anchors"), "cluster")
+        self.assertEqual(resolve_diarization_mode("not_a_mode"), "cluster")
+        self.assertEqual(resolve_diarization_mode("centroid"), "centroid")
+        self.assertEqual(resolve_diarization_mode("single"), "single")
 
     def test_centroid_seed_uses_all_existing_voice_examples(self):
         tracker = SpeakerCentroidTracker(threshold=0.72)
@@ -376,71 +323,59 @@ class IntegrationSpeakerStabilityContracts(unittest.TestCase):
             if s["speaker_id"] > 0
         }, {1, 2})
 
-    def test_opt_in_anchor_mode_uses_existing_clusters_without_short_seeds(self):
-        proc = self.make_processor()
-        sr = proc.settings.sample_rate
-        class Model:
-            def __init__(self):
-                self.inputs = []
-            def cluster(self, embeddings):
-                self.inputs.append(embeddings.copy())
-                return np.where(embeddings[:, 0] > embeddings[:, 1], 0, 1)
-        proc.models = Model()
-        proc.segments = [
-            {
-                "id": i, "start_sample": start, "end_sample": end,
-                "speaker_id": -i, "speaker_name": "Unidentified Speaker",
-                "speaker_uncertain": False, "cluster": -3,
-                "emb": np.array(vector, dtype=np.float32),
-            }
-            for i, start, end, vector in [
-                (1, 0, 2 * sr, [1., 0.]),
-                (2, 2 * sr, 4 * sr, [0., 1.]),
-                (3, 4 * sr, 4 * sr + 3200, [0.99, 0.01]),
-                (4, 5 * sr, 5 * sr + 3200, [0.707, 0.707]),
-            ]
-        ]
-        with patch.dict(os.environ,
-                        {"MEETING_DIARIZATION_MODE": "cluster_anchors"}):
-            proc._recluster()
-        self.assertEqual(proc.models.inputs[0].shape, (2, 2))
-        self.assertEqual(proc.segments[0]["speaker_id"],
-                         proc.segments[2]["speaker_id"])
-        self.assertNotEqual(proc.segments[0]["speaker_id"],
-                            proc.segments[1]["speaker_id"])
-        self.assertLess(proc.segments[3]["speaker_id"], 0)
-        self.assertEqual(len({
-            s["speaker_id"] for s in proc.segments
-            if s["speaker_id"] > 0
-        }), 2)
+    def test_retired_mode_uses_standard_acoustic_clustering(self):
+        for stale_mode in ("cluster_sticky", "cluster_anchors"):
+            with self.subTest(mode=stale_mode):
+                proc = self.make_processor()
+                sr = proc.settings.sample_rate
 
-    def test_opt_in_sticky_global_clustering_preserves_reliable_labels(self):
-        proc = self.make_processor()
-        sr = proc.settings.sample_rate
-        proc.segments = [
-            {
-                "id": i, "start_sample": (i - 1) * sr,
-                "end_sample": i * sr,
-                "speaker_id": sid,
-                "speaker_name": (
-                    f"Speaker {sid}" if sid > 0 else "Unidentified Speaker"
-                ),
-                "speaker_uncertain": False if sid > 0 else True,
-                "cluster": i,
-                "emb": np.array([1., 0.], dtype=np.float32)
-                if sid == 1 else np.array([0., 1.], dtype=np.float32),
-            }
-            for i, sid in [(1, 1), (2, 2), (3, -3)]
-        ]
-        # A global cluster merge should not rename a previously reliable
-        # speaker. New unknown utterances are still assigned acoustically.
-        with patch.dict(os.environ,
-                        {"MEETING_DIARIZATION_MODE": "cluster_sticky"}):
-            proc._recluster()
-        self.assertEqual([s["speaker_id"] for s in proc.segments[:2]],
-                         [1, 2])
-        self.assertGreater(proc.segments[2]["speaker_id"], 0)
-        self.assertEqual(len({s["speaker_id"] for s in proc.segments[:2]}), 2)
+                class Model:
+                    def __init__(self):
+                        self.inputs = []
+                    def cluster(self, embeddings):
+                        self.inputs.append(embeddings.copy())
+                        return np.array([0, 1], dtype=np.int32)
+
+                proc.models = Model()
+                proc.segments = [
+                    {
+                        "id": 1, "start_sample": 0, "end_sample": 2 * sr,
+                        "text": "First speaker words",
+                        "emb": np.array([1., 0.]),
+                        "cluster": -3,
+                        "speaker_uncertain": False,
+                    },
+                    {
+                        "id": 2, "start_sample": 2 * sr,
+                        "end_sample": 2 * sr + 2000,
+                        "text": "Second speaker words",
+                        "emb": np.array([0., 1.]),
+                        "cluster": -3,
+                        "speaker_uncertain": False,
+                    },
+                    {
+                        "id": 3, "start_sample": 3 * sr,
+                        "end_sample": 3 * sr + 2000,
+                        "text": "Still transcribed",
+                        "emb": None,
+                        "cluster": -3,
+                        "speaker_uncertain": True,
+                    },
+                ]
+                with patch.dict(os.environ,
+                                {"MEETING_DIARIZATION_MODE": stale_mode}):
+                    proc._recluster()
+                self.assertEqual(proc.models.inputs[0].shape, (2, 2))
+                self.assertEqual(len({
+                    s["speaker_id"] for s in proc.segments[:2]
+                }), 2)
+                self.assertEqual(proc.segments[2]["speaker_name"],
+                                 "Unidentified Speaker")
+                self.assertLess(proc.segments[2]["speaker_id"], 0)
+                self.assertEqual([s["text"] for s in proc.segments], [
+                    "First speaker words", "Second speaker words",
+                    "Still transcribed",
+                ])
 
     def test_standard_cluster_retains_existing_relabel_behavior(self):
         proc = self.make_processor()
@@ -458,8 +393,7 @@ class IntegrationSpeakerStabilityContracts(unittest.TestCase):
         ]
         with patch.dict(os.environ, {"MEETING_DIARIZATION_MODE": "cluster"}):
             proc._recluster()
-        # The synthetic model merges both acoustic clusters, so standard
-        # mode may revise earlier IDs as before, unlike sticky comparator.
+        # Standard mode may revise recent assignments after new evidence.
         self.assertEqual(proc.segments[0]["speaker_id"],
                          proc.segments[1]["speaker_id"])
 
