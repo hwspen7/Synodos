@@ -116,6 +116,21 @@ class DummyEmbedder:
 
 
 class SpeakerStageOneTests(unittest.TestCase):
+    def test_doctor_never_claims_model_weights_are_tested(self):
+        from unittest.mock import patch
+        from tools.speaker_stage1_doctor import check
+
+        with patch(
+            "tools.speaker_stage1_doctor.util.find_spec", return_value=None
+        ):
+            result = check("nemotron3", device="cpu")
+        self.assertFalse(result["dependencies_ready"])
+        self.assertFalse(result["model_weights_tested"])
+        self.assertFalse(result["real_audio_inference_tested"])
+        self.assertIn("transformers", result["missing"])
+        with self.assertRaises(ValueError):
+            check("invented")
+
     def test_default_factory_does_not_load_any_optional_models(self):
         self.assertIsInstance(
             create_embedding_backend("camplus", manager=DummyCampManager()),
