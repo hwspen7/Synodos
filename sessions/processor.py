@@ -53,6 +53,7 @@ from sessions.speaker_tasks import submit_speaker_analysis, submit_acoustic_wind
 from sessions.speaker_evidence import speaker_evidence
 from speech.acoustic_timeline import AcousticTimeline
 from speech.diarization import resolve_diarization_mode
+from speech.turn_integrity import valid_turn_partition
 from sessions.speaker_fallback import (
     UNIDENTIFIED_CLUSTER, fallback_speaker_id, normalized_embedding,
 )
@@ -896,7 +897,8 @@ class SessionProcessor(threading.Thread):
         # A segment's asynchronous turn analysis can finish AFTER the
         # acoustic windows that cover it. Reconcile against existing windows
         # even when no new acoustic result arrived on this processor cycle.
-        return self._backfill_acoustic_missing()
+        backfilled = self._backfill_acoustic_missing()
+        return added or backfilled
 
     def _backfill_acoustic_missing(self) -> bool:
         """Use existing acoustics for unmatched segments after async work.
@@ -989,6 +991,31 @@ class SessionProcessor(threading.Thread):
                 original["speaker_evidence_status"] = "turn_analysis_unavailable"
                 self._enqueue_translation(original)
                 updated = True
+                continue
+            # Async speaker analysis is advisory. Reject a malformed or
+            # non-conserving turn split before mutating *any* confirmed ASR
+            # segment. Otherwise a late worker can delete real words or
+            # fabricate new intervals after the source audio was dropped.
+            sr = self.settings.sample_rate
+            base = int(original.get("_audio_base_sample", 0))
+            source_start_ms = round(
+                (int(original["start_sample"]) - base) * 1000 / sr
+            )
+            source_end_ms = round(
+                (int(original["end_sample"]) - base) * 1000 / sr
+            )
+            if not valid_turn_partition(
+                source_start_ms, source_end_ms, str(original.get("text", "")),
+                pieces,
+            ):
+                logger.warning(
+                    "Rejecting non-conserving speaker split for segment %s", sid
+                )
+                original["speaker_uncertain"] = True
+                original["speaker_evidence_status"] = "turn_split_rejected"
+                self._enqueue_translation(original)
+                updated = True
+                metrics.increment("speaker_turn_split_rejected")
                 continue
             if len(pieces) > 1:
                 # The original utterance may contain multiple speakers.
