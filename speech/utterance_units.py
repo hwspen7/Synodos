@@ -100,6 +100,7 @@ def split_utterance(
         output.append(Utterance(
             text, group[0].start_ms, group[-1].end_ms, utterance.language,
             tuple(group), "word", utterance.confidence, utterance.language_confidence,
+            utterance.recognition_origin,
         ))
     if _surface(" ".join(s.text for s in output)) != source_surface:
         return (utterance,)
