@@ -98,15 +98,16 @@ class SpeechCoverageRetentionTests(unittest.TestCase):
         processor._collect_acoustic = lambda *args, **kw: False
         processor._collect_translations = lambda *args, **kw: None
         processor._recluster = lambda *args: None
-        with patch("sessions.processor.submit_speaker_analysis", return_value=None):
-            for i in range(3):
-                buffer.append(np.ones(sr * (10 if i == 0 else 2),
-                                      dtype=np.float32) * 0.03)
-                processor._cycle(final=False)
-                if i < 2:
-                    self.assertEqual(buffer.start_offset(), 0)
-                else:
-                    self.assertEqual(buffer.start_offset(), 6 * sr)
+        with patch.dict("os.environ", {"MEETING_ASR_COVERAGE_RETENTION": "1"}):
+            with patch("sessions.processor.submit_speaker_analysis", return_value=None):
+                for i in range(3):
+                    buffer.append(np.ones(sr * (10 if i == 0 else 2),
+                                          dtype=np.float32) * 0.03)
+                    processor._cycle(final=False)
+                    if i < 2:
+                        self.assertEqual(buffer.start_offset(), 0)
+                    else:
+                        self.assertEqual(buffer.start_offset(), 6 * sr)
         self.assertEqual(processor.segments[0]["text"], "The later decision")
         self.assertEqual(len(processor._speech_coverage_gaps), 1)
         self.assertEqual(
@@ -152,7 +153,10 @@ class SpeechCoverageRetentionTests(unittest.TestCase):
         proc._collect_acoustic = lambda *args, **kwargs: False
         proc._collect_translations = lambda *args, **kwargs: None
         buffer.append(np.full(14 * sr, 0.03, dtype=np.float32))
-        self.assertFalse(proc._cycle(final=False))
+        with patch.dict("os.environ", {
+            "MEETING_ASR_SPEECH_BACKPRESSURE_GUARD": "1",
+        }):
+            self.assertFalse(proc._cycle(final=False))
         self.assertGreater(buffer.start_offset(), 0)
         self.assertLess(buffer.total_samples(), 14 * sr)
         self.assertGreater(len(proc._speech_coverage_gaps), 0)
