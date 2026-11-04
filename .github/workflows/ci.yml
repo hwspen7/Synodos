@@ -31,6 +31,8 @@ jobs:
         run: python -m unittest tests.quality.test_phase1b_diarization tests.quality.test_phase1b_qwen_shadow tests.quality.test_phase2_cross_session_acceptance -v
       - name: Verify Phase 1/2 verified enrollment and strict release decision
         run: python -m unittest tests.quality.test_phase2_build_trials tests.quality.test_phase12_release_gate tests.backend.integration.test_phase2_verified_enrollment -v
+      - name: Phase 1A paired Whisper ablation regression gate
+        run: python -m unittest tests.quality.test_phase1a_compare -v
       - name: Run backend and English-only tests
         run: python -m unittest discover -s tests -t . -v
 
