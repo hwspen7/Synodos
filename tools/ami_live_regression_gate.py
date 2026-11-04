@@ -81,10 +81,27 @@ def compare_live_audits(baseline: dict, candidate: dict) -> dict:
         "without_transcript_speaker_time_not_worse_by_over_0p5s":
             values["without_transcript_speaker_seconds"]["delta"] <= 0.5,
     }
+    # A permissive non-regression pass is not a quality improvement. Require
+    # independently meaningful reductions before describing a candidate as
+    # better on this frozen diarization/coverage benchmark.
+    measurable_improvement = (
+        all(gates.values())
+        and values["der"]["delta"] <= -0.005
+        and values["missed_speaker_time"]["delta"] < 0
+        and values["no_caption_clock_seconds"]["delta"] <= -0.5
+        and values["without_transcript_speaker_seconds"]["delta"] <= 0
+    )
     return {
         "schema": "meeting-ami-live-regression-gate-v1",
         "meeting": baseline["meeting"],
         "non_regression_pass": all(gates.values()),
+        "diarization_coverage_improvement_pass": measurable_improvement,
+        "improvement_rule": (
+            "Requires DER reduction >=0.5 percentage points, lower missed "
+            "speaker time, >=0.5s less reference speech without captions, "
+            "no increase in transcript-absent speaker time, and every "
+            "non-regression gate. Not a WER/CER or overlap-quality claim."
+        ),
         "gates": gates,
         "measurements": values,
         "caveat": (
