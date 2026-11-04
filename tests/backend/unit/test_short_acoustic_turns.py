@@ -179,6 +179,7 @@ class ShortMixedUtteranceTests(unittest.TestCase):
         done.set_result(pieces)
         processor._speaker_tasks[1] = done
         self.assertTrue(processor._collect_speakers())
+        self.assertEqual(processor._acoustic_turn_splits, 1)
         self.assertEqual(len(processor.segments), 2)
         self.assertEqual(
             [s["id"] for s in processor.segments], [1, 2],
