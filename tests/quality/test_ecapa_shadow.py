@@ -128,6 +128,52 @@ class ShadowTests(unittest.TestCase):
         ))), 0.001)
         self.assertEqual(processor.segments[0]["speaker_id"], 1)
 
+    def test_long_meeting_samples_continue_after_first_64_segments(self):
+        settings = Settings()
+        processor = SessionProcessor(
+            "long-shadow", AudioBuffer(16000, max_seconds=30),
+            settings, object(), asyncio.Queue(),
+        )
+        spy = FakeShadow()
+        processor._ecapa_shadow = spy
+        audio = np.ones(16000 * 3, dtype=np.float32) * 0.1
+        for index in range(70):
+            sid = index + 1
+            start = index * 11 * 16000
+            processor.segments = [{
+                "id": sid, "start_sample": start,
+                "end_sample": start + len(audio),
+                "speaker_id": 1, "speaker_name": "Speaker 1",
+                "speaker_uncertain": False, "emb": vector(0),
+                "cluster": 0, "text": "voice", "language": "en",
+            }]
+            processor._ecapa_shadow_audio = {sid: audio.copy()}
+            processor._submit_shadow_samples()
+        self.assertEqual(len(spy.accepted), 70)
+        self.assertEqual(processor._ecapa_shadow_sample_count, 70)
+        self.assertTrue(all(row[0] == 1 for row in spy.accepted))
+
+    def test_sampling_cadence_preserves_new_speaker_prototype(self):
+        settings = Settings()
+        processor = SessionProcessor(
+            "cadence-shadow", AudioBuffer(16000, max_seconds=30),
+            settings, object(), asyncio.Queue(),
+        )
+        spy = FakeShadow()
+        processor._ecapa_shadow = spy
+        audio = np.ones(16000 * 3, dtype=np.float32) * 0.1
+        for sid, label, start in [(1, 1, 0), (2, 1, 16000), (3, 2, 32000)]:
+            processor.segments = [{
+                "id": sid, "start_sample": start,
+                "end_sample": start + len(audio),
+                "speaker_id": label, "speaker_name": f"Speaker {label}",
+                "speaker_uncertain": False, "emb": vector(label),
+                "cluster": label, "text": "voice", "language": "en",
+            }]
+            processor._ecapa_shadow_audio = {sid: audio.copy()}
+            processor._submit_shadow_samples()
+        self.assertEqual([item[0] for item in spy.accepted], [1, 2])
+
     def test_pcm16_protocol_validates_sample_rate_and_shape(self):
         pcm = np.full(32000, 8000, dtype="<i2").tobytes()
         data = {
