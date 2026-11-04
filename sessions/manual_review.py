@@ -75,7 +75,7 @@ def apply_review(
         "speaker_profile_id": segment.get("speaker_profile_id"),
     }
     if text is not UNSET:
-        if "original_asr_text" not in segment:
+        if not isinstance(segment.get("original_asr_text"), str):
             segment["original_asr_text"] = before["text"]
         segment["text"] = text
         segment["manually_corrected"] = True
