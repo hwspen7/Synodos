@@ -26,7 +26,7 @@ class CaptionAcousticAlignmentTests(unittest.TestCase):
         ]
         self.assertEqual(
             speaker_support_intervals(turns, 200, 500, 1),
-            [[200, 300], [350, 600 - 100]],
+            [[200, 300], [350, 500]],
         )
         summary = caption_support_summary(turns, 200, 500, 1)
         self.assertEqual(summary["speaker_activity_intervals_ms"],
