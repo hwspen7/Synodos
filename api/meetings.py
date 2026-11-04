@@ -86,7 +86,10 @@ async def get_meeting_segments(meeting_id: str) -> dict:
     )
     if segments is None:
         raise HTTPException(status_code=404, detail="meeting not found")
-    return {"segments": segments}
+    gaps = await asyncio.get_running_loop().run_in_executor(
+        None, meeting_store.list_speech_coverage_gaps, meeting_id
+    )
+    return {"segments": segments, "speech_coverage_gaps": gaps or []}
 
 
 @router.post("/api/meetings")
