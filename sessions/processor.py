@@ -472,13 +472,17 @@ class SessionProcessor(threading.Thread):
                         )
                     ),
                     "speaker_name": (
-                        f"Speaker {self._independent_published[int(s['id'])]}"
+                        ("Unidentified Speaker" if self._independent_published[
+                            int(s["id"])
+                        ] <= 0 else f"Speaker {self._independent_published[int(s['id'])]}")
                         if (int(s["id"]) in self._independent_published
                             and not s.get("speaker_override"))
                         else s.get("speaker_name", "")
                     ),
                     "speaker_diarization_source": (
-                        "nemotron3"
+                        ("nemotron3" if self._independent_published[
+                            int(s["id"])
+                        ] > 0 else "nemotron3_uncertain")
                         if (int(s["id"]) in self._independent_published
                             and not s.get("speaker_override"))
                         else s.get("speaker_diarization_source", "camplus")
@@ -1512,10 +1516,22 @@ class SessionProcessor(threading.Thread):
                         item["speaker_status"] = "acoustic_primary"
                         item["speaker_diarization_source"] = "nemotron3"
                         self._independent_published[int(item["id"])] = published
+                    elif decision.status == "acoustically_ambiguous":
+                        # A complete independent acoustic window is present,
+                        # but its identities are ambiguous. Never mix an
+                        # unrelated CAM++ anonymous label into Nemotron's
+                        # speaker namespace: that falsely creates extra people.
+                        # This is an honest unknown, not a guessed speaker.
+                        item["speaker_id"] = -1
+                        item["speaker_name"] = "Unidentified Speaker"
+                        item["speaker_status"] = "uncertain"
+                        item["speaker_diarization_source"] = "nemotron3_uncertain"
+                        self._independent_published[int(item["id"])] = -1
                     else:
-                        item.setdefault(
-                            "speaker_diarization_source", "camplus_fallback",
-                        )
+                        # Incomplete Nemotron timeline: retain provisional
+                        # CAM++ output until acoustic frames arrive. This
+                        # also preserves legacy fallbacks on model failure.
+                        item["speaker_diarization_source"] = "camplus_provisional"
         phase07_speaker = speaker_stats(items)
         metrics.gauge("phase07_speaker_changes", phase07_speaker["speaker_switches"])
         metrics.gauge("phase07_unidentified_segments", phase07_speaker["unidentified_segments"])
