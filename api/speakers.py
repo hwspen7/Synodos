@@ -79,6 +79,7 @@ async def add_speaker_record(speaker_id: str, request: Request) -> dict:
         "emb": emb,
         "duration_s": duration_s,
         "source": "recording",
+        "embedding_model": "camplus",
         "short": duration_s < settings.min_speaker_audio_s,
     }
     added = await loop.run_in_executor(
@@ -133,6 +134,7 @@ async def add_speaker_from_meeting(speaker_id: str, payload: Optional[dict] = No
                 "emb": emb,
                 "duration_s": duration_s,
                 "source": "meeting",
+                "embedding_model": seg.get("embedding_model") or "camplus",
                 "meeting_id": meeting_id,
                 "segment_ids": [sid],
                 "text": seg.get("text", ""),
