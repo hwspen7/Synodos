@@ -128,6 +128,9 @@ class EcapaShadowSession:
         self._thread: threading.Thread | None = None
         self._available = True
         self._observed_labels: set[int] = set()
+        self._inflight = 0
+        self._idle = threading.Event()
+        self._idle.set()
 
     def submit(self, label: int, audio: np.ndarray) -> bool:
         """Never block or mutate main speaker IDs, text or embeddings."""
@@ -158,6 +161,7 @@ class EcapaShadowSession:
                 self._counts["queue_full"] += 1
                 return False
             self._counts["submitted"] += 1
+            self._idle.clear()
             self._observed_labels.add(label)
             if rms < 0.008:
                 self._counts["accepted_quiet_speech"] += 1
@@ -210,8 +214,12 @@ class EcapaShadowSession:
                 label, pcm = self._jobs.get(timeout=0.2)
             except queue.Empty:
                 continue
-            if self._stopped.is_set():
-                break
+            with self._lock:
+                if self._stopped.is_set():
+                    # close() accounts for this outstanding submitted job.
+                    self._jobs.task_done()
+                    break
+                self._inflight = 1
             try:
                 if self._process is None:
                     child = self._start_process()
@@ -222,14 +230,21 @@ class EcapaShadowSession:
                         self._process = child
                 outcome = self._exchange(label, pcm)
                 with self._lock:
-                    self._counts["completed"] += 1
-                    self._counts[outcome] += 1
+                    if not self._stopped.is_set():
+                        self._counts["completed"] += 1
+                        self._counts[outcome] += 1
             except Exception:
                 with self._lock:
-                    self._counts["errors"] += 1
-                    self._available = False
+                    if not self._stopped.is_set():
+                        self._counts["errors"] += 1
+                        self._counts["failed"] += 1
+                        self._available = False
                 break
             finally:
+                with self._lock:
+                    self._inflight = 0
+                    if self._jobs.empty():
+                        self._idle.set()
                 self._jobs.task_done()
 
     def note_no_active_window(self) -> None:
@@ -243,6 +258,10 @@ class EcapaShadowSession:
                 "mode": "shadow_only_no_identity_changes",
                 "submitted": self._counts["submitted"],
                 "completed": self._counts["completed"],
+                "failed": self._counts["failed"],
+                "in_progress": 0 if self._stopped.is_set() else self._inflight,
+                "discarded_on_shutdown": self._counts["discarded_on_shutdown"],
+                "closed": self._stopped.is_set(),
                 "observed_camplus_speaker_count": len(self._observed_labels),
                 "accepted_quiet_speech": self._counts["accepted_quiet_speech"],
                 "rank_match": self._counts["rank_match"],
@@ -259,19 +278,44 @@ class EcapaShadowSession:
                 "model_agreement_is_not_accuracy": True,
             }
 
+    def finish(self, wait_seconds: float = 1.5) -> dict:
+        """Drain briefly after transcript save, then return final accounting.
+
+        Waiting occurs only at final closure, not on the ASR path.
+        """
+        if not 0 <= wait_seconds <= 3.0:
+            raise ValueError("Shadow drain wait must be between 0 and 3 seconds")
+        if not self._stopped.is_set():
+            self._idle.wait(timeout=wait_seconds)
+        self.close()
+        return self.status()
+
     def close(self) -> None:
-        if self._stopped.is_set():
-            return
-        self._stopped.set()
         with self._lock:
+            if self._stopped.is_set():
+                return
+            self._stopped.set()
+            # The final report must account for in-flight and queued samples,
+            # even if the subprocess has not returned a result yet.
+            self._counts["discarded_on_shutdown"] += max(
+                0, self._counts["submitted"] - self._counts["completed"]
+                - self._counts["failed"]
+            )
             proc = self._process
         if proc is not None:
             try:
-                proc.terminate()
+                if proc.poll() is None:
+                    proc.terminate()
+                proc.wait(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                try:
+                    proc.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    pass
             except OSError:
                 pass
-        # The daemon thread and subprocess must never delay meeting shutdown.
-        # Clear queued audio immediately; it is never persisted.
+        # Do not retain private speech after meeting closure.
         while True:
             try:
                 self._jobs.get_nowait()
