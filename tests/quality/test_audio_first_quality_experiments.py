@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import copy
+import sys
+import types
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -16,6 +18,7 @@ from tools.ami_quality_experiments import (
     CONTROL_ENV, PROFILES, profile_environment, validate_profiles,
 )
 from tools.ami_quality_gate import assess_quality_gain
+from speech.whisper import WhisperEngine
 
 
 def vad(start_ms, end_ms):
@@ -132,6 +135,50 @@ class ShortVoiceRecoveryTests(unittest.TestCase):
                 lambda a, **kw: ([], SimpleNamespace(language="en")),
                 {}, language="en", min_uncovered_ms=100,
             )
+
+
+class WhisperCoverageDiagnosticTests(unittest.TestCase):
+    def test_diagnostic_reports_vad_and_remaining_voice_geometry(self):
+        vad_module = types.ModuleType("faster_whisper.vad")
+        vad_module.VadOptions = lambda **kwargs: SimpleNamespace(**kwargs)
+        vad_module.get_speech_timestamps = lambda *args, **kwargs: [
+            {"start": 6400, "end": 25600},
+            {"start": 32000, "end": 41600},
+        ]
+        fw = types.ModuleType("faster_whisper")
+        fw.vad = vad_module
+
+        class FakeModel:
+            def transcribe(self, array, **kwargs):
+                return iter([SimpleNamespace(
+                    start=0.5, end=1.5, text="This is recognized.",
+                    words=[], no_speech_prob=0.02,
+                    avg_logprob=-0.1, compression_ratio=1.1,
+                )]), SimpleNamespace(language="en", language_probability=0.99)
+
+        engine = WhisperEngine("small")
+        engine._model = FakeModel()
+        env = {
+            "MEETING_DIARIZATION_DIAGNOSTICS": "1",
+            "MEETING_WHISPER_WINDOW_LID": "0",
+            "MEETING_WHISPER_GAP_RECOVERY": "0",
+            "MEETING_WHISPER_DUAL_VAD": "0",
+        }
+        with patch.dict(sys.modules, {
+            "faster_whisper": fw, "faster_whisper.vad": vad_module,
+        }), patch.dict("os.environ", env):
+            result = engine.recognize(
+                np.zeros(3 * 16000, dtype=np.float32), language="en",
+            )
+        self.assertEqual(len(result.utterances), 1)
+        diagnostics = result.recovery_diagnostics
+        self.assertEqual(diagnostics["primary_utterances"], 1)
+        self.assertEqual(diagnostics["vad_voice_ms"], 1800)
+        self.assertGreaterEqual(diagnostics["primary_uncovered_vad_ms"], 300)
+        self.assertEqual(
+            diagnostics["final_uncovered_vad_ms"],
+            diagnostics["primary_uncovered_vad_ms"],
+        )
 
 
 class A_BQualityGateTests(unittest.TestCase):
