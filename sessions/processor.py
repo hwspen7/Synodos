@@ -48,6 +48,7 @@ from phase07.recovery import autosave_seconds
 from sessions.outbox import enqueue_message
 from sessions.translation_tasks import submit_translation
 from sessions.speaker_tasks import submit_speaker_analysis, submit_acoustic_window
+from sessions.speaker_evidence import speaker_evidence
 from speech.acoustic_timeline import AcousticTimeline
 from speech.diarization import resolve_diarization_mode
 from sessions.speaker_fallback import (
@@ -418,10 +419,13 @@ class SessionProcessor(threading.Thread):
                     "emb": s["emb"],  # Preserve behavior.
                     "language": s.get("language", "und"),
                     "language_confidence": s.get("language_confidence"),
+                    "asr_confidence": s.get("asr_confidence"),
+                    "recognition_origin": s.get("recognition_origin", "primary"),
+                    "speaker_match_similarity": s.get("speaker_match_similarity"),
+                    "speaker_evidence_status": s.get("speaker_evidence_status", "unavailable"),
                     "timestamp_quality": s.get("timestamp_quality", "segment"),
                     "words": s.get("words", []),
                     "translation": s.get("translation", ""),
-                "speaker_uncertain": bool(s.get("speaker_uncertain", False)),
                     "revision": s.get("revision", 0),
                     "manually_corrected": bool(s.get("manually_corrected", False)),
                     "speaker_override": bool(s.get("speaker_override", False)),
@@ -453,6 +457,10 @@ class SessionProcessor(threading.Thread):
                     "text": item.get("text", "") or "",
                     "language": item.get("language", "und"),
                     "language_confidence": item.get("language_confidence"),
+                    "asr_confidence": item.get("asr_confidence"),
+                    "recognition_origin": item.get("recognition_origin", "primary"),
+                    "speaker_match_similarity": item.get("speaker_match_similarity"),
+                    "speaker_evidence_status": item.get("speaker_evidence_status", "unavailable"),
                     "timestamp_quality": item.get("timestamp_quality", "segment"),
                     "words": item.get("words", []),
                     "translation": item.get("translation", ""),
@@ -614,6 +622,8 @@ class SessionProcessor(threading.Thread):
                 "text": text,
                 "language": sentence.get("language", "und"),
                 "language_confidence": sentence.get("language_confidence"),
+                "asr_confidence": sentence.get("confidence"),
+                "recognition_origin": sentence.get("recognition_origin", "primary"),
                 "timestamp_quality": sentence.get("timestamp_quality", "segment"),
                 "words": sentence.get("words", []),
                 "emb": emb,
@@ -1000,6 +1010,7 @@ class SessionProcessor(threading.Thread):
         matched: dict[int, str] = {}
         pool: list[int] = []
         for i, seg in enumerate(self.segments):
+            seg["speaker_match_similarity"] = None
             if (seg["emb"] is None
                     or (seg.get("speaker_evidence_status") == "short_probe"
                         and seg.get("speaker_uncertain"))):
@@ -1009,6 +1020,7 @@ class SessionProcessor(threading.Thread):
             participant_id, sim = self._match_participant(seg["emb"])
             if participant_id is not None and sim >= self.spk_threshold:
                 matched[seg["id"]] = participant_id
+                seg["speaker_match_similarity"] = float(sim)
                 seg["cluster"] = -1
             else:
                 seg["cluster"] = -2
@@ -1189,6 +1201,7 @@ class SessionProcessor(threading.Thread):
                 record["speaker_name"] = str(record.get("speaker_override_name") or "Unidentified Speaker")
         self._submit_shadow_samples()
         ordered = sorted(self.segments, key=lambda s: s["start_sample"])
+        acoustics = speaker_evidence(ordered)
         items = [
             {
                 "id": s["id"],
@@ -1204,6 +1217,9 @@ class SessionProcessor(threading.Thread):
                 "language_confidence": s.get("language_confidence"),
                 "timestamp_quality": s.get("timestamp_quality", "segment"),
                 "translation": s.get("translation", ""),
+                "recognition_origin": s.get("recognition_origin", "primary"),
+                "text_confidence": s.get("asr_confidence"),
+                **acoustics[s["id"]],
                 "revision": s.get("revision", 0),
             }
             for s in ordered
@@ -1213,7 +1229,10 @@ class SessionProcessor(threading.Thread):
         metrics.gauge("phase07_unidentified_segments", phase07_speaker["unidentified_segments"])
         fingerprint = tuple(
             (i["id"], i["speaker_id"], i["speaker_name"], i["start_ms"], i["end_ms"], i["text"],
-             i["language"], i.get("language_confidence"), i.get("translation"))
+             i["language"], i.get("language_confidence"), i.get("translation"),
+             i.get("recognition_origin"), i.get("text_confidence"),
+             i.get("speaker_status"), i.get("speaker_similarity"),
+             i.get("speaker_margin"), i.get("speaker_evidence_count"))
             for i in items
         )
         if fingerprint == self._last_fingerprint:
