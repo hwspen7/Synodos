@@ -9,6 +9,7 @@ import unittest
 from tools.ami_paired_caption_coverage import (
     _caption_intervals, framewise_caption_change,
 )
+from sessions.speaker_stability import anonymous_speaker_timeline
 
 
 class PairedCoverageTests(unittest.TestCase):
@@ -37,6 +38,24 @@ class PairedCoverageTests(unittest.TestCase):
         self.assertEqual(result["reference_clock_s"], 0.6)
         self.assertEqual(result["newly_covered_s"], 0.2)
         self.assertEqual(result["net_new_coverage_s"], 0.2)
+
+    def test_final_timeline_provenance_counts_distinct_recovered_segments(self):
+        timeline = anonymous_speaker_timeline([
+            {
+                "id": 1, "start_sample": 0, "end_sample": 1600,
+                "speaker_id": 1, "recognition_origin": "primary",
+            },
+            {
+                "id": 2, "start_sample": 1600, "end_sample": 3200,
+                "speaker_id": 1, "recognition_origin": "gap_recovery",
+            },
+        ], 16000)
+        self.assertEqual(
+            [row["recovery_origin"] for row in timeline["segments"]],
+            [False, True],
+        )
+        self.assertFalse(timeline["truncated"])
+        self.assertNotIn("text", str(timeline))
 
     def test_incomplete_timeline_rejected(self):
         data = {
