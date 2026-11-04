@@ -48,7 +48,9 @@ from speech.coverage_retention import choose_safe_drop
 from speech.quality_profile import (
     quality_candidate_enabled, speaker_candidate_enabled,
 )
-from speech.nemotron_activity import choose_caption_speaker
+from speech.nemotron_activity import (
+    choose_caption_speaker, choose_caption_speaker_from_turns,
+)
 from speech.asr_stage_trace import shifted
 from speech.contracts import Utterance
 from phase07.recovery import autosave_seconds
@@ -1492,7 +1494,12 @@ class SessionProcessor(threading.Thread):
             independent_complete = (
                 bool(completed_check()) if callable(completed_check) else False
             )
-            if activity is not None and len(activity):
+            turns_reader = getattr(independent, "final_turns_snapshot", None)
+            official_turns = (
+                turns_reader() if independent_complete and callable(turns_reader)
+                else None
+            )
+            if (activity is not None and len(activity)) or official_turns is not None:
                 for item, source in zip(items, ordered):
                     if (source.get("speaker_override")
                             or int(source["end_sample"]) <= origin):
@@ -1507,8 +1514,14 @@ class SessionProcessor(threading.Thread):
                     )
                     if start_ms < 0:
                         continue
-                    decision = choose_caption_speaker(
-                        activity, start_ms, end_ms,
+                    decision = (
+                        choose_caption_speaker_from_turns(
+                            official_turns, start_ms, end_ms,
+                        )
+                        if official_turns is not None
+                        else choose_caption_speaker(
+                            activity, start_ms, end_ms,
+                        )
                     )
                     item["speaker_activity_score"] = decision.activity_score
                     item["speaker_activity_margin"] = decision.margin
@@ -1519,7 +1532,9 @@ class SessionProcessor(threading.Thread):
                         "speaker_activity_status": decision.status,
                     }
                     item["speaker_score_kind"] = (
-                        "nemotron_frame_activity_not_identity_probability"
+                        "nemotron_official_turn_coverage_not_probability"
+                        if official_turns is not None
+                        else "nemotron_frame_activity_not_identity_probability"
                     )
                     if decision.speaker_id is not None:
                         published = decision.speaker_id + self._independent_id_offset
