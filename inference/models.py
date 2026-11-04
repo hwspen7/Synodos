@@ -187,42 +187,100 @@ class ModelManager:
             return self._cluster
 
     def cluster(self, embeddings: np.ndarray) -> np.ndarray:
-        return self._scheduler.submit("clustering", lambda: self._cluster_embeddings(embeddings), priority=10)
+        return self._scheduler.submit(
+            "clustering", lambda: self._cluster_embeddings(embeddings),
+            priority=10,
+        )
+
+    def cluster_with_info(self, embeddings: np.ndarray) -> tuple[np.ndarray, dict]:
+        """Return this call's actual backend, not a shared last-run guess."""
+        return self._scheduler.submit(
+            "clustering",
+            lambda: self._cluster_embeddings_with_info(embeddings),
+            priority=10,
+        )
 
     def _cluster_embeddings(self, embeddings: np.ndarray) -> np.ndarray:
-        """Cluster an [N, D] embedding matrix and return N integer labels."""
-        if embeddings is None or len(embeddings) == 0:
-            return np.empty(0, dtype=int)
-        embeddings = np.asarray(embeddings, dtype=np.float32)
-        if embeddings.ndim != 2:
-            raise ValueError("embeddings must be a [N, D] matrix")
-        strategy = os.getenv(
+        labels, _info = self._cluster_embeddings_with_info(embeddings)
+        return labels
+
+    def _cluster_embeddings_with_info(
+        self, embeddings: np.ndarray,
+    ) -> tuple[np.ndarray, dict]:
+        """One bounded clustering call with an explicit execution receipt.
+
+        The experimental spherical partition is never considered identity
+        ground truth. Failure falls back to legacy and reports why.
+        """
+        data = np.asarray(embeddings, dtype=np.float32)
+        if data.ndim != 2:
+            raise ValueError("embeddings must be a [N,D] matrix")
+        n = len(data)
+        requested = os.getenv(
             "MEETING_SPEAKER_CLUSTER_STRATEGY", "bootstrap"
         ).strip().lower()
-        if strategy not in ("legacy", "bootstrap", "candidate"):
+        if requested not in ("legacy", "bootstrap", "candidate", "strict"):
             raise ValueError("Invalid speaker cluster strategy")
-        from speech.adaptive_cluster import complete_link_clusters
+        receipt = {
+            "strategy_requested": requested,
+            "input_embeddings": n,
+            "strategy_executed": "not_run",
+            "fallback_reason": None,
+            "cluster_count": 0,
+        }
+        if n == 0:
+            return np.empty(0, dtype=int), receipt
+
         threshold = float(os.getenv(
             "MEETING_SPEAKER_BOOTSTRAP_SIMILARITY", "0.76"
         ))
-        if strategy != "legacy" and (
-            len(embeddings) < 20
-            or (strategy == "candidate" and len(embeddings) <= 256)
-        ):
+        if not np.isfinite(threshold) or not 0.1 < threshold < 0.99:
+            raise ValueError("Invalid acoustic clustering threshold")
+
+        use_strict = (
+            (requested == "bootstrap" and n < 20)
+            or (requested == "strict" and n <= 256)
+            or (requested == "candidate" and n < 4)
+        )
+        if use_strict:
+            from speech.adaptive_cluster import complete_link_clusters
             try:
-                return complete_link_clusters(
-                    embeddings, threshold=threshold,
+                labels = complete_link_clusters(data, threshold=threshold)
+                receipt["strategy_executed"] = "complete_link"
+                receipt["cluster_count"] = len(set(map(int, labels)))
+                return labels.astype(int), receipt
+            except ValueError as exc:
+                receipt["fallback_reason"] = "complete_link_rejected_" + (
+                    type(exc).__name__
                 )
-            except ValueError:
-                # The candidate algorithm must never block live transcription:
-                # preserve established legacy behavior and surface the cause.
-                logger.warning(
-                    "Acoustic cluster candidate rejected for %d embeddings",
-                    len(embeddings),
+
+        if requested == "candidate" and 4 <= n <= 256:
+            from speech.spherical_cluster import spherical_speaker_candidates
+            try:
+                candidate = spherical_speaker_candidates(data)
+                receipt["candidate"] = candidate.details
+                if candidate.labels is not None:
+                    receipt["strategy_executed"] = "spherical_candidate"
+                    receipt["cluster_count"] = len(set(map(int, candidate.labels)))
+                    return candidate.labels.astype(int), receipt
+                receipt["fallback_reason"] = candidate.details.get(
+                    "reason", "candidate_abstained"
                 )
+            except ValueError as exc:
+                receipt["fallback_reason"] = "candidate_rejected_" + (
+                    type(exc).__name__
+                )
+        if requested in ("strict", "candidate") and n > 256:
+            receipt["fallback_reason"] = "input_exceeds_256"
+        # Keep the original backend as the explicit, traceable fallback.
         with self._infer_lock:
-            labels = self._load_cluster()(embeddings, oracle_num=None)
-        return np.asarray(labels).reshape(-1).astype(int)
+            labels = self._load_cluster()(data, oracle_num=None)
+        labels = np.asarray(labels).reshape(-1).astype(int)
+        if len(labels) != n:
+            raise ValueError("FunASR cluster result count mismatch")
+        receipt["strategy_executed"] = "funasr_legacy"
+        receipt["cluster_count"] = len(set(map(int, labels)))
+        return labels, receipt
 
     # ------------------------------------------------------- multilingual ASR
     def recognize_multilingual(self, samples: np.ndarray, *, language: str = "auto",
