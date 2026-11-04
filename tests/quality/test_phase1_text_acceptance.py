@@ -103,6 +103,45 @@ class TextAcceptanceTests(unittest.TestCase):
         self.assertTrue(all(result["gates"].values()))
         self.assertNotIn("The meeting", str(result))
 
+    def test_live_replay_revision_counter_is_accepted_when_zero(self):
+        replay = successful_replay()
+        replay.pop("confirmed_text_changes")
+        replay["confirmed_text_revisions"] = 0
+        result = evaluate_phase1_text(
+            replay, expected_audio_sha256=AUDIO,
+            expected_reference_sha256=REFERENCE,
+            human_reference_verified=True,
+        )
+        self.assertTrue(result["pass"])
+        self.assertEqual(result["measurement"]["confirmed_text_changes"], 0)
+
+    def test_live_replay_revisions_fail_closed_when_changed_or_missing(self):
+        for supplied in (1, None, True):
+            with self.subTest(supplied=supplied):
+                replay = successful_replay()
+                replay.pop("confirmed_text_changes")
+                if supplied is not None:
+                    replay["confirmed_text_revisions"] = supplied
+                result = evaluate_phase1_text(
+                    replay, expected_audio_sha256=AUDIO,
+                    expected_reference_sha256=REFERENCE,
+                    human_reference_verified=True,
+                )
+                self.assertFalse(
+                    result["gates"]["confirmed_text_not_silently_revised"]
+                )
+
+    def test_disagreeing_revision_counters_fail_closed(self):
+        replay = successful_replay()
+        replay["confirmed_text_revisions"] = 1
+        result = evaluate_phase1_text(
+            replay, expected_audio_sha256=AUDIO,
+            expected_reference_sha256=REFERENCE,
+            human_reference_verified=True,
+        )
+        self.assertFalse(result["pass"])
+        self.assertIsNone(result["measurement"]["confirmed_text_changes"])
+
     def test_unverified_reference_never_passes_even_if_cer_zero(self):
         replay = successful_replay()
         replay["reference_scoring"]["cer"] = 0.0
