@@ -16,7 +16,7 @@ from typing import Any
 
 MODELS = {
     "pyannote": "pyannote/speaker-diarization-community-1",
-    "diarizen": "BUT-FIT/diarizen-wavlm-large-s80-md",
+    "diarizen": "BUT-FIT/diarizen-wavlm-large-s80-md-v2",
 }
 
 
@@ -67,7 +67,9 @@ def _validate_model_path(model_id: str, allow_download: bool) -> str:
         raise ModelSetupError(
             "Remote model loading disabled. Provide a local model directory "
             "or explicitly pass --allow-model-download.")
-    if model_id not in MODELS.values():
+    if model_id not in {
+        *MODELS.values(), "BUT-FIT/diarizen-wavlm-large-s80-md",
+    }:
         raise ModelSetupError("Only allowlisted model repositories may be downloaded")
     return model_id
 
