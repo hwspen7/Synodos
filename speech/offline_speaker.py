@@ -119,6 +119,46 @@ def normalize_turns(diarization: Any, *, max_turns: int = 10000) -> list[dict]:
             for t in turns]
 
 
+def find_overlapping_speaker_intervals(turns: list[dict]) -> list[dict]:
+    """Return intervals with >=2 different active speaker IDs, including 3+.
+
+    Same-speaker overlapping tracks count only once. Anonymous speaker
+    labels are used only to detect concurrency, not real-world identity.
+    """
+    events: dict[int, list[tuple[str, int]]] = {}
+    for turn in turns:
+        a, b, speaker = (
+            turn.get("start_ms"), turn.get("end_ms"), turn.get("speaker"),
+        )
+        if (type(a) is not int or type(b) is not int or not 0 <= a < b
+                or not isinstance(speaker, str) or not speaker):
+            raise ValueError("Invalid offline speaker time range")
+        events.setdefault(a, []).append((speaker, 1))
+        events.setdefault(b, []).append((speaker, -1))
+    active: dict[str, int] = {}
+    result = []
+    previous = None
+    for t in sorted(events):
+        active_count = sum(value > 0 for value in active.values())
+        if previous is not None and t > previous and active_count >= 2:
+            if (result and result[-1]["end_ms"] == previous
+                    and result[-1]["active_speaker_count"] == active_count):
+                result[-1]["end_ms"] = t
+            else:
+                result.append({
+                    "start_ms": previous, "end_ms": t,
+                    "active_speaker_count": active_count,
+                })
+        for speaker, delta in events[t]:
+            new_count = active.get(speaker, 0) + delta
+            if new_count <= 0:
+                active.pop(speaker, None)
+            else:
+                active[speaker] = new_count
+        previous = t
+    return result
+
+
 def run_offline_refinement(
     root: Path, meeting_id: str, filename: str,
     *,
@@ -173,6 +213,24 @@ def run_offline_refinement(
                     raise ValueError("Invalid speaker interval")
                 checked.append({"start_ms": a, "end_ms": b, "speaker": speaker})
             turns = sorted(checked, key=lambda item: item["start_ms"])
+            exclusive = payload.get("exclusive_speaker_turns")
+            if exclusive is not None:
+                if not isinstance(exclusive, list) or len(exclusive) > 10000:
+                    raise ValueError("Invalid exclusive speaker output")
+                exclusive_checked = []
+                for item in exclusive:
+                    a, b, speaker = item["start_ms"], item["end_ms"], item["speaker"]
+                    if (type(a) is not int or type(b) is not int
+                            or not 0 <= a < b <= 1000 * 60 * 60 * 24
+                            or not isinstance(speaker, str) or not speaker
+                            or len(speaker) > 90):
+                        raise ValueError("Invalid exclusive speaker interval")
+                    exclusive_checked.append({
+                        "start_ms": a, "end_ms": b, "speaker": speaker,
+                    })
+                exclusive = sorted(
+                    exclusive_checked, key=lambda item: item["start_ms"],
+                )
         except (ValueError, TypeError, KeyError) as exc:
             raise OfflineDiarizationUnavailable(
                 "Dedicated speaker process returned invalid data"
@@ -180,15 +238,25 @@ def run_offline_refinement(
     else:
         with _RUN_LOCK:
             output = backend(str(path))
-        annotations = getattr(output, "exclusive_speaker_diarization", None)
+        annotations = getattr(output, "speaker_diarization", None)
         if annotations is None:
-            annotations = getattr(output, "speaker_diarization", output)
+            annotations = getattr(output, "exclusive_speaker_diarization", output)
         turns = normalize_turns(annotations)
+        exclusive_annotation = getattr(
+            output, "exclusive_speaker_diarization", None,
+        )
+        exclusive = (
+            normalize_turns(exclusive_annotation)
+            if exclusive_annotation is not None else None
+        )
     return {
         "model": _MODEL_ID if backend is None else "test_or_custom_diarizer",
         "source_filename": filename,
         "relative_to_recording": True,
         "speaker_turns": turns,
+        "exclusive_speaker_turns": exclusive,
+        "overlap_intervals": find_overlapping_speaker_intervals(turns),
+        "overlap_turn_count": len(find_overlapping_speaker_intervals(turns)),
         "speaker_count": len({turn["speaker"] for turn in turns}),
         "review_required": True,
         "auto_applied": False,
