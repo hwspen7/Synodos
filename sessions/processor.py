@@ -48,6 +48,7 @@ from speech.coverage_retention import choose_safe_drop
 from speech.quality_profile import (
     quality_candidate_enabled, speaker_candidate_enabled,
 )
+from speech.nemotron_activity import choose_caption_speaker
 from speech.contracts import Utterance
 from phase07.recovery import autosave_seconds
 from sessions.outbox import enqueue_message
@@ -141,6 +142,10 @@ class SessionProcessor(threading.Thread):
             raise ValueError("MEETING_SPEAKER_LABEL_REVISABLE_S must be 0..3600")
 
         self._last_fingerprint: Optional[tuple] = None
+        # Published Nemotron/CAM++ projection lives separately from raw
+        # CAM++ acoustic embeddings and reclustering votes.
+        self.independent_diarization = None
+        self._independent_published: dict[int, int] = {}
         self._transcript_version = 0
         self._last_state_sent = 0.0
         self._last_inferred_absolute_end = -1
@@ -301,6 +306,9 @@ class SessionProcessor(threading.Thread):
                 finally:
                     self._ecapa_shadow.close()
             self._ecapa_shadow_audio.clear()
+            independent = self.independent_diarization
+            if independent is not None:
+                closed_payload["independent_diarization"] = independent.report()
             if os.getenv("MEETING_DIARIZATION_DIAGNOSTICS", "0").lower() in (
                 "1", "true", "yes"
             ):
@@ -329,8 +337,16 @@ class SessionProcessor(threading.Thread):
                     )
                     # Review speaker-turn alignment against the original
                     # recording without transmitting any recognized text.
+                    timeline_records = []
+                    for segment in self.segments:
+                        item = dict(segment)
+                        if segment["id"] in self._independent_published:
+                            item["speaker_id"] = self._independent_published[
+                                segment["id"]
+                            ]
+                        timeline_records.append(item)
                     summary["anonymous_timeline"] = anonymous_speaker_timeline(
-                        self.segments, self.settings.sample_rate
+                        timeline_records, self.settings.sample_rate
                     )
                     closed_payload["diarization_diagnostics"] = summary
                 except Exception:
@@ -1366,6 +1382,37 @@ class SessionProcessor(threading.Thread):
             }
             for s in ordered
         ]
+        # Keep the raw CAM++ embeddings and cluster votes intact. Publish a
+        # separate primary-speaker projection only when the source-independent
+        # 10 ms Nemotron activity has sufficient evidence.
+        independent = self.independent_diarization
+        self._independent_published = {}
+        if independent is not None:
+            activity = independent.activity_snapshot()
+            if activity is not None and len(activity):
+                for item, source in zip(items, ordered):
+                    if source.get("speaker_override"):
+                        item["speaker_diarization_source"] = "manual_override"
+                        continue
+                    decision = choose_caption_speaker(
+                        activity, int(item["start_ms"]), int(item["end_ms"]),
+                    )
+                    item["speaker_activity_score"] = decision.activity_score
+                    item["speaker_activity_margin"] = decision.margin
+                    item["speaker_activity_status"] = decision.status
+                    item["speaker_score_kind"] = (
+                        "nemotron_frame_activity_not_identity_probability"
+                    )
+                    if decision.speaker_id is not None:
+                        item["speaker_id"] = decision.speaker_id
+                        item["speaker_name"] = f"Speaker {decision.speaker_id}"
+                        item["speaker_status"] = "acoustic_primary"
+                        item["speaker_diarization_source"] = "nemotron3"
+                    else:
+                        item["speaker_diarization_source"] = "camplus_fallback"
+                    self._independent_published[int(item["id"])] = int(
+                        item["speaker_id"]
+                    )
         phase07_speaker = speaker_stats(items)
         metrics.gauge("phase07_speaker_changes", phase07_speaker["speaker_switches"])
         metrics.gauge("phase07_unidentified_segments", phase07_speaker["unidentified_segments"])
@@ -1374,7 +1421,9 @@ class SessionProcessor(threading.Thread):
              i["language"], i.get("language_confidence"), i.get("translation"),
              i.get("recognition_origin"), i.get("text_confidence"),
              i.get("speaker_status"), i.get("speaker_similarity"),
-             i.get("speaker_margin"), i.get("speaker_evidence_count"))
+             i.get("speaker_margin"), i.get("speaker_evidence_count"),
+             i.get("speaker_diarization_source"), i.get("speaker_activity_score"),
+             i.get("speaker_activity_status"))
             for i in items
         )
         if fingerprint == self._last_fingerprint:
