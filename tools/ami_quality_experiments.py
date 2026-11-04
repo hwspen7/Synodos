@@ -35,6 +35,11 @@ CONTROL_ENV = {
     "MEETING_ASR_MODEL": "large-v3",
     "MEETING_DIARIZATION_MODE": "cluster",
     "MEETING_SPEAKER_CLUSTER_STRATEGY": "bootstrap",
+    "MEETING_SPEAKER_BOOTSTRAP_SIMILARITY": "0.76",
+    "MEETING_SPEAKER_TURN_SIMILARITY": "0.58",
+    "MEETING_SPEAKER_LABEL_REVISABLE_S": "120",
+    "MEETING_MIN_COMMIT_CONTEXT_S": "7.0",
+    "CLUSTER_MERGE_THR": "0.78",
     "MEETING_SPEAKER_PROBE_MIN_S": "1.2",
     "MEETING_WHISPER_WINDOW_LID": "1",
     "MEETING_WHISPER_SKIP_INTERNAL_VAD": "0",
@@ -206,6 +211,9 @@ def run_profile(
         "confirmation_lag_p95_ms": (
             replay_data.get("timing_by_elapsed_window") or [{}]
         )[0].get("confirmation_lag_p95_ms"),
+        "asr_recovery_diagnostics": (
+            replay_data.get("final_cluster_diagnostics") or {}
+        ).get("asr_recovery_diagnostics"),
         "quality_gate": result,
     }
 
@@ -218,15 +226,17 @@ def main() -> int:
                    choices=[x[0] for x in SELECTED])
     p.add_argument("--baseline", type=Path,
                    default=None)
-    p.add_argument("--profiles", default="recovery,single_vad,speaker_candidate")
+    p.add_argument("--profiles", default="control,recovery,single_vad,speaker_candidate")
     p.add_argument("--port", type=int, default=18080)
     p.add_argument("--timeout-seconds", type=int, default=900)
     args = p.parse_args()
 
     if importlib.util.find_spec("uvicorn") is None:
         p.error("Run with the existing backend venv Python (uvicorn is missing)")
-    if not 1024 <= args.port <= 65535 or not _port_free(args.port):
+    if not 1024 <= args.port <= 65535 or args.port == 8000 or not _port_free(args.port):
         p.error("Experiment localhost port is unavailable")
+    if not _port_free(8000):
+        p.error("Stop the existing backend on port 8000 to avoid GPU contention")
     if not 300 <= args.timeout_seconds <= 3600:
         p.error("Timeout must be between 300 and 3600 seconds")
     profiles = validate_profiles(args.profiles)
