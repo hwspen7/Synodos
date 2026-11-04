@@ -11,6 +11,7 @@ import { startMicRecording } from '@/audio/recorder'
 import AppIcon from '@/components/AppIcon.vue'
 import { speakerColor } from '@/speaker/clustering'
 import { splitDisplaySentences } from '@/transcript/display'
+import { expandContentFirstSegments } from '@/transcript/contentFirst'
 import type {
   HotwordLibrary,
   Paragraph,
@@ -129,7 +130,14 @@ const statusClass = computed(() => {
 })
 
 /** Group neighboring same-speaker segments locally into paragraphs. */
-const paragraphs = computed<Paragraph[]>(() => buildParagraphs(segments.value))
+const paragraphs = computed<Paragraph[]>(() =>
+  buildParagraphs(expandContentFirstSegments(
+    segments.value, Boolean(translationTarget.value),
+  )),
+)
+const overlapWarnings = computed(() => segments.value.reduce(
+  (sum, seg) => sum + (seg.overlap_intervals_ms?.length ?? 0), 0,
+))
 const untranslatedCount = computed(() => segments.value.filter((seg) =>
   translationTarget.value && seg.language && seg.language !== 'und' &&
   seg.language !== translationTarget.value && !seg.translation?.trim(),
@@ -248,7 +256,10 @@ function buildParagraphs(segs: Segment[]): Paragraph[] {
       seg.speaker_id > 0
     ) {
       last.end_ms = seg.end_ms
-      last.segmentIds.push(seg.id)
+      const canonicalId = seg.source_segment_id ?? seg.id
+      if (!last.segmentIds.includes(canonicalId)) {
+        last.segmentIds.push(canonicalId)
+      }
       last.text = joinTranscriptText(last.text, visibleText)
     } else {
       paras.push({
@@ -258,7 +269,7 @@ function buildParagraphs(segs: Segment[]): Paragraph[] {
         start_ms: seg.start_ms,
         end_ms: seg.end_ms,
         text: visibleText,
-        segmentIds: [seg.id],
+        segmentIds: [seg.source_segment_id ?? seg.id],
         color: seg.color,
       })
     }
@@ -275,7 +286,9 @@ function applyTranscript(msg: ServerTranscript): void {
   segments.value = segs
   transcriptMeta.value = {
     segments: msg.segments.length,
-    paragraphs: buildParagraphs(segs).length,
+    paragraphs: buildParagraphs(expandContentFirstSegments(
+      segs, Boolean(translationTarget.value),
+    )).length,
   }
   void scrollIfNeeded()
 }
@@ -331,6 +344,10 @@ async function loadSavedTranscript(): Promise<void> {
         speaker_id: s.speaker_id ?? -1, speaker_name: s.speaker_name ?? 'Unidentified Speaker',
         language: s.language ?? 'und', translation: s.translation ?? '',
         revision: s.revision ?? 0,
+        caption_cues: s.caption_cues,
+        overlap_intervals_ms: s.overlap_intervals_ms,
+        caption_projection_status: s.caption_projection_status,
+        speaker_diarization_source: s.speaker_diarization_source,
       })),
     })
   } catch (err) {
@@ -915,6 +932,11 @@ onBeforeUnmount(() => stopInternal())
       </div>
 
       <template v-else>
+        <p v-if="overlapWarnings > 0" class="transcript-overlap-warning">
+          Overlapping voices detected in {{ overlapWarnings }} acoustic intervals.
+          The system may not have transcribed every simultaneous speaker.
+          Untranscribed words are never fabricated.
+        </p>
         <article v-for="para in paragraphs" :key="para.id" class="paragraph">
           <div class="para-head">
             <span class="speaker-dot" :style="{ background: para.color }"></span>
