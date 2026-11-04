@@ -65,6 +65,17 @@ def evaluate_phase1_text(
              or isinstance(word_deletion, bool))):
         raise ValueError("Malformed word deletion rate")
     deletion = word_deletion if wer is not None else char_deletion
+    # The live WebSocket replay uses confirmed_text_revisions, while older
+    # fixtures use confirmed_text_changes. Both count the same events.
+    # A missing, malformed, or contradictory counter must fail closed.
+    current_revisions = replay.get("confirmed_text_revisions")
+    legacy_changes = replay.get("confirmed_text_changes")
+    values = [v for v in (current_revisions, legacy_changes) if v is not None]
+    confirmed_changes = (
+        values[0] if values and all(
+            type(v) is int and v >= 0 and v == values[0] for v in values
+        ) else None
+    )
     # Unknown metrics never pass thresholds.
     gates = {
         "human_reference_confirmed": human_reference_verified is True,
@@ -80,7 +91,7 @@ def evaluate_phase1_text(
             replay.get("confirmed_segment_disappearances") == 0
         ),
         "confirmed_text_not_silently_revised": (
-            replay.get("confirmed_text_changes") == 0
+            confirmed_changes == 0
         ),
         "character_error_at_most_threshold": (
             0 <= cer <= max_cer
@@ -109,9 +120,7 @@ def evaluate_phase1_text(
             "confirmed_segment_disappearances": replay.get(
                 "confirmed_segment_disappearances"
             ),
-            "confirmed_text_changes": replay.get(
-                "confirmed_text_changes"
-            ),
+            "confirmed_text_changes": confirmed_changes,
         },
         "thresholds": {
             "max_cer": max_cer, "max_wer": max_wer,
