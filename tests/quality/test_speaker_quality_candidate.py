@@ -27,17 +27,26 @@ class SpeakerCandidateTests(unittest.TestCase):
             self.assertTrue(speaker_candidate_enabled())
 
     def test_probe_floor_changes_only_for_speaker_candidate(self):
+        # This unit test exercises speaker probe policy, not ModelScope
+        # discovery. Explicit model IDs avoid Path.home() when the test
+        # deliberately clears HOME/USERPROFILE from its environment.
+        settings = Settings(
+            asr_model="test-asr",
+            fsmn_vad_model="test-vad",
+            punc_model="test-punc",
+            spk_model="test-speaker",
+        )
         with patch.dict(os.environ, {}, clear=True):
             reference = SessionProcessor(
                 "reference", AudioBuffer(16000, max_seconds=30),
-                Settings(), object(), asyncio.Queue(),
+                settings, object(), asyncio.Queue(),
             )
         with patch.dict(os.environ, {
             "MEETING_SPEAKER_QUALITY_CANDIDATE": "1",
         }, clear=True):
             candidate = SessionProcessor(
                 "candidate", AudioBuffer(16000, max_seconds=30),
-                Settings(), object(), asyncio.Queue(),
+                settings, object(), asyncio.Queue(),
             )
         self.assertEqual(reference._speaker_min_audio_s, 1.2)
         self.assertEqual(candidate._speaker_min_audio_s, 0.9)
