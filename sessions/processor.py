@@ -604,6 +604,12 @@ class SessionProcessor(threading.Thread):
                 "emb": emb,
                 "cluster": -1,
                 "speaker_uncertain": speaker_task is not None,
+                "speaker_evidence_status": (
+                    "direct_embedding" if emb is not None
+                    else "pending_turn_analysis" if speaker_task is not None
+                    else "short_turn" if len(seg_audio) < int(sr * 1.2)
+                    else "speaker_task_backpressure_or_failure"
+                ),
             }
             self.segments.append(record)
             self._next_segment_id += 1
@@ -783,6 +789,7 @@ class SessionProcessor(threading.Thread):
                 continue
             segment["emb"] = embedding
             segment["speaker_uncertain"] = False
+            segment["speaker_evidence_status"] = "acoustic_backfill"
             updated = True
             metrics.increment("speaker_acoustic_timeline_resolved")
         if updated:
@@ -828,6 +835,7 @@ class SessionProcessor(threading.Thread):
                 pieces = []
             if not pieces:
                 original["speaker_uncertain"] = True
+                original["speaker_evidence_status"] = "turn_analysis_unavailable"
                 self._enqueue_translation(original)
                 updated = True
                 continue
@@ -859,6 +867,11 @@ class SessionProcessor(threading.Thread):
                 segment["emb"] = normalized_embedding(piece.get("emb"))
                 segment["cluster"] = -1
                 segment["speaker_uncertain"] = bool(piece.get("ambiguous") or segment["emb"] is None)
+                segment["speaker_evidence_status"] = (
+                    "turn_voiceprint" if segment["emb"] is not None
+                    else "turn_ambiguous" if piece.get("ambiguous")
+                    else "turn_no_voiceprint"
+                )
                 segment["translation"] = ""
                 if isinstance(source_words, list):
                     segment["words"] = [
