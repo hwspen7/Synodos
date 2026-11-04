@@ -331,6 +331,51 @@ metadata is NOT a DER improvement or a license to delete transcript text.
 Do not mark this metadata as a successful subtitle boundary fix until a
 paired real-audio A/B confirms both timestamps and reading quality.
 
+## Paired caption-coverage attribution after RecoverVadGaps
+
+The user ran the frozen TS3003b default replay (14:02) and the candidate
+RecoverVadGaps replay (14:35) against the identical forced-aligned reference.
+
+- Default reference-active *clock* time without a caption: **12.2 seconds**.
+- RecoverVadGaps reference-active *clock* time without a caption:
+  **11.8 seconds** (**0.4s net gain**, not 16 individually verified captions).
+- Default vs candidate forced-aligned final caption DER:
+  **35.439% -> 35.029%** (0.410 percentage point improvement).
+- Original-only_words final caption DER: **27.453% -> 27.775%**
+  (a regression). Separate scoring protocols must never be blended.
+- Across repeated inference cycles the recovery stage logged 16 candidate
+  confirmations and 0 failures, not 16 independently verified transcripts.
+- Nemotron's forced-aligned independent acoustic DER remained **7.368%**.
+
+The following new report directly compares *the same reference-active
+100ms clock frames* between two immutable recorded replays and discloses
+gross gain **and** gross loss. Run this from E-drive:
+
+```powershell
+cd E:\Meeting-Fixed10-Test
+$PY = "E:\Meeting-Fixed10-Test\.venv\Scripts\python.exe"
+$root = "benchmark/fixed195/ami_shadow10"
+$tag = Get-Date -Format "yyyyMMdd-HHmmss"
+& $PY -m unittest tests.quality.test_ami_paired_caption_coverage -v
+if ($LASTEXITCODE -ne 0) { throw "Paired coverage tests failed" }
+& $PY -m tools.ami_paired_caption_coverage `
+    --root $root --meeting TS3003b `
+    --baseline "$root/replay_TS3003b_nemotron_20261104-140220.json" `
+    --candidate "$root/replay_TS3003b_nemotron_20261104-143542.json" `
+    --reference-protocol forced_aligned `
+    --output "$root/audit_TS3003b_paired_caption_coverage_$tag.json"
+if ($LASTEXITCODE -ne 0) { throw "Paired coverage comparison failed" }
+```
+
+The report also records candidate retry attempts. Recent new replays additionally
+put a boolean `recovery_origin` on each entry in the transcript-free
+anonymous final-caption timeline, enabling a **distinct final caption
+segment count** rather than summing repeated cycle candidates. Historical
+replays without this field correctly report `null` for that count. These
+counts cannot verify word correctness; WER/CER still needs an independently
+verified word transcript. The paired coverage comparison does not patch
+captions or change the frozen original DER gate.
+
 ## Rollback
 
 ```powershell
