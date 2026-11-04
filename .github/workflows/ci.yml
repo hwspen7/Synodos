@@ -25,6 +25,8 @@ jobs:
         run: python -m compileall -q main.py api audio core foundation inference intelligence observability phase07 sessions speech storage tools example tests
       - name: Verify Phase 1 content preservation and human-reference gates
         run: python -m unittest tests.quality.test_phase1_text_acceptance tests.quality.test_phase1_fixed195_text_gate tests.quality.test_phase1_language_policy tests.quality.test_ami_human_text_reference tests.quality.test_content_first_projection tests.quality.test_live_caption_segment_audit -v
+      - name: Verify Phase 2 identity and review invariants
+        run: python -m unittest tests.backend.unit.test_phase2_identity_matcher tests.backend.integration.test_phase2_manual_review -v
       - name: Run backend and English-only tests
         run: python -m unittest discover -s tests -t . -v
 
