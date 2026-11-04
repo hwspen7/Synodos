@@ -552,6 +552,26 @@ class SessionProcessor(threading.Thread):
             self._rebuild_and_push()
         self._send_state()
 
+    def _record_untranscribed_voice(self, gap: dict) -> None:
+        """Never invent missing words; retain a bounded review interval."""
+        if any(
+            abs(int(old["start_ms"]) - gap["start_ms"]) < 600
+            and abs(int(old["end_ms"]) - gap["end_ms"]) < 1200
+            for old in self._speech_coverage_gaps
+        ):
+            return
+        self._speech_coverage_gaps.append(dict(gap))
+        self._speech_coverage_gaps = self._speech_coverage_gaps[-256:]
+        metrics.increment("asr_untranscribed_voice_gaps")
+        self._put({
+            "type": "speech_coverage",
+            "gap": gap,
+            "message": (
+                "Voice activity had no verified transcript. "
+                "Review source audio if recording is available."
+            ),
+        })
+
     # ------------------------------------------------------------------ cycle
     def _cycle(self, final: bool = False) -> bool:
         sr = self.settings.sample_rate
@@ -759,23 +779,7 @@ class SessionProcessor(threading.Thread):
                     final=final,
                 )
                 for gap in exhausted:
-                    if any(
-                        abs(int(old["start_ms"]) - gap["start_ms"]) < 600
-                        and abs(int(old["end_ms"]) - gap["end_ms"]) < 1200
-                        for old in self._speech_coverage_gaps
-                    ):
-                        continue
-                    self._speech_coverage_gaps.append(gap)
-                    self._speech_coverage_gaps = self._speech_coverage_gaps[-256:]
-                    metrics.increment("asr_untranscribed_voice_gaps")
-                    self._put({
-                        "type": "speech_coverage",
-                        "gap": gap,
-                        "message": (
-                            "Voice activity had no verified transcript. "
-                            "Review source audio if recording is available."
-                        ),
-                    })
+                    self._record_untranscribed_voice(gap)
         # Handle transcripts and speaker assignments.
         if local_end > 0:
             # Preserve any earlier unfinished utterance before advancing audio.
@@ -784,6 +788,32 @@ class SessionProcessor(threading.Thread):
                 local_end = min(local_end, first_held_ms * sr // 1000)
             if local_end > 0:
                 self.buffer.drop_before(local_end)
+        elif (not final and not sentences
+              and self._speech_settings.engine != "legacy"
+              and recognition.speech_detected is True):
+            # If a model repeatedly hears speech but decodes no words,
+            # never let the rolling buffer fill until WebSocket shutdown.
+            # Keep the newest context; older undecodable voice is explicitly
+            # flagged for source-WAV review before it leaves RAM.
+            max_pending_s = min(
+                45.0, max(8.0, self.buffer.capacity_samples() / sr * 0.60)
+            )
+            if buffer_s >= max_pending_s:
+                keep_s = min(12.0, max(4.0, max_pending_s * 0.30))
+                reclaim = max(0, len(audio) - int(keep_s * sr))
+                if reclaim:
+                    for a, b in tuple(getattr(
+                        recognition, "speech_intervals_ms", (),
+                    )):
+                        clipped_end = min(b, reclaim * 1000 // sr)
+                        if clipped_end - a >= 1000:
+                            self._record_untranscribed_voice({
+                                "start_ms": start_offset * 1000 // sr + a,
+                                "end_ms": start_offset * 1000 // sr + clipped_end,
+                                "status": "voice_detected_transcript_unavailable",
+                            })
+                    self.buffer.drop_before(reclaim)
+                    metrics.increment("asr_untranscribed_audio_reclaimed")
         elif not final and not sentences and self._speech_settings.engine != "legacy" and recognition.speech_detected is False:
             # Reclaim only very-low-energy LEADING silence when ASR returned
             # no utterances. Preserve all uncertain or voice-like samples.
