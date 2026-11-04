@@ -146,7 +146,17 @@ class MeetingStore:
             "speaker_margin": s.get("speaker_margin"),
             "speaker_evidence_count": s.get("speaker_evidence_count", 0),
             "speaker_evidence_status": s.get("speaker_evidence_status", "unavailable"),
-            "speaker_score_kind": "raw_cosine_not_probability",
+            "speaker_score_kind": (
+                "nemotron_frame_activity_not_identity_probability"
+                if s.get("speaker_diarization_source") == "nemotron3"
+                else "raw_cosine_not_probability"
+            ),
+            "speaker_diarization_source": s.get(
+                "speaker_diarization_source", "camplus",
+            ),
+            "speaker_activity_score": s.get("speaker_activity_score"),
+            "speaker_activity_margin": s.get("speaker_activity_margin"),
+            "speaker_activity_status": s.get("speaker_activity_status"),
         }
 
     def list_segments(self, meeting_id: str) -> list[dict] | None:
