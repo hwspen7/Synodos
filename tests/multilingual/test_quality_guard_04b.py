@@ -56,13 +56,17 @@ class WhisperQualityGuardTests(unittest.TestCase):
         output, model = self._run([{"start": 0, "end": 16000}],
                                   [_segment(2, 3, "Thanks for watching")])
         self.assertEqual(output.utterances, ())
-        self.assertEqual(model.calls, 1)
+        # A bounded retry is allowed on the uncovered VAD-positive span,
+        # but unsupported model text must not appear in the transcript.
+        self.assertEqual(model.calls, 2)
 
     def test_real_speech_is_retained(self):
         output, model = self._run([{"start": 1600, "end": 19000}],
                                   [_segment(0.2, 1.1, "Meeting audio")])
         self.assertEqual([item.text for item in output.utterances], ["Meeting audio"])
-        self.assertTrue(model.kwargs["vad_filter"])
+        # External Silero VAD is already verified; do not apply another
+        # internal VAD that can silently remove weak speech.
+        self.assertFalse(model.kwargs["vad_filter"])
         self.assertFalse(model.kwargs["condition_on_previous_text"])
         self.assertEqual(model.kwargs["hallucination_silence_threshold"], 1.2)
 
