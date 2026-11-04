@@ -55,10 +55,34 @@ test('live caption WebSocket preserves typed partial revision and transcript ord
   }
 })
 
-test('live provisional text stays inside transcript and snapshots cannot clear it', () => {
-  const source = readFileSync(
+function normalizeSourceLineEndings(source) {
+  // Git checkout on Windows may use CRLF, while the tracked source uses LF.
+  // Preserve the callback contract; remove only platform-specific CR bytes.
+  return source.replace(/\r\n?/g, '\n')
+}
+
+function transcriptCallback(source) {
+  return normalizeSourceLineEndings(source).match(
+    /onTranscript: \(msg\) => \{([\s\S]*?)\n    \},\n    onState:/,
+  )
+}
+
+test('transcript callback contract is invariant across LF and Windows CRLF', () => {
+  const tracked = readFileSync(
     new URL('../../../src/pages/MeetingPage.vue', import.meta.url), 'utf8')
-  const handler = source.match(/onTranscript: \(msg\) => \{([\s\S]*?)\n    \},\n    onState:/)
+  const lf = normalizeSourceLineEndings(tracked)
+  const crlf = lf.replace(/\n/g, '\r\n')
+  const unix = transcriptCallback(lf)
+  const windows = transcriptCallback(crlf)
+  assert.ok(unix, 'Transcript callback must remain explicit on LF checkout')
+  assert.ok(windows, 'Transcript callback must remain explicit on CRLF checkout')
+  assert.equal(windows[1], unix[1])
+})
+
+test('live provisional text stays inside transcript and snapshots cannot clear it', () => {
+  const source = normalizeSourceLineEndings(readFileSync(
+    new URL('../../../src/pages/MeetingPage.vue', import.meta.url), 'utf8'))
+  const handler = transcriptCallback(source)
   assert.ok(handler, 'Transcript callback must remain explicit')
   assert.doesNotMatch(handler[1], /partialText\.value\s*=\s*''/)
   assert.match(source, /revision <= lastPartialRevision/)
