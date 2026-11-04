@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 
+from speech.supported_languages import spoken_language, translation_target
+
 SUPPORTED_ENGINES = {"legacy", "whisper", "qwen3"}
 
 
