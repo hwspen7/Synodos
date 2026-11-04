@@ -49,6 +49,15 @@ class CaptionAcousticAlignmentTests(unittest.TestCase):
                 {"start_ms": 0, "end_ms": 1000, "speaker_id": -3},
             ], 0, 1000, 1)
 
+    def test_official_turn_channel_range_is_strict(self):
+        for invalid_id in (-3, 0, 9, True, "1", None):
+            with self.subTest(speaker_id=invalid_id):
+                with self.assertRaises(ValueError):
+                    speaker_support_intervals([
+                        {"start_ms": 0, "end_ms": 1000,
+                         "speaker_id": invalid_id},
+                    ], 0, 1000, 1)
+
     def test_final_session_publishes_support_without_mutating_asr_bounds(self):
         class Completed(FakeAcoustics):
             def is_complete(self):
