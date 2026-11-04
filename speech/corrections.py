@@ -20,9 +20,15 @@ def correct_segment(state: dict, segment_id: int, text: str, expected_revision: 
             raise RevisionConflict(f"Stale revision: expected {expected_revision}, current {previous}")
         if segment.get("text") == text.strip():
             return segment
+        old_text = str(segment.get("text") or "")
+        if not isinstance(segment.get("original_asr_text"), str):
+            segment["original_asr_text"] = old_text
         segment.setdefault("corrections", []).append({
-            "revision": previous,
-            "text": str(segment.get("text") or ""),
+            "revision": previous + 1,
+            "kind": "text",
+            "source": "manual_review",
+            "before": {"text": old_text},
+            "after": {"text": text.strip()},
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
         segment["text"] = text.strip()
@@ -68,15 +74,27 @@ def assign_segment_speaker(
             segment.get("speaker_override_name") == speaker_name):
             return segment
         segment.setdefault("corrections", []).append({
-            "revision": revision,
+            "revision": revision + 1,
             "kind": "speaker",
-            "speaker_id": segment.get("speaker_id"),
-            "speaker_name": segment.get("speaker_name"),
+            "source": "manual_review",
+            "before": {
+                "speaker_id": segment.get("speaker_id"),
+                "speaker_name": segment.get("speaker_name"),
+                "speaker_profile_id": segment.get("speaker_profile_id"),
+            },
+            "after": {
+                "speaker_id": speaker_id,
+                "speaker_name": speaker_name,
+                "speaker_profile_id": participant_id,
+            },
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
         segment["speaker_override"] = True
         segment["speaker_override_id"] = speaker_id
         segment["speaker_override_name"] = speaker_name
+        segment["speaker_profile_id"] = participant_id
+        segment["speaker_status"] = "manual_override"
+        segment["speaker_evidence_status"] = "human_review"
         segment["speaker_id"] = speaker_id
         segment["speaker_name"] = speaker_name
         segment["revision"] = revision + 1
