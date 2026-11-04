@@ -78,6 +78,10 @@ def main() -> int:
     parser.add_argument("--resume", action="store_true",
                         help="Validate existing replay, do not overwrite it")
     parser.add_argument("--timeout-seconds", type=int, default=900)
+    parser.add_argument("--ws-url",
+                        help="Override live WebSocket URL, e.g. port 8012")
+    parser.add_argument("--require-nemotron", action="store_true",
+                        help="Fail if any replay lacks a complete independent track")
     args = parser.parse_args()
     if not re.fullmatch(r"[a-zA-Z0-9_-]{1,32}", args.tag):
         parser.error("--tag must be 1-32 alphanumeric/hyphen characters")
@@ -97,6 +101,7 @@ def main() -> int:
         parser.error("AMI manifest does not contain the expected ten meetings")
     picked = [m for m, _ in SELECTED if args.case is None or m == args.case]
     results = []
+    nemotron_pins = {}
     for meeting in picked:
         case = all_cases[meeting]
         audio = (root / case["audio"]).resolve()
@@ -110,17 +115,27 @@ def main() -> int:
                 "Refusing to overwrite a prior live replay: " + str(replay)
             )
         if not replay.exists():
-            process = subprocess.run([
+            invocation = [
                 sys.executable, "-m", "tools.live_caption_ws_replay",
                 "--audio", str(audio), "--loops", "1", "--speed", "1.0",
                 "--output", str(replay),
-            ], cwd=str(Path(__file__).resolve().parents[1]),
+            ]
+            if args.ws_url:
+                invocation += ["--url", args.ws_url]
+            process = subprocess.run(invocation, cwd=str(Path(__file__).resolve().parents[1]),
                 timeout=args.timeout_seconds, check=False,
                 capture_output=False)
             if process.returncode != 0:
                 raise RuntimeError(
                     f"Live replay failed for {meeting}; no accuracy claim"
                 )
+        if args.require_nemotron:
+            from tools.ami_nemotron_live_score import _validated_independent
+            payload = json.loads(replay.read_text(encoding="utf-8"))
+            if payload.get("server_ready", {}).get("independent_diarization") != "nemotron3":
+                raise ValueError(f"No Nemotron backend for {meeting}")
+            _validated_independent(payload)
+            nemotron_pins[meeting] = str(replay.resolve())
         result = score_case(root, meeting, replay)
         if audited.exists():
             if not args.resume:
@@ -148,6 +163,14 @@ def main() -> int:
     with destination.open("x", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
         f.write("\n")
+    if args.require_nemotron and args.case is None:
+        pin_path = root / f"phase1b_nemotron_manifest_{args.tag}.json"
+        if pin_path.exists():
+            raise FileExistsError("Refusing to overwrite earlier Nemotron manifest")
+        with pin_path.open("x", encoding="utf-8") as output:
+            json.dump(nemotron_pins, output, indent=2)
+            output.write("\n")
+        print(f"Paired independent replay manifest: {pin_path}")
     print(json.dumps({
         "summary": str(destination),
         "case_count": summary["case_count"],
