@@ -60,7 +60,7 @@ if ($r.server_ready.asr_quality_candidate -ne $true) { throw "Wrong backend prof
 if ($null -eq $r.final_cluster_diagnostics.anonymous_timeline) { throw "Missing timeline" }
 & $PY -m tools.ami_shadow10_score --root $root --meeting TS3003b --replay $replay --output $audit
 if ($LASTEXITCODE -ne 0) { throw "AMI scoring failed" }
-& $PY -m tools.ami_live_regression_gate --baseline "$root/audit_TS3003b_v6_per_speaker.json" --candidate $audit
+& $PY -m tools.ami_live_regression_gate --baseline "$root/audit_TS3003b_v6_per_speaker.json" --candidate $audit --require-improvement
 ```
 
 If the current clone has no `.venv`, use the already verified full
