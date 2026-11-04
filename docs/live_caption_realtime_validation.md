@@ -246,3 +246,47 @@ indexes, no recognized text, audio, speaker embeddings or participant
 names. It is intentionally opt-in, and changes neither diarization mode
 nor the spoken-content processing pipeline. A future merging algorithm
 must still be evaluated with known speaker turns and overlap cases.
+
+
+## November 2026 A/B root cause: raw acoustic over-splitting AND ID aliases
+
+On the fourth 301.5-second repeated-dialogue replay with
+\`cluster_sticky\` and diagnostics enabled, the source contained two real
+speakers but the end-of-session report showed:
+
+| Diagnostic | Result |
+|---|---:|
+| FunASR raw acoustic clusters | 10 |
+| Distinct published positive speaker labels | 8 |
+| Raw clusters with multiple published labels | 8 |
+| Published labeled segments within conflicted raw clusters | 85 |
+| Segments without voice embeddings | 5 |
+| Positive-labeled ID-to-ID changes | 0 |
+| PCM delivery and final WebSocket close | Complete |
+
+Two independent problems remain: the acoustic clustering generated more
+groups than the true number of voices, and the sticky alias preservation
+retained inconsistent IDs across most groups. Freezing earlier is not an
+identity-accuracy fix. Do not claim a diarization error rate from these
+aggregate counts.
+
+### One-run, read-only merge sensitivity
+
+The opt-in \`MEETING_DIARIZATION_DIAGNOSTICS=1\` final report now also
+contains \`configured_merge_threshold\` and \`posthoc_merge_sweep\`.
+The sweep re-merges the *existing* final acoustic cluster centroids
+at several lower cosine thresholds without changing the transcript,
+speaker assignments, or model configuration.
+
+To obtain an exact audio-matched comparison, rerun the same 4-loop replay
+after updating this branch and restarting the backend with diagnostics
+enabled. Then view:
+
+    $r = Get-Content benchmark\fixed195\live_caption_sticky_diagnostic.json -Raw | ConvertFrom-Json
+    $r.final_cluster_diagnostics.posthoc_merge_sweep | ConvertTo-Json -Depth 6
+
+This sweep estimates which thresholds would consolidate obvious acoustically
+similar subclusters. It is NOT a new FunASR spectral clustering run and
+cannot prove whether the merged clusters correspond to real people. A
+configuration change is not justified until the speaker-turn assignment is
+checked against human-labeled reference intervals, including overlaps.
