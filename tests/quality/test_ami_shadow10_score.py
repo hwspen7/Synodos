@@ -13,6 +13,7 @@ from tools.ami_shadow10_prepare import SELECTED, checksum
 from tools.ami_shadow10_score import (
     score_case, reference_union_overlap, unidentified_segments,
     missed_speaker_time_breakdown, reference_speech_without_captions,
+    reference_speaker_coverage,
 )
 
 
@@ -109,6 +110,13 @@ class AmiShadowScoreTests(unittest.TestCase):
             self.assertEqual(result["unidentified"]["count"], 2)
             self.assertEqual(result["unidentified"]["with_reference_speech"], 1)
             self.assertEqual(result["unidentified"]["outside_reference_speech"], 1)
+            per_voice = result["reference_speaker_coverage"]["speakers"]
+            self.assertEqual([x["reference_speaker"] for x in per_voice], ["A", "B"])
+            self.assertEqual(per_voice[0]["reference_speech_seconds"], 100.0)
+            self.assertEqual(per_voice[0]["positive_caption_seconds"], 100.0)
+            self.assertEqual(per_voice[1]["reference_speech_seconds"], 80.0)
+            self.assertEqual(per_voice[1]["unknown_only_caption_seconds"], 20.0)
+            self.assertEqual(per_voice[1]["positive_caption_seconds"], 60.0)
             self.assertEqual(result["missed_speaker_time_breakdown"]["unidentified_transcript_s"], 20.0)
             self.assertEqual(result["missed_speaker_time_breakdown"]["total_missed_speaker_seconds"], 20.0)
             self.assertEqual(
@@ -139,6 +147,47 @@ class AmiShadowScoreTests(unittest.TestCase):
             "start_ms": 1000, "end_ms": 1700, "duration_ms": 700,
         })
         self.assertTrue(gaps["requires_audio_review"])
+
+    def test_per_speaker_coverage_preserves_overlap_and_missing_emb_status(self):
+        timeline = {"segments": [
+            {"start_ms": 0, "end_ms": 1000, "published_speaker_id": 5,
+             "embedding_available": True},
+            {"start_ms": 1000, "end_ms": 1800, "published_speaker_id": None,
+             "embedding_available": False},
+            {"start_ms": 1800, "end_ms": 2400, "published_speaker_id": 7,
+             "embedding_available": False},
+            {"start_ms": 2600, "end_ms": 3000, "published_speaker_id": 7,
+             "embedding_available": True},
+        ]}
+        reference = [
+            {"start_ms": 0, "end_ms": 3000, "speaker": "A"},
+            {"start_ms": 1000, "end_ms": 2000, "speaker": "B"},
+            {"start_ms": 2200, "end_ms": 2800, "speaker": "B"},
+        ]
+        result = reference_speaker_coverage(timeline, reference, 3000)
+        self.assertEqual(result["reference_speaker_count"], 2)
+        a, b = result["speakers"]
+        self.assertEqual(a["reference_speech_seconds"], 3.0)
+        self.assertEqual(a["without_caption_seconds"], 0.2)
+        self.assertEqual(a["unknown_only_caption_seconds"], 0.8)
+        self.assertEqual(a["positive_caption_seconds"], 2.0)
+        self.assertEqual(a["caption_without_embedding_seconds"], 1.4)
+        self.assertEqual(a["caption_with_embedding_seconds"], 1.4)
+        self.assertEqual(a["overlap_reference_seconds"], 1.6)
+        self.assertEqual(b["reference_speech_seconds"], 1.6)
+        self.assertEqual(b["annotated_intervals"], 2)
+        self.assertEqual(b["short_intervals_under_1_2s"], 2)
+        self.assertEqual(b["without_caption_seconds"], 0.2)
+        self.assertEqual(b["unknown_only_caption_seconds"], 0.8)
+        self.assertEqual(b["positive_caption_seconds"], 0.6)
+        self.assertEqual(
+            b["positive_label_contacts"],
+            [{"published_label": 7, "temporal_overlap_seconds": 0.6}],
+        )
+        self.assertNotIn("person_name", json.dumps(result))
+        with self.assertRaisesRegex(ValueError, "100ms"):
+            reference_speaker_coverage(timeline, reference, 3000,
+                                       frame_step_ms=50)
 
     def test_missed_speaker_time_breakdown_separates_three_causes(self):
         timeline = {"segments": [
