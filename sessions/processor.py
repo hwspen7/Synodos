@@ -152,6 +152,10 @@ class SessionProcessor(threading.Thread):
         self.ui_settings: dict = {}
         self._translation_tasks: dict[int, Future] = {}
         self._speaker_tasks: dict[int, Future] = {}
+        # Optional ECAPA shadow samples stay in memory and never enter saved state.
+        self._ecapa_shadow = None
+        self._ecapa_shadow_audio: dict[int, np.ndarray] = {}
+        self._ecapa_shadow_sample_count = 0
         self._acoustic_turn_splits = 0
         self._acoustic_timeline = AcousticTimeline(sr)
         self._acoustic_tasks: dict[int, Future] = {}
@@ -198,6 +202,13 @@ class SessionProcessor(threading.Thread):
     # ------------------------------------------------------------------ loop
     def run(self) -> None:
         try:
+            # Lazily admit one optional background ECAPA session. This does
+            # not load its model and cannot affect the live CAM++ path.
+            try:
+                from sessions.speaker_shadow import create_shadow_session
+                self._ecapa_shadow = create_shadow_session()
+            except Exception:
+                logger.warning("Optional ECAPA shadow unavailable; CAM++ unchanged")
             while not self._stop_event.is_set():
                 if self._drain_save_requests():
                     continue
@@ -252,6 +263,16 @@ class SessionProcessor(threading.Thread):
         finally:
             self._save_queue.close(succeeded=self._final_save_ok)
             closed_payload = {"type": "closed", "saved": self._final_save_ok}
+            if self._ecapa_shadow is not None:
+                try:
+                    closed_payload["speaker_shadow_diagnostics"] = (
+                        self._ecapa_shadow.status()
+                    )
+                except Exception:
+                    logger.warning("Optional ECAPA shadow diagnostics unavailable")
+                finally:
+                    self._ecapa_shadow.close()
+            self._ecapa_shadow_audio.clear()
             if os.getenv("MEETING_DIARIZATION_DIAGNOSTICS", "0").lower() in (
                 "1", "true", "yes"
             ):
@@ -575,6 +596,16 @@ class SessionProcessor(threading.Thread):
             }
             self.segments.append(record)
             self._next_segment_id += 1
+            if (self._ecapa_shadow is not None and len(seg_audio) >= sr * 2):
+                # Keep a small, temporary audio sample until CAM++ assigns
+                # a stable published label. No transcript or identity is sent.
+                if len(self._ecapa_shadow_audio) >= 16:
+                    self._ecapa_shadow_audio.pop(
+                        next(iter(self._ecapa_shadow_audio))
+                    )
+                self._ecapa_shadow_audio[record["id"]] = np.array(
+                    seg_audio[:sr * 6], dtype=np.float32, copy=True,
+                )
             if speaker_task is not None:
                 self._speaker_tasks[record["id"]] = speaker_task
                 speaker_task.add_done_callback(self._notify_async_ready)
@@ -766,6 +797,9 @@ class SessionProcessor(threading.Thread):
                 updated = True
                 continue
             if len(pieces) > 1:
+                # The original utterance may contain multiple speakers.
+                # Never feed its unsplit audio to the ECAPA shadow worker.
+                self._ecapa_shadow_audio.pop(sid, None)
                 additional_turns = len(pieces) - 1
                 self._acoustic_turn_splits += additional_turns
                 metrics.increment("speaker_acoustic_turn_splits", additional_turns)
@@ -993,12 +1027,41 @@ class SessionProcessor(threading.Thread):
                     seg["speaker_name"] = f"Speaker {stable}"
 
     # ---------------------------------------------------------------- push
+    def _submit_shadow_samples(self) -> None:
+        """Send only stable CAM++-labeled, single-turn audio for observation.
+
+        No ECAPA result can rewrite a segment, participant, or saved state.
+        """
+        shadow = self._ecapa_shadow
+        if shadow is None or not self._ecapa_shadow_audio:
+            return
+        for segment in self.segments:
+            sid = segment["id"]
+            if sid not in self._ecapa_shadow_audio:
+                continue
+            if self._ecapa_shadow_sample_count >= 64:
+                self._ecapa_shadow_audio.clear()
+                break
+            label = segment.get("speaker_id")
+            if (type(label) is not int or label <= 0
+                    or segment.get("speaker_uncertain")
+                    or segment.get("speaker_override")
+                    or segment.get("emb") is None):
+                continue
+            audio = self._ecapa_shadow_audio.pop(sid)
+            self._ecapa_shadow_sample_count += 1
+            try:
+                shadow.submit(label, audio)
+            except Exception:
+                logger.warning("Optional ECAPA shadow enqueue failed; CAM++ unchanged")
+
     def _rebuild_and_push(self) -> bool:
         """Audio transcription and speaker data handling."""
         for record in self.segments:
             if record.get("speaker_override"):
                 record["speaker_id"] = int(record.get("speaker_override_id") or -1)
                 record["speaker_name"] = str(record.get("speaker_override_name") or "Unidentified Speaker")
+        self._submit_shadow_samples()
         ordered = sorted(self.segments, key=lambda s: s["start_sample"])
         items = [
             {
