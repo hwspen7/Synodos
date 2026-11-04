@@ -76,6 +76,13 @@ $env:MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT = "0"
 $env:MEETING_ASR_COVERAGE_RETENTION = "0"
 $env:MEETING_WHISPER_DUAL_VAD = "0"
 
+# Preflight model weights, Transformers API and CUDA compatibility before
+# starting a timed microphone replay. The subprocess caches weights locally.
+& $PythonExe -c "from speech.nemotron_stream import _model_resources; _model_resources('low_latency'); print('Nemotron model preflight passed')"
+if ($LASTEXITCODE -ne 0) {
+    throw "Nemotron dependencies, CUDA or model weights are unavailable."
+}
+
 $healthUrl = "http://127.0.0.1:$Port/api/health"
 try {
     $alreadyRunning = $null
