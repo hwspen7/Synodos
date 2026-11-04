@@ -10,6 +10,22 @@ from tools.live_caption_segment_audit import (
 )
 
 
+def outside_private_temporary_directory():
+    """Create an E-drive project-local fixture outside the private export root.
+
+    A Windows test harness can deliberately redirect TEMP/TMP beneath
+    benchmark/fixed195. A default TemporaryDirectory() would then be an
+    ALLOWED export destination, invalidating tests that expect rejection.
+    Placing this fixture under the sibling benchmark directory makes the
+    negative path test independent of the machine's temporary directory.
+    """
+    benchmark = Path(__file__).resolve().parents[2] / "benchmark"
+    benchmark.mkdir(parents=True, exist_ok=True)
+    return tempfile.TemporaryDirectory(
+        prefix="outside-private-audit-", dir=benchmark,
+    )
+
+
 def segment(sid, text, speaker=1, start=0, end=1000, name=None):
     return {
         "id": sid, "text": text, "speaker_id": speaker,
@@ -94,7 +110,12 @@ class LiveCaptionSegmentAuditTests(unittest.TestCase):
         from argparse import Namespace
         from tools.live_caption_ws_replay import preflight_private_exports
 
-        with tempfile.TemporaryDirectory() as temp:
+        with outside_private_temporary_directory() as temp:
+            self.assertFalse(
+                Path(temp).resolve().is_relative_to(
+                    Path("benchmark/fixed195").resolve(),
+                )
+            )
             args = Namespace(
                 transcript_output=Path(temp) / "speech.txt",
                 segment_audit_output=None, output=None, reference_text=None,
@@ -217,7 +238,12 @@ class LiveCaptionSegmentAuditTests(unittest.TestCase):
             build_segment_audit(sample, summary())
 
     def test_invalid_export_path_rejected(self):
-        with tempfile.TemporaryDirectory() as temp:
+        with outside_private_temporary_directory() as temp:
+            self.assertFalse(
+                Path(temp).resolve().is_relative_to(
+                    Path("benchmark/fixed195").resolve(),
+                )
+            )
             with self.assertRaisesRegex(ValueError, "benchmark/fixed195"):
                 write_private_segment_audit(Path(temp) / "outside.json", {})
 
