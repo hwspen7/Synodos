@@ -106,14 +106,25 @@ def project_confirmed_caption(
         raise ValueError("Invalid caption projection arguments")
     if not isinstance(official_turns, (list, tuple)):
         raise ValueError("Official speaker turns are required")
-    # Validate all official activity before deciding whether words are usable.
-    _speaker_cover(official_turns, caption_start_ms - acoustic_origin_ms
-                   if caption_start_ms >= acoustic_origin_ms else 0,
-                   max(1, caption_end_ms - acoustic_origin_ms))
+    # Scan the whole finalized timeline only once per caption. Individual
+    # word decisions and overlap boundaries use nearby turns exclusively.
+    # This prevents quadratic work on hours-long meetings.
+    acoustic_start = max(0, caption_start_ms - acoustic_origin_ms)
+    acoustic_end = max(acoustic_start, caption_end_ms - acoustic_origin_ms)
+    nearby_turns = []
+    for turn in official_turns:
+        if not isinstance(turn, Mapping):
+            raise ValueError("Malformed official speaker turn")
+        sid, a, b = (
+            turn.get("speaker_id"), turn.get("start_ms"), turn.get("end_ms"),
+        )
+        if (type(sid) is not int or not 1 <= sid <= 8
+                or not _valid_clock(a) or not _valid_clock(b) or b <= a):
+            raise ValueError("Invalid finalized Nemotron speaker turn")
+        if b > acoustic_start and a < acoustic_end:
+            nearby_turns.append(turn)
     overlap = _overlap_intervals(
-        official_turns,
-        max(0, caption_start_ms - acoustic_origin_ms),
-        max(1, caption_end_ms - acoustic_origin_ms),
+        nearby_turns, acoustic_start, max(acoustic_start + 1, acoustic_end),
     )
     for interval in overlap:
         interval["start_ms"] += acoustic_origin_ms
@@ -157,7 +168,7 @@ def project_confirmed_caption(
     for raw, a, b in parsed:
         scores = sorted(
             _speaker_cover(
-                official_turns,
+                nearby_turns,
                 max(0, a - acoustic_origin_ms),
                 max(1, b - acoustic_origin_ms),
             ).items(), key=lambda pair: (-pair[1], pair[0]),
