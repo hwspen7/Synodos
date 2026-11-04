@@ -4,6 +4,54 @@ This document separates independent reference-backed text accuracy from
 diarization DER and from engineering correctness. An absent ground-truth
 transcript is **not** a passing CER/WER result.
 
+## Locked Phase 1 product scope: ten languages
+
+Official Phase 1 supported recognition languages:
+`en, zh, fr, es, ar, id, ja, ru, de, hi`.
+Portuguese (`pt`) and Bengali (`bn`) have been removed from the
+product-supported selection, not erased from the existing recordings
+or frozen evaluation archive. The supported language menu and both
+the meeting settings API and WebSocket enforce the ten-language list.
+`auto` is permitted for source-language detection, but detection is
+not a guarantee that Whisper will never recognize an out-of-scope
+language. Regardless of the detected language, the recognized text
+is not discarded. Translation destinations are limited to ten
+languages or disabled; the actual offline language pair must still
+be installed.
+
+The original Fixed195 archive remains **130 single-speaker samples
+in 12 languages** and its existing historical acceptance report remains
+available. The new *product* gate reads the complete pinned original
+130-case ASR result, verifies original provenance and scores **110
+selected samples in ten approved languages**. This is an explicitly
+narrowed product scope, NOT measured model improvement. The two
+excluded sets remain archived and must never be deleted to produce
+a passing score.
+
+On the same full, code-fingerprint-matching `content_review_singles_*.json`
+that was already evaluated, run the new selection gate (no GPU required):
+
+```powershell
+cd E:\Meeting-Fixed10-Test
+$PY = "E:\Meeting-Fixed10-Test\.venv\Scripts\python.exe"
+$root = "benchmark/fixed195"
+$inputReport = Get-ChildItem "$root/content_review_singles_*.json" -File |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not $inputReport) { throw "Full 130-clip ASR source report is required" }
+$tag = Get-Date -Format "yyyyMMdd-HHmmss"
+& $PY -m tools.phase1_ten_language_gate `
+    --root $root `
+    --results $inputReport.FullName `
+    --output "$root/phase1_10_languages_$tag.json"
+if ($LASTEXITCODE -ne 0) { throw "Ten-language accuracy acceptance failed" }
+```
+
+The general engineering script now runs this selected ten-language gate
+when `-Fixed195Results` is supplied. The legacy
+`tools.phase1_fixed195_text_gate` intentionally still evaluates
+all twelve historical languages and may report a failure for Bengali;
+that does **not** mean the new ten-language product selection failed.
+
 ## What the new release checks actually prove
 
 - `tools/replay_transcript_score.py` measures human-reference CER and
@@ -55,7 +103,7 @@ package installation. Never point any output into C:. If compilation,
 a test, type-check or build fails, the script stops without declaring
 engineering success.
 
-## 2. Evaluate the 130 real single-speaker human references
+## 2. Reuse all 130 original references and score the 110 selected Phase 1 clips
 
 If the prior pinned run is already present, reuse it. Otherwise run
 `tools.fixed195_content_review` against the frozen single manifest:
@@ -67,11 +115,14 @@ $root = "benchmark/fixed195"
 & $PY -m tools.fixed195_content_review --root $root --mode singles --model large-v3 --device cuda --compute-type float16
 if ($LASTEXITCODE -ne 0) { throw "Fixed195 inference failed" }
 $tag = Get-Date -Format "yyyyMMdd-HHmmss"
-& $PY -m tools.phase1_fixed195_text_gate --root $root --results "$root/content_review_singles.json" --output "$root/phase1_130_text_$tag.json"
-if ($LASTEXITCODE -ne 0) { throw "130 human-reference text quality not accepted" }
+& $PY -m tools.phase1_ten_language_gate --root $root --results "$root/content_review_singles.json" --output "$root/phase1_10_languages_$tag.json"
+if ($LASTEXITCODE -ne 0) { throw "Ten-language, 110-clip text quality not accepted" }
 ```
 
-When the result file exists, you can run only the second tool. It checks
+When the result file exists, you can run only the second tool. If the
+existing ASR report is an older fingerprint, use a newly named output
+with `tools.fixed195_content_review`, preserving the previous report.
+It checks
 the model/source/code fingerprint, so older or modified-code measurements
 may be rejected rather than silently reused. This test can run with
 `run_phase1_engineering.ps1 -Fixed195Results "$root/content_review_singles.json"`
