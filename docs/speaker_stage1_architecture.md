@@ -1128,3 +1128,70 @@ breaths, fillers or overlapping vocalizations. No production
 identity promotion is changed. Even if offline grouping works,
 only matched live playback against held-out multi-speaker RTTM
 can establish a DER gain.
+
+
+## V6 fixed-grid evidence: multi-sample merges, not a singleton problem
+
+The operator tested 159 nominal 2s/1.5s continuous AMI audio windows.
+CAM++ returned 147 voiceprints. Reference RTTM classified only 75
+of them as predominantly one annotated person under the offline
+80%/10% reference-coverage rule; the remaining 72 successful
+embeddings were not validated as clean single-speaker samples.
+Those 72 can be boundaries, overlap, or reference-unannotated speech,
+and must NOT automatically be called corrupted.
+
+Spherical clustering over ALL 147 embeddings yielded two groups.
+In the 75 annotated-pure subset, group 0 contained 29 MTD009PM
+voiceprints, 6 MTD0010ID voiceprints, and 1 MTD011UID
+voiceprint; group 1 contained 39 MTD012ME voiceprints. Thus
+all 209 incorrect same-person pairs arise from those three
+reference speakers being merged into group 0:
+
+    29*6 + 29*1 + 6*1 = 209
+
+No real same-person pair was split in that subset (FN=0).
+The pair F1 was 0.91749 and ARI 0.84908, but these are
+sample-level diagnostics, not live DER. The previous
+single-isolated-outlier heuristic did not trigger; the
+merged group is NOT a coherent core plus one discrepant sample.
+It contains an apparent SECOND MULTI-SAMPLE subpopulation.
+
+A new reference-free diagnostic, ami_cluster_substructure,
+now proposes two-way spherical subclusters INSIDE each large
+raw parent group, with at least 12 total voiceprints and
+at least 4 supporting each subgroup. The minimum silhouette
+is 0.18. It does NOT use human labels to choose which parent
+to split, choose subgroup membership, or decide a speaker
+count. It reports each parent split and, if multiple parents
+qualify, a combined candidate, all **review-only**.
+
+The fixed-grid auditor evaluates ALL these variants after
+subdivision against the same human-referenced 75 pure windows.
+Output includes substructure_diagnostics and
+substructure_pure_window_scores. If a variant increases
+unwarranted splitting in MTD012ME, that regression is shown
+rather than hidden by choosing the best-scoring test variant.
+The model cannot assume one subgroup equals one human:
+a person's microphone movement or changing vocal quality
+can form a second coherent acoustic subpopulation.
+
+Use the original V6 replay only as verified audio/reference
+provenance. This run extracts CAM++ voiceprints again on
+the user's computer and requires no running WebSocket server.
+
+    cd E:\Meeting-Fixed10-Test
+    git pull --ff-only origin feature/multilingual-fixed10-ui-refresh
+    python -m unittest tests.quality.test_ami_cluster_substructure tests.quality.test_ami_continuous_voice_audit -v
+    python -m tools.ami_continuous_voice_audit --root benchmark/fixed195/ami_shadow10 --meeting TS3003b --replay benchmark/fixed195/ami_shadow10/replay_TS3003b_v6.json --output benchmark/fixed195/ami_shadow10/continuous_camplus_TS3003b_v6_substructure.json
+
+Then inspect:
+
+    $r = Get-Content benchmark/fixed195/ami_shadow10/continuous_camplus_TS3003b_v6_substructure.json -Raw | ConvertFrom-Json
+    $r.substructure_diagnostics | ConvertTo-Json -Depth 7
+    $r.substructure_pure_window_scores | ForEach-Object { [PSCustomObject]@{ Variant=$_.variant; Clusters=$_.all_window_cluster_count; PairF1=$_.pure_window_score.pair_f1; ARI=$_.pure_window_score.adjusted_rand_index; FalsePairs=$_.pure_window_score.false_positive_pairs; MissedPairs=$_.pure_window_score.false_negative_pairs } } | Format-Table -AutoSize
+
+Do not select or tune a production subgroup split based solely
+on TS3003b. Replicate it on other untouched AMI sessions and
+evaluate the actual live ASR/caption/diarization DER with an
+independent reference. The production V6 speaker clustering
+and published IDs have NOT been changed.
