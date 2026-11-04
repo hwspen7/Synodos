@@ -1,4 +1,4 @@
-"""Short speaker probes remain opt-in and uncertain by construction."""
+"""Short speaker probes remain uncertain until independent acoustic support."""
 from __future__ import annotations
 
 import asyncio
@@ -16,14 +16,14 @@ from sessions.speaker_tasks import submit_speaker_analysis
 
 
 class ShortProbeTests(unittest.TestCase):
-    def test_default_short_turn_does_not_fabricate_voiceprint(self):
+    def test_default_short_turn_creates_only_a_low_support_probe(self):
         source = {"start": 0, "end": 900, "text": "Yes", "words": []}
         samples = np.ones(14400, dtype=np.float32) * 0.1
         result = submit_speaker_analysis(
             source, samples, lambda _: np.array([1.0, 0.0]), 16000,
         ).result(timeout=5)
-        self.assertIsNone(result[0]["emb"])
-        self.assertNotIn("short_probe", result[0])
+        self.assertIsNotNone(result[0]["emb"])
+        self.assertTrue(result[0]["short_probe"])
 
     def test_explicit_short_turn_probe_is_marked_low_support(self):
         source = {"start": 0, "end": 900, "text": "Yes", "words": []}

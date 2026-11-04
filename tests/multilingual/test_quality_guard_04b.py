@@ -62,7 +62,8 @@ class WhisperQualityGuardTests(unittest.TestCase):
         output, model = self._run([{"start": 1600, "end": 19000}],
                                   [_segment(0.2, 1.1, "Meeting audio")])
         self.assertEqual([item.text for item in output.utterances], ["Meeting audio"])
-        self.assertTrue(model.kwargs["vad_filter"])
+        self.assertFalse(model.kwargs["vad_filter"])
+        self.assertNotIn("vad_parameters", model.kwargs)
         self.assertFalse(model.kwargs["condition_on_previous_text"])
         self.assertEqual(model.kwargs["hallucination_silence_threshold"], 1.2)
 
