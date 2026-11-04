@@ -49,8 +49,40 @@ Before downloading candidate weights, run the no-download environment check:
     .venv-speaker-ecapa\Scripts\python.exe -m tools.speaker_stage1_doctor --model ecapa --device cuda
     .venv-speaker-nemotron\Scripts\python.exe -m tools.speaker_stage1_doctor --model nemotron3 --device cuda
 
-The doctor checks dependency presence, basic version compatibility and CUDA
-availability, but does not load weights or establish inference performance.
+The doctor checks dependency presence, basic version compatibility, CUDA
+build selection and GPU availability. It does not load weights or establish
+inference performance.
+
+### Windows: fix "cuda_available: false" in both optional environments
+
+Start with NVIDIA driver visibility and the *actual* PyTorch build. A Python
+package named `torch` does not by itself guarantee CUDA support:
+
+    nvidia-smi
+    .venv-speaker-ecapa\Scripts\python.exe -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+    .venv-speaker-nemotron\Scripts\python.exe -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+
+If `torch.version.cuda` prints `None`, the Python environment has a
+CPU-only PyTorch build. On a Windows NVIDIA system whose driver supports
+CUDA 12.8, install the known official **CUDA 12.8** PyTorch 2.11.0 wheel
+in **only** these optional environments:
+
+    uv pip install --python .venv-speaker-ecapa\Scripts\python.exe "torch==2.11.0+cu128" "torchaudio==2.11.0+cu128" --index-url https://download.pytorch.org/whl/cu128
+    uv pip install --python .venv-speaker-nemotron\Scripts\python.exe "torch==2.11.0+cu128" --index-url https://download.pytorch.org/whl/cu128
+
+Check `nvidia-smi` first. If the driver does not support CUDA 12.8,
+install a driver supported by your GPU or choose the matching officially
+published CUDA 12.6 wheel (`+cu126` and `/whl/cu126`).
+Do not change the currently functioning live Whisper environment, and
+do not attempt model benchmarks until the doctor reports CUDA available.
+
+Official installation table:
+https://pytorch.org/get-started/previous-versions/
+
+TorchAudio 2.11 introduced a stable ABI that supports newer PyTorch
+releases. Mismatched 2.11.x / 2.15.x numbers alone do not prove a broken
+installation. These pinned wheels are a **known CUDA configuration**,
+not a claim that older version pairs are inherently incompatible.
 
 Models download their pretrained weights **only on explicit invocation**.
 First download needs network access and model license acceptance where
