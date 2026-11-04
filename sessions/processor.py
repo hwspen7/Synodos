@@ -147,6 +147,7 @@ class SessionProcessor(threading.Thread):
         # CAM++ acoustic embeddings and reclustering votes.
         self.independent_diarization = None
         self._independent_published: dict[int, int] = {}
+        self._independent_scores: dict[int, dict] = {}
         self._independent_pcm_origin_samples = 0
         self._independent_id_offset = 0
         self._transcript_version = 0
@@ -474,6 +475,15 @@ class SessionProcessor(threading.Thread):
                             and not s.get("speaker_override"))
                         else s.get("speaker_diarization_source", "camplus")
                     ),
+                    "speaker_activity_score": self._independent_scores.get(
+                        int(s["id"]), {},
+                    ).get("speaker_activity_score", s.get("speaker_activity_score")),
+                    "speaker_activity_margin": self._independent_scores.get(
+                        int(s["id"]), {},
+                    ).get("speaker_activity_margin", s.get("speaker_activity_margin")),
+                    "speaker_activity_status": self._independent_scores.get(
+                        int(s["id"]), {},
+                    ).get("speaker_activity_status", s.get("speaker_activity_status")),
                     "speaker_uncertain": bool(s.get("speaker_uncertain", False)),
                     "emb": s["emb"],  # Preserve behavior.
                     "language": s.get("language", "und"),
@@ -527,6 +537,9 @@ class SessionProcessor(threading.Thread):
                     "speaker_diarization_source": item.get(
                         "speaker_diarization_source", "camplus",
                     ),
+                    "speaker_activity_score": item.get("speaker_activity_score"),
+                    "speaker_activity_margin": item.get("speaker_activity_margin"),
+                    "speaker_activity_status": item.get("speaker_activity_status"),
                     "speaker_uncertain": bool(item.get("speaker_uncertain", False)),
                     "text": item.get("text", "") or "",
                     "language": item.get("language", "und"),
@@ -1441,6 +1454,7 @@ class SessionProcessor(threading.Thread):
         # 10 ms Nemotron activity has sufficient evidence.
         independent = getattr(self, "independent_diarization", None)
         self._independent_published = {}
+        self._independent_scores = {}
         origin = getattr(self, "_independent_pcm_origin_samples", 0)
         for item, source in zip(items, ordered):
             if source.get("speaker_override"):
@@ -1475,6 +1489,11 @@ class SessionProcessor(threading.Thread):
                     item["speaker_activity_score"] = decision.activity_score
                     item["speaker_activity_margin"] = decision.margin
                     item["speaker_activity_status"] = decision.status
+                    self._independent_scores[int(item["id"])] = {
+                        "speaker_activity_score": decision.activity_score,
+                        "speaker_activity_margin": decision.margin,
+                        "speaker_activity_status": decision.status,
+                    }
                     item["speaker_score_kind"] = (
                         "nemotron_frame_activity_not_identity_probability"
                     )
