@@ -45,7 +45,9 @@ from phase07.telemetry import telemetry
 from phase07.speakers import speaker_stats, find_distinct_participant
 from speech.commit_guard import is_temporal_duplicate
 from speech.coverage_retention import choose_safe_drop
-from speech.quality_profile import quality_candidate_enabled
+from speech.quality_profile import (
+    quality_candidate_enabled, speaker_candidate_enabled,
+)
 from speech.contracts import Utterance
 from phase07.recovery import autosave_seconds
 from sessions.outbox import enqueue_message
@@ -153,7 +155,10 @@ class SessionProcessor(threading.Thread):
             "fallback_reason": None,
         }
         self._speaker_min_audio_s = float(
-            os.getenv("MEETING_SPEAKER_PROBE_MIN_S", "1.2")
+            os.getenv(
+                "MEETING_SPEAKER_PROBE_MIN_S",
+                "0.9" if speaker_candidate_enabled() else "1.2",
+            )
         )
         if not 0.8 <= self._speaker_min_audio_s <= 1.2:
             raise ValueError("MEETING_SPEAKER_PROBE_MIN_S must be 0.8..1.2")
@@ -316,7 +321,8 @@ class SessionProcessor(threading.Thread):
                     # This is the requested mode. The bounded candidate
                     # may fall back to FunASR on excessive fragmentation.
                     summary["clustering_strategy_requested"] = os.getenv(
-                        "MEETING_SPEAKER_CLUSTER_STRATEGY", "bootstrap"
+                        "MEETING_SPEAKER_CLUSTER_STRATEGY",
+                        "candidate" if speaker_candidate_enabled() else "bootstrap",
                     )
                     summary["clustering_execution"] = dict(
                         self._last_clustering_receipt
@@ -340,9 +346,11 @@ class SessionProcessor(threading.Thread):
                 self._put({"type": "error", "message": "Final transcription failed; confirmed text may be incomplete"})
         speaker_updated = self._collect_speakers(wait_seconds=5.0)
         acoustic_updated = self._collect_acoustic(wait_seconds=6.0)
-        if speaker_updated or acoustic_updated:
+        if speaker_updated or acoustic_updated or speaker_candidate_enabled():
             try:
-                self._recluster()
+                self._recluster(
+                    allow_historical_relabel=speaker_candidate_enabled(),
+                )
                 self._last_reclustered_segment_id = self._next_segment_id - 1
             except Exception:
                 logger.exception("Final speaker clustering failed")
@@ -1092,7 +1100,7 @@ class SessionProcessor(threading.Thread):
                     break
 
     # --------------------------------------------------------------- cluster
-    def _recluster(self) -> None:
+    def _recluster(self, *, allow_historical_relabel: bool = False) -> None:
         mode = resolve_diarization_mode(
             os.getenv("MEETING_DIARIZATION_MODE")
         )
@@ -1137,7 +1145,7 @@ class SessionProcessor(threading.Thread):
         """
         if not self.segments:
             return
-        mature_labels = collect_mature_labels(
+        mature_labels = {} if allow_historical_relabel else collect_mature_labels(
             self.segments, self.settings.sample_rate,
             self._speaker_relabel_horizon_s,
         )
