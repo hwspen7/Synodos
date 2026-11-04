@@ -498,3 +498,61 @@ regression. Synthetic regression tests validate a 2.4-second two-person
 utterance, absent/inconsistent word alignment, acoustic continuity,
 mixed voice evidence and snapshot preservation. Real speaker-turn
 accuracy and ASR completeness still require reference-labeled audio.
+
+
+## Opt-in local ASR accuracy against a verified human transcript
+
+A 75-second real two-person sample can transfer every PCM sample and
+still omit or hallucinate words. The standard
+\`tools/live_caption_ws_replay.py\` JSON deliberately does not contain
+recognition strings; \`asr_cer: null\` means **not reference-scored**.
+The ungated English \`fixed195-en-m01.wav\` from the public dialogue
+collection has **no independently verified transcript** in that
+audio-only collection. Never manufacture a reference from the ASR
+hypothesis or interpret a low segment count as accuracy.
+
+To export a **local-only** text hypothesis once, run a single loop
+after updating the checkout and restarting the backend:
+
+\`\`\`powershell
+.\\.venv\\Scripts\\python.exe tools\\live_caption_ws_replay.py --audio benchmark\\fixed195\\audio\\fixed195-en-m01.wav --loops 1 --speed 1 --output benchmark\\fixed195\\live_caption_text_audit.json --transcript-output benchmark\\fixed195\\local_hypothesis_en_m01.txt
+\`\`\`
+
+The transcript export is **explicit opt-in**, limited to new \`.txt\`
+files inside the gitignored \`benchmark/fixed195/\` directory. The
+normal JSON report, console and CI never reveal recognized words.
+It refuses to overwrite an existing private export.
+
+A human must listen to the same WAV independently, correct the entire
+spoken content including interjections and other speakers, and save
+\`benchmark/fixed195/human_reference_en_m01.txt\` as a UTF-8 file.
+Copying the hypothesis to the reference without listening yields a
+meaningless 0% edit rate. Overlapping speech may not have a unique
+linear order; if so, assess overlap manually as well.
+
+Score the already-exported ASR hypothesis *offline* with no additional
+audio replay:
+
+\`\`\`powershell
+.\\.venv\\Scripts\\python.exe -m tools.replay_transcript_score --hypothesis-text benchmark\\fixed195\\local_hypothesis_en_m01.txt --reference-text benchmark\\fixed195\\human_reference_en_m01.txt --output benchmark\\fixed195\\local_text_score_en_m01.json
+\`\`\`
+
+Alternatively, specify \`--reference-text\` directly on a new
+\`tools/live_caption_ws_replay.py --loops 1\` run, which populates
+\`asr_cer\`, \`asr_wer\` and \`reference_scoring\` in the aggregate
+JSON. Reference scoring with repeated loops is deliberately rejected.
+
+Metrics are transparent and aggregate-only: NFKC/casefold CER excludes
+punctuation/whitespace; punctuation-sensitive CER preserves punctuation
+but removes whitespace; English whitespace-token WER excludes
+punctuation. Unsegmented CJK WER is reported as \`null\` rather than an
+invented tokenization score. CER and WER are edit counts divided by
+reference length and can exceed 100%. These metrics alone do not
+measure speaker assignment, overlap attribution, word timestamps or
+a reference's independent validity.
+
+This local validation is the next core acceptance gate. Compare
+missing words/repeated words and false turn boundaries against
+actual audio before retuning acoustic thresholds. If final text
+completeness is below target, fix the confirmed-text source first;
+do not trade content for prettier or smaller subtitle segments.
