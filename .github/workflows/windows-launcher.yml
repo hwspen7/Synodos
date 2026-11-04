@@ -25,6 +25,9 @@ on:
       - 'tools/diagnose_github_actions.ps1'
       - 'tools/resolve_private_ci_path.ps1'
       - 'tests/windows/test_ci_report_path.ps1'
+      - 'tools/run_phase12_acceptance.ps1'
+      - 'tools/run_phase1a_ablation.ps1'
+      - 'tools/run_phase1b_compare.ps1'
       - '.github/workflows/windows-launcher.yml'
 
 jobs:
@@ -43,7 +46,7 @@ jobs:
             'tools/run_phase1_engineering.ps1',
             'tools/diagnose_github_actions.ps1',
             'tools/resolve_private_ci_path.ps1',
-            'tools/run_phase1_closure.ps1'
+            'tools/run_phase1_closure.ps1',
             'tools/run_phase12_acceptance.ps1',
             'tools/run_phase1a_ablation.ps1',
             'tools/run_phase1b_compare.ps1'
