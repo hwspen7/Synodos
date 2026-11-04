@@ -31,12 +31,17 @@ def resolve_model(name: str) -> str:
     if Path(name).exists():
         return name
     target = FUNASR_MODEL_MAP.get(name, name)
-    cache_root = Path(
-        os.environ.get(
-            "MODELSCOPE_CACHE",
-            Path.home() / ".cache" / "modelscope" / "hub" / "models",
-        )
-    )
+    # Avoid evaluating Path.home() when an explicit cache is configured.
+    # Some Windows service/test environments have no resolvable profile.
+    configured_cache = os.environ.get("MODELSCOPE_CACHE")
+    if configured_cache:
+        cache_root = Path(configured_cache)
+    else:
+        try:
+            cache_root = Path.home() / ".cache" / "modelscope" / "hub" / "models"
+        except RuntimeError:
+            # ModelScope/FunASR can still resolve the repository identifier.
+            return target
     local = cache_root / target
     if local.exists():
         return str(local)
