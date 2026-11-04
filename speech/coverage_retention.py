@@ -61,5 +61,7 @@ def choose_safe_drop(
             "end_ms": start_ms + b,
             "status": "voice_detected_transcript_unavailable",
         })
-        attempts.pop(key, None)
+        # Preserve the exhausted state so the same unresolved interval
+        # cannot enter an infinite retry/drop cycle on later passes.
+        attempts[key] = max_holds + 1
     return safe_drop, exhausted
