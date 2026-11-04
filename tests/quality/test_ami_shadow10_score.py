@@ -12,6 +12,7 @@ import numpy as np
 from tools.ami_shadow10_prepare import SELECTED, checksum
 from tools.ami_shadow10_score import (
     score_case, reference_union_overlap, unidentified_segments,
+    missed_speaker_time_breakdown,
 )
 
 
@@ -108,6 +109,8 @@ class AmiShadowScoreTests(unittest.TestCase):
             self.assertEqual(result["unidentified"]["count"], 2)
             self.assertEqual(result["unidentified"]["with_reference_speech"], 1)
             self.assertEqual(result["unidentified"]["outside_reference_speech"], 1)
+            self.assertEqual(result["missed_speaker_time_breakdown"]["unidentified_transcript_s"], 20.0)
+            self.assertEqual(result["missed_speaker_time_breakdown"]["total_missed_speaker_seconds"], 20.0)
             self.assertEqual(
                 result["unidentified"]["intervals"][0]["reference_speech_overlap_ms"],
                 20000,
