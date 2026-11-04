@@ -44,6 +44,64 @@ def summary():
 
 
 class LiveCaptionSegmentAuditTests(unittest.TestCase):
+    def test_existing_private_output_rejected_before_replay(self):
+        from argparse import Namespace
+        from tools.live_caption_ws_replay import preflight_private_exports
+
+        root = Path("benchmark/fixed195")
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temp:
+            existing = Path(temp) / "prior_transcript.txt"
+            existing.write_text("Prior test evidence", encoding="utf-8")
+            args = Namespace(
+                transcript_output=existing, segment_audit_output=None,
+                output=Path(temp) / "metrics.json", reference_text=None,
+            )
+            with self.assertRaisesRegex(
+                FileExistsError, "No audio has been replayed"
+            ):
+                preflight_private_exports(args)
+            self.assertEqual(
+                existing.read_text(encoding="utf-8"),
+                "Prior test evidence",
+            )
+            args.transcript_output = Path(temp) / "new_transcript.txt"
+            preflight_private_exports(args)
+
+    def test_export_preflight_detects_report_and_reference_collisions(self):
+        from argparse import Namespace
+        from tools.live_caption_ws_replay import preflight_private_exports
+
+        root = Path("benchmark/fixed195")
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temp:
+            target = Path(temp) / "audit.json"
+            args = Namespace(
+                transcript_output=None, segment_audit_output=target,
+                output=target, reference_text=None,
+            )
+            with self.assertRaisesRegex(ValueError, "must not share"):
+                preflight_private_exports(args)
+            args.output = Path(temp) / "other_metrics.json"
+            preflight_private_exports(args)
+            args.segment_audit_output = None
+            args.transcript_output = Path(temp) / "hypothesis.txt"
+            args.reference_text = args.transcript_output
+            with self.assertRaisesRegex(ValueError, "must not share"):
+                preflight_private_exports(args)
+
+    def test_export_preflight_rejects_paths_outside_ignored_directory(self):
+        from argparse import Namespace
+        from tools.live_caption_ws_replay import preflight_private_exports
+
+        with tempfile.TemporaryDirectory() as temp:
+            args = Namespace(
+                transcript_output=Path(temp) / "speech.txt",
+                segment_audit_output=None, output=None, reference_text=None,
+            )
+            with self.assertRaisesRegex(ValueError, "gitignored"):
+                preflight_private_exports(args)
+
     def test_real_replay_capture_only_records_when_explicitly_enabled(self):
         from tools.live_caption_ws_replay import capture_event, new_capture
 
