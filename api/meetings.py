@@ -14,6 +14,7 @@ from api.session_lifecycle import meeting_connection_lock, stop_and_join
 from sessions.manual_review import (
     UNSET, ReviewConflict, ReviewValidationError, apply_review,
 )
+from sessions.identity_matcher import match_enrolled_voice
 
 router = APIRouter()
 
@@ -105,6 +106,39 @@ async def get_meeting_segments(meeting_id: str) -> dict:
         None, meeting_store.list_speech_coverage_gaps, meeting_id
     )
     return {"segments": segments, "speech_coverage_gaps": gaps or []}
+
+
+@router.get("/api/meetings/{meeting_id}/segments/{segment_id}/identity-candidate")
+async def get_segment_identity_candidate(
+    meeting_id: str, segment_id: int,
+    threshold: float = 0.3, margin: float = 0.06,
+) -> dict:
+    """Propose an identity, but never auto-write a tentative candidate."""
+    if not meeting_store.valid_id(meeting_id) or segment_id < 0:
+        raise HTTPException(400, "invalid meeting/segment id")
+    state = await asyncio.to_thread(meeting_store.load_state, meeting_id)
+    if state is None:
+        raise HTTPException(404, "meeting not found")
+    segment = next(
+        (s for s in state.get("segments") or []
+         if int(s.get("id", -1)) == segment_id),
+        None,
+    )
+    if segment is None:
+        raise HTTPException(404, "segment not found")
+    summaries = await asyncio.to_thread(speaker_store.list_speakers)
+    profiles = await asyncio.to_thread(
+        speaker_store.get_for_matching, [p["id"] for p in summaries]
+    )
+    try:
+        candidate = match_enrolled_voice(
+            profiles, segment.get("emb"),
+            model_id=str(segment.get("embedding_model") or "camplus"),
+            threshold=threshold, margin=margin,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"segment_id": segment_id, "candidate": candidate}
 
 
 @router.patch("/api/meetings/{meeting_id}/segments/{segment_id}/review")
