@@ -457,6 +457,45 @@ reporting the strict gate failure. No previous benchmark is replaced.
 5. Projected speaker cue DER must remain a separately labeled metric.
    Never substitute it for canonical published-caption DER.
 
+## TS3003b first content-first replay, actual results
+
+The user's real Windows GPU replay `20261104-152102` completed cleanly,
+and reported:
+
+- 50 mechanically text-conserving display speaker splits;
+- unchanged independent acoustic DER **7.368%** under the separately
+  pinned forced-aligned RTTM;
+- canonical final caption DER **35.497%** under that same forced reference;
+- distinct *UI-projected* speaker-cue DER **32.515%**, with missed speaker
+  time increasing from **17.544% to 25.146%** and false alarms dropping
+  from **16.023% to 6.725%**. This is not a WER improvement or evidence
+  that no speaker words were lost. The best earlier canonical DER remains
+  **35.029%** from a different RecoverVadGaps replay; do not treat it as
+  a direct display-projection baseline.
+- official acoustic overlap full-speaker recall **64.286%** while
+  canonical final caption overlap full-speaker recall remained **0%**;
+- acoustic review clock **10,270ms**, of which **7,666ms** was marked
+  underrepresented by *canonical* parallel caption labels. This is
+  under-attributed speaker activity, not confirmed missing words.
+- commit receipts across 299 inference cycles: 514 verified candidates,
+  438 held, 76 first-time committed, zero duplicate skips and zero
+  invalid timestamp rejections. Held events recur across cycles and
+  cannot be interpreted as 438 lost utterances. No AMI WER/CER exists
+  in this replay.
+
+A subsequent diagnostic correction now exports both
+`content_overlap_audit.overlap_clock_underrepresented_ms` (canonical
+caption activity) and
+`content_overlap_audit.actual_ui_display_projection.overlap_clock_underrepresented_ms`
+(actual speaker display cues). The projection **replaces** its canonical
+parent in this review-only calculation to prevent double-counting
+voices. Neither definition counts missing *words*.
+
+The valid next acceptance requires held-out multilingual transcription
+references to evaluate WER/CER and missed words, plus source-separated
+overlap speech samples with independent word annotations. Do not
+enable `-ContentFirst` by default until these pass.
+
 ## Rollback
 
 ```powershell
