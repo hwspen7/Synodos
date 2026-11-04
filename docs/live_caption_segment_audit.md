@@ -13,12 +13,16 @@ real-time playback without automatic translation.
 
 PowerShell (use a fresh filename for each run):
 
-    python -m tools.live_caption_ws_replay --audio benchmark/fixed195/audio/fixed195-en-m01.wav --loops 1 --speed 1.0 --output benchmark/fixed195/live_caption_en_m01_metrics.json --transcript-output benchmark/fixed195/local_hypothesis_en_m01.txt --segment-audit-output benchmark/fixed195/local_segment_audit_en_m01.json
+    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    python -m tools.live_caption_ws_replay --audio benchmark/fixed195/audio/fixed195-en-m01.wav --loops 1 --speed 1.0 --output "benchmark/fixed195/live_caption_metrics_$stamp.json" --transcript-output "benchmark/fixed195/local_hypothesis_$stamp.txt" --segment-audit-output "benchmark/fixed195/local_segment_audit_$stamp.json"
 
 These explicitly enabled exports contain spoken words and potentially
 identifying names. They must stay local. The whole benchmark/fixed195/
 directory is gitignored. Exporters refuse overwriting existing audit
-or transcript files. Without opt-in switches, the aggregate report
+or transcript files. Replay checks for occupied export destinations BEFORE
+opening the audio stream, so an existing file cannot waste a 75-second
+replay. Exclusive-create mode also protects against concurrent file races.
+Without opt-in switches, the aggregate report
 remains free of speech text.
 
 The audit contains:
