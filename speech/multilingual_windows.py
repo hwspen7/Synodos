@@ -6,10 +6,14 @@ may still make incorrect language decisions, particularly for short speech.
 from __future__ import annotations
 
 import math
+import os
 from collections.abc import Callable, Mapping, Iterable
 from speech.audio_windows import local_speech_regions, speech_windows
 from speech.contracts import Recognition, Utterance, Word
-from speech.quality_guard import verify_utterances
+from speech.quality_guard import verify_utterances, speech_intervals
+from speech.asr_stage_trace import (
+    merged_intervals, model_intervals, utterance_intervals,
+)
 
 
 def _probability(value: object) -> float | None:
@@ -43,11 +47,21 @@ def recognize_windows(
         raise RuntimeError("Too many speech windows; use a shorter ASR processing interval")
     pieces: list[Utterance] = []
     confirmed_languages: set[str] = set()
+    trace_enabled = os.getenv("MEETING_ASR_TRACE_STAGES", "0").lower() in (
+        "1", "true", "yes",
+    )
+    raw_model_intervals = []
     for start, end in windows:
         local_regions = local_speech_regions(regions, start, end)
         if not local_regions:
             continue
         output, info = transcribe(samples[start:end], **kwargs)
+        if trace_enabled:
+            output = list(output)
+            raw_model_intervals.extend(model_intervals(
+                output, duration_ms=round(len(samples) * 1000 / sample_rate),
+                shift_ms=round(start * 1000 / sample_rate),
+            ))
         language = str(getattr(info, "language", "und") or "und").lower()
         probability = _probability(getattr(info, "language_probability", None))
         if probability is not None and probability < unknown_threshold:
@@ -66,4 +80,21 @@ def recognize_windows(
                                     language_confidence=probability))
     pieces.sort(key=lambda item: (item.start_ms, item.end_ms))
     label = next(iter(confirmed_languages)) if len(confirmed_languages) == 1 else "mul" if confirmed_languages else "und"
-    return Recognition(tuple(pieces), label, engine="whisper", speech_detected=bool(windows))
+    trace = None
+    if trace_enabled:
+        duration_ms = round(len(samples) * 1000 / sample_rate)
+        trace = {
+            "vad_intervals_ms": [list(pair) for pair in speech_intervals(
+                regions, duration_ms, sample_rate,
+            )],
+            "raw_model_intervals_ms": merged_intervals(
+                raw_model_intervals, duration_ms=duration_ms,
+            ),
+            "verified_intervals_ms": utterance_intervals(
+                pieces, duration_ms=duration_ms,
+            ),
+            "speech_windows": len(windows),
+        }
+    return Recognition(tuple(pieces), label, engine="whisper",
+                       speech_detected=bool(windows),
+                       recovery_diagnostics={"stage_trace": trace} if trace else None)
