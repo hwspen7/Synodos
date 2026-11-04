@@ -102,6 +102,72 @@ def score_reference_partition(
     }
 
 
+def provisional_isolated_members(
+    embeddings: np.ndarray, assignments: np.ndarray, *,
+    core_minimum_cosine: float = 0.60,
+    isolation_margin: float = 0.15,
+) -> tuple[np.ndarray, list[dict]]:
+    """Offline-only, low-frequency outlier hypotheses inside confirmed groups.
+
+    A candidate must be dissimilar to EVERY one of at least three other
+    mutually compatible group members. This is not speaker enrollment,
+    calibrated novelty detection, or a way to infer true speaker count.
+    One anomalous/overlapped audio window can also trigger this rule.
+    """
+    x = np.asarray(embeddings, dtype=np.float32)
+    ids = np.asarray(assignments, dtype=np.int32).reshape(-1)
+    if x.ndim != 2 or len(x) != len(ids) or not 4 <= len(x) <= 256:
+        raise ValueError("Expected 4..256 [N,D] embeddings and [N] labels")
+    if (not np.isfinite(x).all() or not 0 < core_minimum_cosine < 1
+            or not 0 < isolation_margin < 1):
+        raise ValueError("Invalid outlier inputs")
+    norms = np.linalg.norm(x, axis=1)
+    if np.any(norms <= 1e-7) or not np.isfinite(norms).all():
+        raise ValueError("Invalid embedding norms")
+    vectors = x / norms[:, None]
+    hypotheses = []
+    provisional = ids.copy()
+    next_id = int(ids.max()) + 1
+    for raw in sorted(set(map(int, ids))):
+        group = np.flatnonzero(ids == raw)
+        if len(group) < 4:
+            continue
+        best = None
+        for candidate in group:
+            core = group[group != candidate]
+            # Require a coherent three-or-more-sample core, instead of
+            # arbitrarily treating a noisy two-sample pair as a person.
+            matrix = vectors[core] @ vectors[core].T
+            core_cosines = matrix[np.triu_indices(len(core), k=1)]
+            minimum_core = float(np.min(core_cosines))
+            if minimum_core < core_minimum_cosine:
+                continue
+            max_cross = float(np.max(vectors[core] @ vectors[candidate]))
+            margin = minimum_core - max_cross
+            if margin < isolation_margin:
+                continue
+            if best is None or margin > best[0]:
+                best = (margin, int(candidate), minimum_core, max_cross,
+                        len(core))
+        if best is None:
+            continue
+        margin, candidate, core_sim, max_cross, core_size = best
+        # Hypothetical labels may increase the group count, but never
+        # correspond to published IDs or retained verification templates.
+        provisional[candidate] = next_id
+        next_id += 1
+        hypotheses.append({
+            "sample_index": candidate,
+            "source_cluster": raw,
+            "core_samples": core_size,
+            "core_minimum_cosine": round(core_sim, 5),
+            "outlier_maximum_core_cosine": round(max_cross, 5),
+            "cosine_gap": round(margin, 5),
+            "classification": "unconfirmed_isolated_voiceprint",
+        })
+    return provisional, hypotheses
+
+
 def evaluate_oracle_clusters(
     extracted: dict[str, list[np.ndarray]],
 ) -> dict:
@@ -162,6 +228,25 @@ def evaluate_oracle_clusters(
             "available": True,
             "selection": candidate.details,
             "score": score_reference_partition(reference, candidate.labels),
+        })
+        # Additional non-production hypothesis: isolated singleton samples
+        # may be separate people, or may simply be acoustic artifacts.
+        provisional, flagged = provisional_isolated_members(
+            matrix, candidate.labels,
+        )
+        methods.append({
+            "method": "spherical_provisional_outliers",
+            "available": True,
+            "provisional_isolated_count": len(flagged),
+            "unconfirmed_samples": flagged,
+            "score": score_reference_partition(reference, provisional),
+            "warning": (
+                "Experimental reference-only split of an unusually "
+                "isolated single embedding. Do not assign this new "
+                "cluster a published speaker ID. A corrupted or mixed "
+                "voiceprint is indistinguishable from a genuinely new "
+                "person without additional independent audio evidence."
+            ),
         })
     else:
         methods.append({
