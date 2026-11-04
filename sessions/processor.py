@@ -56,6 +56,7 @@ from sessions.speaker_fallback import (
 from sessions.speaker_stability import (
     collect_mature_labels, restore_mature_labels, stabilized_cluster_ids,
     summarize_cluster_fragmentation, diagnose_cluster_merge_thresholds,
+    diagnose_fresh_cluster_candidates,
     anonymous_speaker_timeline,
 )
 
@@ -156,6 +157,8 @@ class SessionProcessor(threading.Thread):
         self._ecapa_shadow = None
         self._ecapa_shadow_audio: dict[int, np.ndarray] = {}
         self._ecapa_shadow_sample_count = 0
+        self._ecapa_shadow_last_sample = -10**12
+        self._ecapa_shadow_seen_labels: set[int] = set()
         self._acoustic_turn_splits = 0
         self._acoustic_timeline = AcousticTimeline(sr)
         self._acoustic_tasks: dict[int, Future] = {}
@@ -288,6 +291,12 @@ class SessionProcessor(threading.Thread):
                     )
                     summary["posthoc_merge_sweep"] = (
                         diagnose_cluster_merge_thresholds(self.segments)
+                    )
+                    summary["fresh_cluster_sweep"] = (
+                        diagnose_fresh_cluster_candidates(self.segments)
+                    )
+                    summary["clustering_strategy"] = os.getenv(
+                        "MEETING_SPEAKER_CLUSTER_STRATEGY", "bootstrap"
                     )
                     # Review speaker-turn alignment against the original
                     # recording without transmitting any recognized text.
@@ -1065,9 +1074,9 @@ class SessionProcessor(threading.Thread):
             sid = segment["id"]
             if sid not in self._ecapa_shadow_audio:
                 continue
-            if self._ecapa_shadow_sample_count >= 64:
-                self._ecapa_shadow_audio.clear()
-                break
+            # Rate-limit globally by meeting time, not a lifetime quota:
+            # the final hour should receive samples as well as the first.
+            # First observed voice for each CAM++ label is always eligible.
             label = segment.get("speaker_id")
             if (type(label) is not int or label <= 0
                     or segment.get("speaker_uncertain")
@@ -1075,7 +1084,13 @@ class SessionProcessor(threading.Thread):
                     or segment.get("emb") is None):
                 continue
             raw_audio = self._ecapa_shadow_audio.pop(sid)
-            self._ecapa_shadow_sample_count += 1
+            if (label in self._ecapa_shadow_seen_labels
+                    and int(segment["start_sample"]) - self._ecapa_shadow_last_sample
+                        < self.settings.sample_rate * 10):
+                note = getattr(shadow, "note_rate_limited", None)
+                if callable(note):
+                    note()
+                continue
             try:
                 from sessions.speaker_shadow import select_shadow_window
                 audio = select_shadow_window(raw_audio)
@@ -1084,7 +1099,13 @@ class SessionProcessor(threading.Thread):
                     if callable(note):
                         note()
                     continue
-                shadow.submit(label, audio)
+                if shadow.submit(label, audio):
+                    self._ecapa_shadow_last_sample = max(
+                        self._ecapa_shadow_last_sample,
+                        int(segment["start_sample"]),
+                    )
+                    self._ecapa_shadow_seen_labels.add(label)
+                    self._ecapa_shadow_sample_count += 1
             except Exception:
                 logger.warning("Optional ECAPA shadow enqueue failed; CAM++ unchanged")
 
