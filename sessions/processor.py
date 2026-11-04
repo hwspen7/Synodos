@@ -1478,8 +1478,20 @@ class SessionProcessor(threading.Thread):
                 item["speaker_name"] = f"Speaker {saved}"
                 item["speaker_diarization_source"] = "nemotron3"
                 self._independent_published[int(item["id"])] = saved
+            elif (source.get("speaker_diarization_source") == "nemotron3_uncertain"
+                  and int(source["end_sample"]) <= origin):
+                # Old resumed captions retain their saved honest unknown,
+                # even if a new session reclusters legacy CAM++ embeddings.
+                item["speaker_id"] = -1
+                item["speaker_name"] = "Unidentified Speaker"
+                item["speaker_diarization_source"] = "nemotron3_uncertain"
+                self._independent_published[int(item["id"])] = -1
         if independent is not None:
             activity = independent.activity_snapshot()
+            completed_check = getattr(independent, "is_complete", None)
+            independent_complete = (
+                bool(completed_check()) if callable(completed_check) else False
+            )
             if activity is not None and len(activity):
                 for item, source in zip(items, ordered):
                     if (source.get("speaker_override")
@@ -1516,11 +1528,12 @@ class SessionProcessor(threading.Thread):
                         item["speaker_status"] = "acoustic_primary"
                         item["speaker_diarization_source"] = "nemotron3"
                         self._independent_published[int(item["id"])] = published
-                    elif decision.status == "acoustically_ambiguous":
-                        # A complete independent acoustic window is present,
-                        # but its identities are ambiguous. Never mix an
-                        # unrelated CAM++ anonymous label into Nemotron's
-                        # speaker namespace: that falsely creates extra people.
+                    elif (decision.status == "acoustically_ambiguous"
+                          or independent_complete):
+                        # Complete-window ambiguity, or a completed model
+                        # that still lacks local evidence, must never import
+                        # an unrelated CAM++ anonymous speaker ID. During
+                        # streaming, partial model coverage remains provisional.
                         # This is an honest unknown, not a guessed speaker.
                         item["speaker_id"] = -1
                         item["speaker_name"] = "Unidentified Speaker"
