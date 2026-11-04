@@ -81,6 +81,36 @@ class Phase1LanguagePolicyTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValidationError):
                 MeetingSettingsPayload(**{key: language})
 
+    def test_intelligence_api_rejects_out_of_scope_new_translation(self):
+        import asyncio
+        from unittest.mock import patch
+        from fastapi import HTTPException
+        from api.intelligence import submit_job, JobRequest
+
+        for language in ("pt", "bn", "ko"):
+            with self.subTest(language=language), patch(
+                "api.intelligence._enabled",
+            ), self.assertRaises(HTTPException) as caught:
+                asyncio.run(submit_job(JobRequest(
+                    kind="live_translate", meeting_id="sample",
+                    payload={"target": language, "segments": []},
+                )))
+            self.assertEqual(caught.exception.status_code, 400)
+
+    def test_intelligence_worker_rejects_bypassed_out_of_scope_target(self):
+        from unittest.mock import patch
+        from intelligence.worker import process
+
+        for kind in ("translate", "live_translate"):
+            with self.subTest(kind=kind), patch(
+                "intelligence.worker._context",
+                return_value=(1, [{"id": 1, "text": "Hello"}]),
+            ), self.assertRaisesRegex(ValueError, "not enabled"):
+                process({
+                    "kind": kind, "meeting_id": "sample",
+                    "payload": {"target": "pt"},
+                }, object())
+
     def test_invalid_backend_environment_fails_before_inference(self):
         SpeechSettings(language="auto", translate_to="").validate()
         for field, code in (("language", "pt"), ("translate_to", "bn")):
