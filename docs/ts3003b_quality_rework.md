@@ -110,8 +110,8 @@ mistaken for an algorithm regression). In the repository-root PowerShell:
 
 ```powershell
 cd E:\Meeting-Fixed10-Test
-git fetch origin quality/ts3003b-audio-first-20261104
-git switch --track -c quality/ts3003b-audio-first-20261104 origin/quality/ts3003b-audio-first-20261104
+git fetch origin quality/ts3003b-integrated-20261104
+git switch --track -c quality/ts3003b-integrated-20261104 origin/quality/ts3003b-integrated-20261104
 
 $PY = "E:\Meeting-Fixed10-Test\.venv\Scripts\python.exe"
 & $PY -m unittest tests.quality.test_audio_first_quality_experiments -v
@@ -121,6 +121,11 @@ $PY = "E:\Meeting-Fixed10-Test\.venv\Scripts\python.exe"
 
 If the local quality branch already exists, use git switch without -c;
 never use reset --hard, clean -fd or cherry-pick over existing work.
+
+The experiment runner explicitly disables the legacy MEETING_ASR_QUALITY_CANDIDATE
+shortcut in its control profile so that the separate recovery and VAD
+variables are actually isolated. The quality branch also retains the
+latest repair-base implementation of that shortcut for other uses.
 
 The experiment script starts and stops its own backend on localhost port
 18080. No uv installation is required. It checks the frozen
