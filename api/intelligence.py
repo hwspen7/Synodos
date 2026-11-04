@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from intelligence.config import load_config
 from intelligence.contracts import ALLOWED_JOBS, ALLOWED_MODES
 from intelligence import store, retrieval, media
+from speech.supported_languages import translation_target
 
 router=APIRouter(prefix='/api/intelligence',tags=['intelligence'])
 
@@ -70,6 +71,14 @@ async def submit_job(payload:JobRequest):
     _enabled()
     if payload.kind not in ALLOWED_JOBS:
         raise HTTPException(400,'Invalid task kind')
+    if payload.kind in ('live_translate', 'translate'):
+        desired = payload.payload.get('target')
+        if not isinstance(desired, str) or not desired.strip():
+            raise HTTPException(400, 'A supported translation target is required')
+        try:
+            payload.payload['target'] = translation_target(desired)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
     if payload.meeting_id is None and payload.kind not in ('ask','index_media','analyze_media'):
         raise HTTPException(400,'Meeting ID required')
     mid=_meeting_id(payload.meeting_id) if payload.meeting_id else None
