@@ -575,7 +575,7 @@ onBeforeUnmount(() => { if (pollId) clearInterval(pollId) })
         <div class="content-card translation-card">
           <div class="translation-toolbar"><label class="switch-label"><input v-model="translationEnabled" type="checkbox" /> <span>Enable translation</span></label>
             <label class="select-label">Target language <select v-model="language" class="ui-select" aria-label="Translation language">
-              <option v-for="[code, name] in PHASE1_LANGUAGES" :key="code" :value="code">{{ name }}</option>
+              <option v-for="entry in PHASE1_LANGUAGES" :key="entry[0]" :value="entry[0]">{{ entry[1] }}</option>
             </select></label>
             <button type="button" class="ui-btn ui-btn-solid" :disabled="!translationEnabled || !!busyKind || !translationRows.length" @click="queueTranslations">Translate new segments</button>
           </div>
