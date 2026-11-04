@@ -60,6 +60,7 @@ E-drive by the complete runner, if they were not already placed on E.
 | Component | New entry point |
 | --- | --- |
 | Five Phase 1A ablations | `tools/run_phase1a_ablation.ps1` |
+| Original-protocol DER and human-text paired ablation score | `tools/phase1a_compare.py` |
 | pyannote / DiariZen adapters | `speech/phase1b_diarization_models.py` |
 | One independent frozen meeting score | `tools/phase1b_diarization_benchmark.py` |
 | Three-model 10-meeting paired score | `tools/run_phase1b_compare.ps1` and `tools/phase1b_compare.py` |
@@ -199,6 +200,15 @@ powershell -NoProfile -ExecutionPolicy Bypass `
   -Phase2Dev "benchmark/fixed195/phase2_dev.json" `
   -Phase2Holdout "benchmark/fixed195/phase2_holdout.json"
 ```
+
+The integrated launcher now assigns a single immutable run identifier
+(also configurable with `-RunId`), checks all E-drive data and optional
+Python environments before expensive inference, and produces
+`benchmark/fixed195/phase12_release_decision_<run-id>.json` with eight
+same-run evidence gates. It does not select or reuse old successful JSON
+files to paper over missing runs. A quality failure may still leave a
+complete report with `next_stage=phase1_2_blocked`, and the launcher
+will correctly exit nonzero.
 
 The paths above are **examples**, not promised existing files. A
 missing model or missing human reference is a real blocked prerequisite,
