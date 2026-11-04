@@ -51,6 +51,7 @@ from speech.quality_profile import (
 from speech.nemotron_activity import (
     choose_caption_speaker, choose_caption_speaker_from_turns,
 )
+from speech.caption_acoustic_alignment import caption_support_summary
 from speech.asr_stage_trace import shifted
 from speech.contracts import Utterance
 from phase07.recovery import autosave_seconds
@@ -150,6 +151,7 @@ class SessionProcessor(threading.Thread):
         self.independent_diarization = None
         self._independent_published: dict[int, int] = {}
         self._independent_scores: dict[int, dict] = {}
+        self._independent_support: dict[int, dict] = {}
         self._independent_pcm_origin_samples = 0
         self._independent_id_offset = 0
         self._transcript_version = 0
@@ -498,6 +500,21 @@ class SessionProcessor(threading.Thread):
                     "speaker_activity_status": self._independent_scores.get(
                         int(s["id"]), {},
                     ).get("speaker_activity_status", s.get("speaker_activity_status")),
+                    "speaker_activity_intervals_ms": self._independent_support.get(
+                        int(s["id"]), {},
+                    ).get("speaker_activity_intervals_ms", s.get(
+                        "speaker_activity_intervals_ms", [],
+                    )),
+                    "speaker_activity_fraction": self._independent_support.get(
+                        int(s["id"]), {},
+                    ).get("speaker_activity_fraction", s.get(
+                        "speaker_activity_fraction",
+                    )),
+                    "speaker_activity_time_source": self._independent_support.get(
+                        int(s["id"]), {},
+                    ).get("speaker_activity_time_source", s.get(
+                        "speaker_activity_time_source",
+                    )),
                     "speaker_uncertain": bool(s.get("speaker_uncertain", False)),
                     "emb": s["emb"],  # Preserve behavior.
                     "language": s.get("language", "und"),
@@ -554,6 +571,13 @@ class SessionProcessor(threading.Thread):
                     "speaker_activity_score": item.get("speaker_activity_score"),
                     "speaker_activity_margin": item.get("speaker_activity_margin"),
                     "speaker_activity_status": item.get("speaker_activity_status"),
+                    "speaker_activity_intervals_ms": item.get(
+                        "speaker_activity_intervals_ms", [],
+                    ),
+                    "speaker_activity_fraction": item.get("speaker_activity_fraction"),
+                    "speaker_activity_time_source": item.get(
+                        "speaker_activity_time_source",
+                    ),
                     "speaker_uncertain": bool(item.get("speaker_uncertain", False)),
                     "text": item.get("text", "") or "",
                     "language": item.get("language", "und"),
@@ -1477,6 +1501,7 @@ class SessionProcessor(threading.Thread):
         independent = getattr(self, "independent_diarization", None)
         self._independent_published = {}
         self._independent_scores = {}
+        self._independent_support = {}
         origin = getattr(self, "_independent_pcm_origin_samples", 0)
         for item, source in zip(items, ordered):
             if source.get("speaker_override"):
@@ -1550,6 +1575,22 @@ class SessionProcessor(threading.Thread):
                         item["speaker_name"] = f"Speaker {published}"
                         item["speaker_status"] = "acoustic_primary"
                         item["speaker_diarization_source"] = "nemotron3"
+                        if official_turns is not None:
+                            support = caption_support_summary(
+                                official_turns, start_ms, end_ms,
+                                decision.speaker_id,
+                            )
+                            # Return absolute meeting time to consumers,
+                            # even when the AOSC state began after reconnect.
+                            offset_ms = round(
+                                origin * 1000 / self.settings.sample_rate
+                            )
+                            support["speaker_activity_intervals_ms"] = [
+                                [a + offset_ms, b + offset_ms]
+                                for a, b in support["speaker_activity_intervals_ms"]
+                            ]
+                            item.update(support)
+                            self._independent_support[int(item["id"])] = support
                         self._independent_published[int(item["id"])] = published
                     elif (decision.status == "acoustically_ambiguous"
                           or independent_complete):
@@ -1578,7 +1619,10 @@ class SessionProcessor(threading.Thread):
              i.get("speaker_status"), i.get("speaker_similarity"),
              i.get("speaker_margin"), i.get("speaker_evidence_count"),
              i.get("speaker_diarization_source"), i.get("speaker_activity_score"),
-             i.get("speaker_activity_status"))
+             i.get("speaker_activity_status"),
+             tuple(tuple(pair) for pair in i.get(
+                 "speaker_activity_intervals_ms", [],
+             )))
             for i in items
         )
         if fingerprint == self._last_fingerprint:
