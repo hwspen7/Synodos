@@ -36,6 +36,8 @@ class SpeechSettings:
     def validate(self) -> "SpeechSettings":
         if self.engine not in SUPPORTED_ENGINES:
             raise ValueError("MEETING_ASR_ENGINE must be legacy, whisper, or qwen3")
+        spoken_language(self.language)
+        translation_target(self.translate_to)
         if not 0.5 <= self.preview_interval_s <= 30:
             raise ValueError("MEETING_PREVIEW_INTERVAL_S must be between 0.5 and 30")
         if not 0.2 <= self.confirmation_delay_s <= 15:
