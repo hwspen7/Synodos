@@ -83,6 +83,7 @@ def verify_utterances(
     *,
     sample_rate: int = 16000,
     preserve_disputed_text: bool = False,
+    prefer_word_bounds: bool = False,
 ) -> tuple[Utterance, ...]:
     """Reject unsupported chunks and omit words positioned in nonspeech areas.
 
@@ -156,9 +157,15 @@ def verify_utterances(
             if not raw:
                 continue
             run_start, run_end = run[0].start_ms, run[-1].end_ms
-            # The original segment may include a brief lead-in. Use word limits
-            # when trimming, otherwise retain its already-validated boundaries.
-            a, b = (start, end) if all_accepted else (run_start, run_end)
+            # The legacy policy retains the original segment bounds, even
+            # when all words were accepted. In the opt-in, word-aligned
+            # caption policy, trim only to the first/last verified word:
+            # no transcript text or intermediate word boundary is changed.
+            a, b = (
+                (run_start, run_end)
+                if prefer_word_bounds or not all_accepted
+                else (start, end)
+            )
             if b > a:
                 accepted.append(Utterance(raw, a, b, detected_language,
                                           tuple(run), "word"))
