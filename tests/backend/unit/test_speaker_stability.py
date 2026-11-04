@@ -14,12 +14,46 @@ from speech.diarization import SpeakerCentroidTracker
 from sessions.processor import SessionProcessor
 from sessions.speaker_stability import (
     collect_mature_labels, restore_mature_labels, stabilized_cluster_ids,
-    summarize_cluster_fragmentation,
+    summarize_cluster_fragmentation, diagnose_cluster_merge_thresholds,
 )
 from speech.config import SpeechSettings
 
 
 class StabilityUnitContracts(unittest.TestCase):
+    def test_posthoc_merge_sensitivity_separates_similar_cluster_pairs(self):
+        records = [
+            {"cluster": 0, "emb": np.array([1.0, 0.0])},
+            {"cluster": 1, "emb": np.array([0.7, 0.714])},
+            {"cluster": 2, "emb": np.array([-1.0, 0.0])},
+            {"cluster": 3, "emb": np.array([-0.7, -0.714])},
+        ]
+        result = diagnose_cluster_merge_thresholds(
+            records, (0.65, 0.78, 0.90))
+        self.assertTrue(result["sweep_available"])
+        self.assertEqual(result["starting_raw_cluster_count"], 4)
+        self.assertEqual(
+            [row["posthoc_cluster_count"]
+             for row in result["candidate_merges"]], [2, 4, 4])
+        self.assertNotIn("emb", str(result))
+
+    def test_posthoc_merge_sweep_skips_unusable_embeddings(self):
+        self.assertFalse(diagnose_cluster_merge_thresholds(
+            [{"cluster": 2, "emb": None}]
+        )["sweep_available"])
+        with self.assertRaises(ValueError):
+            diagnose_cluster_merge_thresholds([], (0.0,))
+        result = diagnose_cluster_merge_thresholds([
+            {"cluster": 0, "emb": [1.0, 0.0]},
+            {"cluster": 1, "emb": [float("nan"), 1.0]},
+            {"cluster": 2, "emb": [0.0, 1.0, 0.0]},
+        ])
+        self.assertTrue(result["sweep_available"])
+        self.assertEqual(result["starting_raw_cluster_count"], 1)
+        self.assertTrue(all(
+            row["posthoc_cluster_count"] == 1
+            for row in result["candidate_merges"]
+        ))
+
     def test_final_raw_clusters_explain_frozen_label_fragmentation(self):
         # Two raw acoustic clusters but six frozen display labels
         # isolates identity alias mapping from an acoustic split.
