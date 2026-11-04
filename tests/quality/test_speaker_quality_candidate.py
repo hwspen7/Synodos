@@ -26,6 +26,34 @@ class SpeakerCandidateTests(unittest.TestCase):
         with patch.dict(os.environ, {"MEETING_SPEAKER_QUALITY_CANDIDATE": "1"}):
             self.assertTrue(speaker_candidate_enabled())
 
+    def test_model_resolution_has_safe_fallback_without_windows_home(self):
+        from core.config import FUNASR_MODEL_MAP, resolve_model
+
+        with patch.dict(os.environ, {}, clear=True), patch(
+            "core.config.Path.home",
+            side_effect=RuntimeError("Could not determine home directory."),
+        ):
+            self.assertEqual(
+                resolve_model("paraformer-zh"),
+                FUNASR_MODEL_MAP["paraformer-zh"],
+            )
+            settings = Settings()
+            self.assertEqual(settings.asr_model, FUNASR_MODEL_MAP["paraformer-zh"])
+
+    def test_explicit_modelscope_cache_does_not_call_windows_home(self):
+        from core.config import FUNASR_MODEL_MAP, resolve_model
+
+        with patch.dict(os.environ, {
+            "MODELSCOPE_CACHE": "local-model-cache",
+        }, clear=True), patch(
+            "core.config.Path.home",
+            side_effect=AssertionError("Path.home must not be called"),
+        ):
+            self.assertEqual(
+                resolve_model("paraformer-zh"),
+                FUNASR_MODEL_MAP["paraformer-zh"],
+            )
+
     def test_probe_floor_changes_only_for_speaker_candidate(self):
         # This unit test exercises speaker probe policy, not ModelScope
         # discovery. Explicit model IDs avoid Path.home() when the test
