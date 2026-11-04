@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import copy
+import json
+from pathlib import Path
+import tempfile
 import unittest
 
 from tools.replay_transcript_score import (
@@ -141,6 +144,63 @@ class TextAcceptanceTests(unittest.TestCase):
                     replay, expected_audio_sha256=AUDIO,
                     expected_reference_sha256=REFERENCE,
                 )
+
+    def test_meeting_save_reload_export_keeps_one_canonical_caption(self):
+        from storage.meetings import MeetingStore
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = MeetingStore(Path(directory))
+            record = {
+                "id": 7, "start_sample": 0, "end_sample": 16000,
+                "text": "Hello there, yes.",
+                "cluster": 0, "speaker_id": 1,
+                "speaker_name": "Speaker 1",
+                "words": [
+                    {"text": "Hello", "start_ms": 0, "end_ms": 230},
+                    {"text": " there,", "start_ms": 240, "end_ms": 480},
+                    {"text": " yes.", "start_ms": 600, "end_ms": 940},
+                ],
+                "caption_cues": [
+                    {"speaker_id": 1, "speaker_name": "Speaker 1",
+                     "start_ms": 0, "end_ms": 480,
+                     "text": "Hello there,", "word_count": 2},
+                    {"speaker_id": 2, "speaker_name": "Speaker 2",
+                     "start_ms": 600, "end_ms": 940,
+                     "text": " yes.", "word_count": 1},
+                ],
+                "caption_projection_status": "split_verified",
+            }
+            store.save_state({
+                "id": "phase1_integrity_case",
+                "title": "Phase 1 regression",
+                "sample_rate": 16000,
+                "segments": [record],
+                "speaker_map": {},
+            })
+            restored = store.load_state("phase1_integrity_case")
+            self.assertEqual(len(restored["segments"]), 1)
+            self.assertEqual(restored["segments"][0]["text"], record["text"])
+            safe_rows = store.list_segments("phase1_integrity_case")
+            self.assertEqual(len(safe_rows), 1)
+            self.assertEqual(safe_rows[0]["text"], record["text"])
+            self.assertEqual(
+                "".join(c["text"] for c in safe_rows[0]["caption_cues"]),
+                record["text"],
+            )
+            exported = json.loads(store.export(
+                "phase1_integrity_case", fmt="json",
+            ))
+            self.assertEqual(
+                len(exported["transcript"]["segments"]), 1,
+            )
+            self.assertEqual(
+                exported["transcript"]["segments"][0]["text"],
+                record["text"],
+            )
+            self.assertEqual(
+                exported["transcript"]["paragraphs"][0]["text"],
+                record["text"],
+            )
 
     def test_incomplete_pcm_or_missing_reference_score_fails(self):
         for modification in (
