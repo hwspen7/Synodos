@@ -215,6 +215,22 @@ class StabilityUnitContracts(unittest.TestCase):
         self.assertEqual(
             [r["cluster"] for r in records], [3, 8, 3, -3, -3])
 
+    def test_anchor_mode_skips_spectral_backend_for_one_anchor(self):
+        sr = 16000
+        records = [
+            {"id": 1, "start_sample": 0, "end_sample": 2 * sr,
+             "emb": np.array([1., 0.]), "speaker_uncertain": False},
+            {"id": 2, "start_sample": 2 * sr, "end_sample": 2 * sr + 3200,
+             "emb": np.array([0.99, 0.01]), "speaker_uncertain": False},
+        ]
+        def no_singleton_eigensolver(_):
+            raise AssertionError("Cannot cluster a singleton anchor")
+        outcome = assign_acoustic_anchor_clusters(
+            records, [0, 1], no_singleton_eigensolver, sr)
+        self.assertEqual(outcome["raw_clusters"], 1)
+        self.assertEqual(outcome["short_assigned"], 1)
+        self.assertEqual([r["cluster"] for r in records], [0, 0])
+
     def test_anchor_mode_does_not_force_ids_without_long_evidence(self):
         records = [
             {"id": 1, "start_sample": 0, "end_sample": 3000,
