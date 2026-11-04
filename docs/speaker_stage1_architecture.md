@@ -397,3 +397,88 @@ meeting and inspect the aggregate-only shadow diagnostics and resource
 usage. Compare CAM++ transcript stability against the same baseline
 with shadow disabled. No accuracy improvement is claimed by these
 contract tests.
+
+
+## AMI Shadow10: ten authentic, four-minute multi-speaker meetings
+
+Ten specific real meeting audio excerpts were selected from the public
+[AMI Meeting Corpus](https://groups.inf.ed.ac.uk/ami/corpus/), licensed
+under CC BY 4.0. Each has multiple substantial speaker turns in the
+human-annotation-derived RTTM reference. They use a mix of natural and
+scenario-based AMI meeting sources, with different voice sets across four
+session groups. All are 240 seconds and preserve overlap, silence and
+normal conversation dynamics.
+
+| Meeting | Crop in original meeting | Duration |
+| --- | --- | --- |
+| EN2002a | 30:30-34:30 | 4:00 |
+| EN2002b | 05:00-09:00 | 4:00 |
+| EN2002d | 19:45-23:45 | 4:00 |
+| ES2004a | 09:15-13:15 | 4:00 |
+| ES2004c | 20:45-24:45 | 4:00 |
+| ES2004d | 23:15-27:15 | 4:00 |
+| IS1009b | 14:15-18:15 | 4:00 |
+| IS1009d | 09:30-13:30 | 4:00 |
+| TS3003b | 25:00-29:00 | 4:00 |
+| TS3003c | 24:00-28:00 | 4:00 |
+
+The reference is sourced from the **only_words test RTTM** files in
+pyannote/AMI-diarization-setup pinned to Git commit
+`67c2d539286e89f68952d5dcf83912bd9f01dfae`. These RTTMs are
+derived from the AMI manual annotations. They are not model outputs.
+Only-word annotations do not necessarily include non-lexical vocal sounds.
+The selected windows were screened for >=2 speakers, each with >=25 s
+of annotated speech and at least 8 speaking turns. The preparation
+script rechecks these conditions. Audible source quality and alignment
+must still be confirmed locally. These references are suitable for
+diarization scoring after a paired CAM++ / Nemotron replay, not for
+pretending that the shadow agreement itself measures identity accuracy.
+
+Audio source: AMI official HeadsetAudio mirror, with the
+FluidInference/ami-corpus-mirror `sdm/` copy as a fallback. Only original
+full-meeting WAV files are downloaded; the resulting exact 240 s crops
+are saved as **16 kHz mono PCM16**. Source and cropped WAV SHA256,
+reference SHA256, source URL and relative reference turns are recorded
+in a local gitignored manifest. No resynthesized dialogues.
+
+### Reproducible E-drive preparation
+
+    cd E:\Meeting-Fixed10-Test
+    git pull --ff-only origin feature/multilingual-fixed10-ui-refresh
+    python -m unittest tests.quality.test_ami_shadow10_prepare -v
+    python -m tools.ami_shadow10_prepare --case-id EN2002b
+
+This creates one 240 s pilot clip at
+`benchmark/fixed195/ami_shadow10/audio/ami-EN2002b-300-540.wav`.
+After listening to confirm quality, fetch and prepare the remaining nine:
+
+    python -m tools.ami_shadow10_prepare
+
+The output inventory is
+`benchmark/fixed195/ami_shadow10/manifest.json`. The full original
+recordings are removed after successful extraction by default, keeping
+only the prepared four-minute clips. Use `--keep-full` to retain them.
+Downloaded bytes are placed in the same local private directory; the
+tool does not use C: temp files. If a source is unavailable, it fails
+rather than silently substituting unrelated audio. No external files
+or model weights are committed to GitHub.
+
+To run a single shadow replay with the opt-in live backend already
+running at localhost:8000:
+
+    python -m tools.live_caption_ws_replay --audio benchmark/fixed195/ami_shadow10/audio/ami-EN2002b-300-540.wav --loops 1 --speed 1.0 --output benchmark/fixed195/ami_shadow10/replay_EN2002b.json
+
+The replay JSON contains `speaker_shadow_diagnostics` counts if the
+live backend was started with `MEETING_ECAPA_SHADOW=1`. Check
+`submitted`, `completed`, `seeded`, `rank_match`,
+`rank_conflict`, `errors`, `skipped_queue_full` and `remaining`.
+An all-zero agreement count is NOT a negative accuracy result: it may
+mean the stream has not established multiple prototypes, especially
+when backlog or high-confidence CAM++ gating suppresses samples.
+
+These ten meeting groups are **not guaranteed disjoint speakers within
+each a/b/c/d series**, and should not be treated as independent
+cross-session verification trials without an explicit participant
+mapping and source-session split. They are excellent longer-form live
+pipeline stress and diarization tests, not a calibrated voiceprint
+verification benchmark.
