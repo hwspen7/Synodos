@@ -125,25 +125,25 @@ def _summarize_diarization(rows: list[dict]) -> dict:
     # DER is weighted by each case's reference speaker-time, not sample count.
     der = (sum(x["metrics"]["der"] * x["metrics"]["reference_speaker_seconds"]
                for x in done) / total_seconds) if total_seconds else None
+    timed = [x["inference_ms"] for x in done if x.get("inference_ms") is not None]
     return {
         "requested": len(rows), "completed": len(done),
         "failed": len(rows) - len(done),
         "reference_weighted_der": round(der, 5) if der is not None else None,
         "reference_speaker_seconds": round(total_seconds, 2),
         "mean_inference_ms": (
-            round(sum(x["inference_ms"] for x in done) / len(done), 1)
-            if done else None
+            round(sum(timed) / len(timed), 1) if timed else None
         ),
     }
 
 
 def compare_diarization(cases: list[dict], root: Path, *,
-                        nemotron=None) -> dict:
+                        nemotron=None, device: str = "cpu") -> dict:
     if not cases:
         raise ValueError("No diarization cases in manifest")
     outputs = {"camplus_live": [], "nemotron3": []}
     model = nemotron if nemotron is not None else create_diarization_backend(
-        "nemotron3"
+        "nemotron3", device=device,
     )
     for case in cases:
         # Input and label errors invalidate the whole benchmark, not just one
@@ -163,9 +163,9 @@ def compare_diarization(cases: list[dict], root: Path, *,
         old = json.loads(baseline_path.read_text(encoding="utf-8"))
         # Compare source filename as well as duration; do not compare the
         # correct duration from a different meeting by accident.
-        if Path(str(old.get("source_audio") or "")).name != path.name:
+        source_name = str(old.get("source_audio") or "").replace("\\", "/").split("/")[-1]
+        if source_name != path.name:
             raise ValueError("Baseline replay source WAV does not match case")
-        start = time.perf_counter()
         baseline_predictions = baseline_turns(old, duration_ms=duration_ms)
         outputs["camplus_live"].append({
             "id": case["id"],
@@ -254,7 +254,8 @@ def verification_metrics(rows: list[tuple[bool, float]],
 
 def compare_verification(pairs: list[dict], root: Path, *,
                          backends: dict | None = None,
-                         thresholds: dict | None = None) -> dict:
+                         thresholds: dict | None = None,
+                         ecapa_device: str = "cpu") -> dict:
     if not pairs:
         raise ValueError("No verification pairs in manifest")
     own_manager = None
@@ -264,7 +265,7 @@ def compare_verification(pairs: list[dict], root: Path, *,
         own_manager = ModelManager(Settings())
         backends = {
             "camplus": create_embedding_backend("camplus", manager=own_manager),
-            "ecapa": create_embedding_backend("ecapa"),
+            "ecapa": create_embedding_backend("ecapa", device=ecapa_device),
         }
     thresholds = thresholds or {}
     results = {}
@@ -315,7 +316,8 @@ def compare_verification(pairs: list[dict], root: Path, *,
 
 
 def run(path: Path, root: Path, mode: str, *, nemotron=None,
-        backends=None, thresholds=None) -> dict:
+        backends=None, thresholds=None, diar_device="cpu",
+        ecapa_device="cpu") -> dict:
     doc = load_manifest(path)
     result = {
         "schema": SCHEMA,
@@ -328,11 +330,12 @@ def run(path: Path, root: Path, mode: str, *, nemotron=None,
     if mode in ("diarization", "both"):
         result["diarization"] = compare_diarization(
             doc.get("diarization_cases", []), root, nemotron=nemotron,
+            device=diar_device,
         )
     if mode in ("verification", "both"):
         result["verification"] = compare_verification(
             doc.get("verification_pairs", []), root, backends=backends,
-            thresholds=thresholds,
+            thresholds=thresholds, ecapa_device=ecapa_device,
         )
     return result
 
@@ -357,6 +360,8 @@ def main() -> int:
     parser.add_argument("--mode", choices=["diarization", "verification", "both"],
                         required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--diar-device", choices=("cpu", "cuda"), default="cpu")
+    parser.add_argument("--ecapa-device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--camplus-threshold", type=float)
     parser.add_argument("--ecapa-threshold", type=float)
     args = parser.parse_args()
@@ -373,6 +378,8 @@ def main() -> int:
             "camplus": args.camplus_threshold,
             "ecapa": args.ecapa_threshold,
         },
+        diar_device=args.diar_device,
+        ecapa_device=args.ecapa_device,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x", encoding="utf-8") as stream:
