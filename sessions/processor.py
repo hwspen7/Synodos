@@ -603,8 +603,11 @@ class SessionProcessor(threading.Thread):
                     self._ecapa_shadow_audio.pop(
                         next(iter(self._ecapa_shadow_audio))
                     )
+                # Retain a bounded excerpt in RAM until CAM++ assigns
+                # a label. The shadow selector can then find voiced audio
+                # later in the utterance instead of taking the first 6s.
                 self._ecapa_shadow_audio[record["id"]] = np.array(
-                    seg_audio[:sr * 6], dtype=np.float32, copy=True,
+                    seg_audio[:sr * 20], dtype=np.float32, copy=True,
                 )
             if speaker_task is not None:
                 self._speaker_tasks[record["id"]] = speaker_task
@@ -1048,9 +1051,16 @@ class SessionProcessor(threading.Thread):
                     or segment.get("speaker_override")
                     or segment.get("emb") is None):
                 continue
-            audio = self._ecapa_shadow_audio.pop(sid)
+            raw_audio = self._ecapa_shadow_audio.pop(sid)
             self._ecapa_shadow_sample_count += 1
             try:
+                from sessions.speaker_shadow import select_shadow_window
+                audio = select_shadow_window(raw_audio)
+                if audio is None:
+                    note = getattr(shadow, "note_no_active_window", None)
+                    if callable(note):
+                        note()
+                    continue
                 shadow.submit(label, audio)
             except Exception:
                 logger.warning("Optional ECAPA shadow enqueue failed; CAM++ unchanged")
