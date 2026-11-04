@@ -24,30 +24,40 @@ def validate_trials(payload: dict, *, min_positive: int = 20,
     if not isinstance(rows, list) or len(rows) > 50000:
         raise ValueError("Invalid trial count")
     ids = set()
+    unique_clip_pairs = set()
     samples = []
     for row in rows:
         if not isinstance(row, dict):
             raise ValueError("Malformed trial")
         id_ = row.get("id")
         src_a, src_b = row.get("session_a"), row.get("session_b")
-        group = row.get("person_group")
+        speaker_a, speaker_b = row.get("speaker_a"), row.get("speaker_b")
+        clip_a, clip_b = row.get("clip_a"), row.get("clip_b")
         model = row.get("embedding_model")
         score = row.get("cosine")
         label = row.get("same_person")
         if (not isinstance(id_, str) or not id_ or id_ in ids
                 or any(not isinstance(x, str) or not x or len(x) > 96
-                       for x in (src_a, src_b, group, model))
-                or src_a == src_b
+                       for x in (src_a, src_b, speaker_a, speaker_b,
+                                 clip_a, clip_b, model))
+                or src_a == src_b or clip_a == clip_b
                 or type(label) is not bool
+                or (speaker_a == speaker_b) != label
                 or type(score) not in (float, int)
                 or not math.isfinite(score) or not -1 <= score <= 1):
             raise ValueError("Invalid trial identity, cosine or cross-session provenance")
         if not row.get("human_labeled") is True:
             raise ValueError("Cross-session labels require independent human annotation")
+        pair_key = (model, *sorted((clip_a, clip_b)))
+        if pair_key in unique_clip_pairs:
+            raise ValueError("Duplicate source clips would inflate pair counts")
         ids.add(id_)
+        unique_clip_pairs.add(pair_key)
         samples.append({
             "id": id_, "session_a": src_a, "session_b": src_b,
-            "person_group": group, "embedding_model": model,
+            "speaker_a": speaker_a, "speaker_b": speaker_b,
+            "clip_a": clip_a, "clip_b": clip_b,
+            "embedding_model": model,
             "same_person": label, "cosine": float(score),
         })
     positives = sum(x["same_person"] for x in samples)
@@ -105,8 +115,12 @@ def evaluate(dev_payload: dict, holdout_payload: dict, *,
     holdout_sessions = {x[f"session_{key}"] for x in holdout for key in ("a", "b")}
     if dev_sessions & holdout_sessions:
         raise ValueError("Development and holdout sessions must be disjoint")
-    if {x["person_group"] for x in dev} & {x["person_group"] for x in holdout}:
-        raise ValueError("Development and holdout speaker groups must be disjoint")
+    dev_speakers = {x[key] for x in dev for key in ("speaker_a", "speaker_b")}
+    holdout_speakers = {
+        x[key] for x in holdout for key in ("speaker_a", "speaker_b")
+    }
+    if dev_speakers & holdout_speakers:
+        raise ValueError("Development and holdout speaker identities must be disjoint")
     if {x["id"] for x in dev} & {x["id"] for x in holdout}:
         raise ValueError("Duplicate development/holdout trial IDs")
     threshold, dev_rates = select_dev_threshold(dev)
