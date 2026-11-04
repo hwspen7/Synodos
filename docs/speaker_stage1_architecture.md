@@ -1346,3 +1346,76 @@ avoid named-person commitments on unknown IDs, and highlight
 speech_coverage_gaps as incomplete evidence. Do not treat raw
 speaker_similarity or language_confidence as directly calibrated
 statistical probabilities.
+
+
+## 2026-11-04: live DER rollback after full-content repair A/B failed
+
+A REAL 240s TS3003b local WebSocket replay of the combined
+speech-preservation experiment **regressed**:
+
+| Metric | V6 accepted baseline | Combined repair |
+| DER | 0.40534 | 0.49332 |
+| Miss | 0.33947 | 0.39659 |
+| False alarm | 0.01750 | 0.04468 |
+| Confusion | 0.04836 | 0.05205 |
+| Reference-speaker-time without captions | 30.8s | 32.1s |
+| Reference-speaker-time with unknown-only caption | 29.9s | 43.7s |
+| Distinct reference speech without any caption | 29.9s | 29.8s |
+| Predicted positive speaker labels | 2 | 3 |
+
+This combined experiment is **REJECTED**. The larger DER comes
+mainly from speaker identity missing time, not demonstrated
+restoration of original meeting words. A new positive speaker
+count or more decoded text segments is NOT sufficient proof
+of better diarization or ASR. Do not present 49.332% DER as
+an improvement. The older V6 40.534% DER is the active
+audio-validated quality baseline.
+
+### Exact rollback of experimental inference behavior
+
+The previous section's example set three experimental ASR
+flags to 1 concurrently. DO NOT rerun that configuration.
+As of this rollback, V6 internal Whisper VAD, verified text
+alignment, and normal audio buffer reclamation are defaults.
+Explicitly set all of the following to zero when launching
+the backend, especially in PowerShell sessions that still
+retain the old environment:
+
+    $env:MEETING_WHISPER_SKIP_INTERNAL_VAD = "0"
+    $env:MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT = "0"
+    $env:MEETING_WHISPER_GAP_RECOVERY = "0"
+    $env:MEETING_ASR_COVERAGE_RETENTION = "0"
+    $env:MEETING_ASR_SPEECH_BACKPRESSURE_GUARD = "0"
+    $env:MEETING_WHISPER_DUAL_VAD = "0"
+
+Keep recorded audio and provenance metadata, and mark unknown
+speakers as unknown. These DO NOT require the rejected decoding
+policy. The original WAV is the only reliable fallback when
+ASR cannot recover intelligible content on the first pass.
+
+### Controlled A/B after establishing parity
+
+After a clean V6-default replay succeeds with paired frozen
+source SHA/RTTM and unchanged speaker-clustering settings,
+test **ONE** flag at a time. Suggested order:
+  (1) MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT=1
+  (2) MEETING_WHISPER_GAP_RECOVERY=1
+  (3) MEETING_WHISPER_SKIP_INTERNAL_VAD=1
+  (4) MEETING_ASR_COVERAGE_RETENTION=1
+
+A flag only stays enabled if independent audio verification
+establishes no new content omission, no hallucinated/duplicated
+words, acceptable latency/backpressure, and no significant
+speaker DER regression. Do not tune against a single AMI
+reference clip alone.
+
+A paired AMI score JSON non-regression check is available:
+
+    python -m tools.ami_live_regression_gate --baseline benchmark/fixed195/ami_shadow10/audit_TS3003b_v6_per_speaker.json --candidate benchmark/fixed195/ami_shadow10/audit_TS3003b_v6_parity.json
+
+This gate rejects different source audio/reference RTTM, partial
+replays, no-caption coverage regressions and significant DER
+regressions. A pass establishes NON-REGRESSION ONLY. WER/CER
+and fidelity of the recovered text still require human or
+trusted word-level reference transcripts. AMI only_words RTTM
+cannot validate textual correctness.
