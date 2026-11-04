@@ -6,7 +6,7 @@ import numpy as np
 from speech.dual_vad import crosscheck_speech_regions
 from speech.contracts import Recognition
 from speech.quality_guard import verify_utterances, speech_intervals
-from speech.gap_recovery import recover_missing_voice
+from speech.gap_recovery import recover_missing_voice, uncovered_voice_intervals
 from speech.utterance_units import split_utterances
 from speech.quality_profile import quality_candidate_enabled
 
@@ -76,6 +76,14 @@ class WhisperEngine:
         gap_recovery = quality_candidate or os.environ.get(
             "MEETING_WHISPER_GAP_RECOVERY", "0"
         ).strip().lower() in ("1", "true", "yes")
+        recovery_gap_ms = int(os.getenv("MEETING_WHISPER_RECOVERY_MIN_GAP_MS", "900"))
+        if not 300 <= recovery_gap_ms <= 2000:
+            raise ValueError("Recovery minimum gap must be 300..2000 ms")
+        short_voice_support_ms = int(os.getenv(
+            "MEETING_WHISPER_SHORT_VOICE_SUPPORT_MS", "160",
+        ))
+        if not 80 <= short_voice_support_ms <= 160:
+            raise ValueError("Short voice support must be 80..160 ms")
         with self._infer_lock:
             speech_regions = get_speech_timestamps(
                 samples, options, sampling_rate=16000
@@ -108,6 +116,7 @@ class WhisperEngine:
                     lambda chunk, **kw: self._get_model().transcribe(chunk, **kw),
                     window_kwargs,
                     preserve_disputed_text=preserve_disputed,
+                    short_voice_support_ms=short_voice_support_ms,
                 )
                 primary = recognized.utterances
                 detected = recognized.language
@@ -127,6 +136,16 @@ class WhisperEngine:
                     preserve_disputed_text=preserve_disputed,
                 )
 
+            # Anonymous acoustic evidence before the optional second pass.
+            diagnostics_on = os.getenv(
+                "MEETING_DIARIZATION_DIAGNOSTICS", "0"
+            ).strip().lower() in ("1", "true", "yes")
+            if diagnostics_on:
+                before_gaps = uncovered_voice_intervals(
+                    speech_regions, primary, round(len(samples) * 1000 / 16000),
+                    min_uncovered_ms=300,
+                )
+                primary_count = len(primary)
             # Bounded actual ASR retry for a VAD-positive interval omitted
             # from accepted speech. No text is fabricated, and the original
             # transcription is retained if retry fails.
@@ -135,6 +154,8 @@ class WhisperEngine:
                     samples, speech_regions, primary,
                     lambda chunk, **kw: self._get_model().transcribe(chunk, **kw),
                     kwargs, language=language,
+                    min_uncovered_ms=recovery_gap_ms,
+                    short_voice_support_ms=short_voice_support_ms,
                 )
             else:
                 recovery = {
@@ -144,6 +165,19 @@ class WhisperEngine:
                     "recovery_failed": 0,
                     "disabled": True,
                 }
+            if diagnostics_on:
+                after_gaps = uncovered_voice_intervals(
+                    speech_regions, primary, round(len(samples) * 1000 / 16000),
+                    min_uncovered_ms=300,
+                )
+                recovery.update({
+                    "vad_region_count": len(speech_regions),
+                    "vad_voice_ms": sum(b - a for a, b in intervals_ms),
+                    "primary_utterances": primary_count,
+                    "accepted_utterances": len(primary),
+                    "primary_uncovered_vad_ms": sum(b - a for a, b in before_gaps),
+                    "final_uncovered_vad_ms": sum(b - a for a, b in after_gaps),
+                })
         return Recognition(
             utterances=split_utterances(primary),
             language=detected,
