@@ -187,6 +187,27 @@ class SpeakerStageOneTests(unittest.TestCase):
                 report["models"]["camplus_live"]["summary"]["mean_inference_ms"]
             )
 
+    def test_overlap_recall_requires_both_acoustically_active_speakers(self):
+        from tools.speaker_stage1_compare import _score_diarization
+
+        reference = [
+            {"start_ms": 0, "end_ms": 1000, "speaker": "A"},
+            {"start_ms": 0, "end_ms": 1000, "speaker": "B"},
+        ]
+        full = [
+            {"start_ms": 0, "end_ms": 1000, "speaker_id": 1},
+            {"start_ms": 0, "end_ms": 1000, "speaker_id": 2},
+        ]
+        incomplete = full[:1]
+        self.assertEqual(
+            _score_diarization(reference, full)["overlap_all_speakers_recall"],
+            1.0,
+        )
+        result = _score_diarization(reference, incomplete)
+        self.assertEqual(result["der"], 0.5)
+        self.assertEqual(result["overlap_all_speakers_recall"], 0)
+        self.assertEqual(result["speaker_count_absolute_error"], 1)
+
     def test_missing_or_invalid_gold_and_checksum_are_rejected(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
