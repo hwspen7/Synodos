@@ -345,6 +345,8 @@ def capture_event(state: dict, message: dict, elapsed_ms: float,
         # Aggregate-only and optional; never record ECAPA voice vectors.
         state["speaker_shadow_diagnostics"] = message.get(
             "speaker_shadow_diagnostics")
+        state["independent_diarization"] = message.get(
+            "independent_diarization")
         return True
     elif kind == "error":
         state["errors"].append(str(message.get("message", ""))[:500])
@@ -379,6 +381,7 @@ def new_capture(
         "final_segment_count": 0, "server_closed": False,
         "server_saved": None, "final_cluster_diagnostics": None,
         "speaker_shadow_diagnostics": None,
+        "independent_diarization": None,
         "audio_delivery_matched": None,
         "audio_received_samples": None,
     }
@@ -431,6 +434,7 @@ async def replay(args) -> dict:
             "asr_quality_candidate": opening.get("asr_quality_candidate"),
             "speaker_quality_candidate": opening.get("speaker_quality_candidate"),
             "speaker_cluster_strategy": opening.get("speaker_cluster_strategy"),
+            "independent_diarization": opening.get("independent_diarization"),
             "model": opening.get("asr_model"),
             "diarization_mode": opening.get("diarization_mode"),
             "processing_window_s": opening.get("processing_window_s"),
@@ -582,6 +586,7 @@ async def replay(args) -> dict:
         "server_saved": counters["server_saved"],
         "final_cluster_diagnostics": counters["final_cluster_diagnostics"],
         "speaker_shadow_diagnostics": counters["speaker_shadow_diagnostics"],
+        "independent_diarization": counters["independent_diarization"],
         "flags": counters["flags"],
         "errors": counters["errors"],
         "voiceprint_accuracy": None,
