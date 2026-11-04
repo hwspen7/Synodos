@@ -10,6 +10,7 @@ import { RealtimeClient } from '@/api/ws'
 import { startMicRecording } from '@/audio/recorder'
 import AppIcon from '@/components/AppIcon.vue'
 import { speakerColor } from '@/speaker/clustering'
+import { splitDisplaySentences } from '@/transcript/display'
 import type {
   HotwordLibrary,
   Paragraph,
@@ -203,68 +204,6 @@ function showToast(message: string): void {
   window.setTimeout(() => {
     if (toast.value === message) toast.value = ''
   }, 2600)
-}
-
-// Presentation-only boundaries for legacy transcripts without word timestamps.
-// Keep the original record, timestamp, segment ID and editable text intact.
-function splitDisplaySentences(text: string): string[] {
-  const original = String(text || '').trim()
-  if (!original) return []
-  // English sentence punctuation followed by whitespace, or explicit CJK stops.
-  // Do not split within known abbreviations, initials or decimal values.
-  const abbreviations = new Set(['mr.', 'mrs.', 'ms.', 'dr.', 'prof.', 'sr.',
-    'jr.', 'st.', 'vs.', 'etc.', 'e.g.', 'i.e.', 'u.s.', 'u.k.'])
-  // Browser-native Unicode sentence segmentation supports punctuation across
-  // languages instead of using English/CJK-specific rules as the primary path.
-  const segmenterType = (Intl as unknown as {
-    Segmenter?: new (locale: string | undefined, options: { granularity: 'sentence' }) =>
-      { segment: (value: string) => Iterable<{ segment: string }> }
-  }).Segmenter
-  if (segmenterType) {
-    const parts = [...new segmenterType(undefined, { granularity: 'sentence' }).segment(original)]
-      .map((item) => item.segment.trim()).filter(Boolean)
-    // Intl.Segmenter occasionally breaks after title abbreviations such as
-    // "Dr."; repair only boundary artifacts while retaining native script
-    // segmentation for non-Latin languages.
-    const repaired: string[] = []
-    const titleEnding = /(?:^|\s)(?:mr|mrs|ms|dr|prof|sr|jr|st|vs|etc|e\.g|i\.e|u\.s|u\.k)\.$/i
-    for (const part of parts) {
-      const prior = repaired.length ? repaired[repaired.length - 1] : ''
-      if (prior && titleEnding.test(prior)) {
-        repaired[repaired.length - 1] = prior + ' ' + part
-      } else {
-        repaired.push(part)
-      }
-    }
-    if (repaired.length > 1) return repaired
-  }
-  const sentences: string[] = []
-  let current = ''
-  for (let i = 0; i < original.length; i++) {
-    const char = original.charAt(i)
-    current += char
-    if (!'.!?\u3002\uff01\uff1f'.includes(char)) continue
-    const cjkEnd = '\u3002\uff01\uff1f'.includes(char)
-    const next = original.charAt(i + 1)
-    const boundaries = cjkEnd || !next || /\s/.test(next)
-    if (!boundaries) continue
-    const token = (current.match(/(?:^|\s)(\S+)$/)?.[1] || '').toLowerCase()
-    if (!cjkEnd && abbreviations.has(token)) continue
-    // Periods in acronyms and numerals do not form independent turns.
-    if (char === '.' && /\d$/.test(current.slice(0, -1)) && /^\d/.test(next)) continue
-    let j = i + 1
-    while (j < original.length && /["'\u201d\u2019\uff09\])}]/.test(original.charAt(j))) {
-      current += original.charAt(j)
-      i = j
-      j++
-    }
-    const sentence = current.trim()
-    if (sentence) sentences.push(sentence)
-    current = ''
-    while (i + 1 < original.length && /\s/.test(original.charAt(i + 1))) i++
-  }
-  if (current.trim()) sentences.push(current.trim())
-  return sentences.length ? sentences : [original]
 }
 
 function endsFinishedThought(text: string): boolean {
