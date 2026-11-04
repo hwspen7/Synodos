@@ -1063,3 +1063,68 @@ It is not a real-time DER gain. Additional independently
 recorded evidence from other sessions is necessary before
 promoting a singleton to a published speaker identity.
 The V6 live DER baseline is still 0.40534.
+
+
+## TS3003b next gate: no-oracle windowing of the full meeting
+
+The user verified that on 16 annotation-selected solo CAM++ samples,
+the provisional-isolation rule yields exactly four groups, F1 1.0
+and ARI 1.0, compared to spherical_auto's three groups, F1
+0.95652 and ARI 0.93902. The single corrected sample was index 9,
+which belonged to MTD011UID in human reference. The reference
+selected these isolated windows, so this result is a **positive
+oracle-clean diagnostic, not a live diarization improvement**.
+
+The next gate must NOT use RTTM to choose clean input. Run
+tools.ami_continuous_voice_audit on the same frozen 240s WAV:
+
+- Every audio window is fixed to 2s, stride 1.5s, starting at 0.
+  RMS < 0.001 is excluded, matching the acoustic evidence task's
+  cheap silence safeguard. CAM++ embeddings come from the
+  production ModelManager adapter.
+- Compute spherical auto clusters over all embedded windows,
+  including contaminated, mixed and unannotated ones. After this,
+  label the windows using pinned AMI RTTM for evaluation only.
+- A window is called reference-pure if one person has at least
+  80% annotation coverage and no other person exceeds 10%.
+  These thresholds merely label review windows; they are not
+  production VAD, calibrated speaker confidence or evidence
+  that the waveform contains one real-world voice.
+- Compare actual clean evidence counts for third and fourth
+  speakers, their candidate cluster contacts, how often
+  one-sample outlier candidates occur, and pairwise grouping
+  scores on the pure subset. Missing third-speaker pure
+  windows means no clustering rule can infer their real
+  identity from this evidence alone.
+- No raw waveforms, voice embeddings or transcription text
+  are written. All derived reports remain in the ignored
+  Fixed195 folder.
+
+After pulling the unchanged feature branch, run the unit tests
+without any external audio:
+
+    cd E:\Meeting-Fixed10-Test
+    git pull --ff-only origin feature/multilingual-fixed10-ui-refresh
+    python -m unittest tests.quality.test_ami_continuous_voice_audit -v
+
+Then, with the CAM++ local model installed, run the *new*
+standalone offline test (no WebSocket server or replay required):
+
+    python -m tools.ami_continuous_voice_audit --root benchmark/fixed195/ami_shadow10 --meeting TS3003b --replay benchmark/fixed195/ami_shadow10/replay_TS3003b_v6.json --output benchmark/fixed195/ami_shadow10/continuous_camplus_TS3003b_v6.json
+
+Inspect in PowerShell:
+
+    $r = Get-Content benchmark/fixed195/ami_shadow10/continuous_camplus_TS3003b_v6.json -Raw | ConvertFrom-Json
+    $r | Select-Object total_windows,successful_embeddings,raw_cluster_count,provisional_cluster_count,provisional_outlier_count | Format-List
+    $r.per_reference_speaker | ConvertTo-Json -Depth 6
+    $r.pure_window_sample_scores | ConvertTo-Json -Depth 7
+    $r.provisional_outliers | ConvertTo-Json -Depth 7
+
+Important limitations: This is offline chronological fixed-window CAM++
+extraction, not a replay of the live scheduler's skipped/late tasks,
+sentence-level embeddings, enrolled participants or live identity
+stability mapping. The RTTM-only-words reference may omit laughter,
+breaths, fillers or overlapping vocalizations. No production
+identity promotion is changed. Even if offline grouping works,
+only matched live playback against held-out multi-speaker RTTM
+can establish a DER gain.
