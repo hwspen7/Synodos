@@ -222,13 +222,15 @@ class NemotronRealtimeWorker:
         processor, model = _model_resources(mode)
 
         def inference(audio, first, last, cache):
-            inputs = processor(
-                audio, sampling_rate=SAMPLE_RATE,
-                is_streaming=True,
-                is_first_audio_chunk=first,
-                is_last_audio_chunk=last,
-            )
             with _MODEL_LOCK, torch.inference_mode():
+                # The shared processor and weights must be serialized
+                # across simultaneous meetings. Cache stays per session.
+                inputs = processor(
+                    audio, sampling_rate=SAMPLE_RATE,
+                    is_streaming=True,
+                    is_first_audio_chunk=first,
+                    is_last_audio_chunk=last,
+                )
                 out = model(
                     **inputs.to(model.device, dtype=model.dtype),
                     speaker_cache=cache,
@@ -268,11 +270,14 @@ class NemotronRealtimeWorker:
                     failed = self._state == "failed"
                 if failed:
                     continue
+                previous_frames = stream.scored_frames
                 stream.accept(frame)
+                changed = stream.scored_frames > previous_frames
                 with self._lock:
                     self._audio_samples += len(frame)
-                    self._activity = stream.activity()
-                if self._on_update is not None:
+                    if changed:
+                        self._activity = stream.activity()
+                if changed and self._on_update is not None:
                     self._on_update()
                 if self._finish_requested.is_set() and self._queue.empty():
                     break
