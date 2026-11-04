@@ -118,6 +118,7 @@ def score_independent(root: Path, meeting: str, replay_path: Path,
             "reference_speech_without_captions"
         ]["reference_speech_without_captions_seconds"],
         "under_10pct_standard_der": raw["der"] < 0.10,
+        "under_20pct_standard_der": raw["der"] < 0.20,
         "limitations": (
             "Full 240-second source-independent stream, identical frozen AMI "
             "only_words human RTTM and 100ms zero-collar overlap-inclusive "
@@ -158,6 +159,7 @@ def main() -> int:
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--require-under-10", action="store_true")
+    parser.add_argument("--require-under-20", action="store_true")
     args = parser.parse_args()
     root = args.root.resolve()
     output = args.output.resolve()
@@ -178,11 +180,15 @@ def main() -> int:
         "published_caption_metrics": report["published_caption_metrics"],
         "caption_gap_seconds": report["caption_gap_seconds"],
         "under_10pct_standard_der": report["under_10pct_standard_der"],
+        "under_20pct_standard_der": report["under_20pct_standard_der"],
         "comparison": report.get("comparison"),
         "output": str(output),
     }, indent=2))
-    return 0 if (not args.require_under_10 or
-                 report["under_10pct_standard_der"]) else 1
+    if args.require_under_10 and not report["under_10pct_standard_der"]:
+        return 1
+    if args.require_under_20 and not report["under_20pct_standard_der"]:
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
