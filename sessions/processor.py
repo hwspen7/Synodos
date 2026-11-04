@@ -44,6 +44,8 @@ from observability.metrics import metrics
 from phase07.telemetry import telemetry
 from phase07.speakers import speaker_stats, find_distinct_participant
 from speech.commit_guard import is_temporal_duplicate
+from speech.coverage_retention import choose_safe_drop
+from speech.contracts import Utterance
 from phase07.recovery import autosave_seconds
 from sessions.outbox import enqueue_message
 from sessions.translation_tasks import submit_translation
@@ -139,6 +141,10 @@ class SessionProcessor(threading.Thread):
         self._last_state_sent = 0.0
         self._last_inferred_absolute_end = -1
         self._asr_failure_reported = False
+        # Acoustic speech without decoded text is never silently considered
+        # complete. A bounded retry is followed by an explicit gap record.
+        self._coverage_hold_attempts: dict[int, int] = {}
+        self._speech_coverage_gaps: list[dict] = []
         self._last_reclustered_segment_id = 0
         self._last_clustering_receipt: dict = {
             "strategy_executed": "not_run",
@@ -403,6 +409,7 @@ class SessionProcessor(threading.Thread):
             "spk_threshold": float(self.spk_threshold),
             "participant_label_map": dict(self._participant_label_map),
             "unknown_index": dict(self._unknown_index),
+            "speech_coverage_gaps": list(self._speech_coverage_gaps),
             "segments": [
                 {
                     "id": s["id"],
@@ -443,6 +450,10 @@ class SessionProcessor(threading.Thread):
     def load_state(self, state: dict) -> None:
         """Audio transcription and speaker data handling."""
         self.segments = []
+        self._speech_coverage_gaps = [
+            dict(gap) for gap in state.get("speech_coverage_gaps", [])
+            if isinstance(gap, dict)
+        ][:256]
         for item in state.get("segments", []) or []:
             self.segments.append(
                 {
@@ -706,6 +717,63 @@ class SessionProcessor(threading.Thread):
                 self._put({"type": "audio_analysis", "result": result})
             except Exception as exc:
                 self._put({"type": "feature_warning", "feature": "audio_analysis", "message": str(exc)})
+        # Preserve VAD-positive intervals that have no transcript for a
+        # bounded number of complete inference opportunities. An ASR failure
+        # cannot silently authorize dropping earlier speech just because
+        # later speech was decoded successfully.
+        if self._speech_settings.engine != "legacy":
+            voice_ranges = tuple(getattr(
+                recognition, "speech_intervals_ms", (),
+            ))
+            if voice_ranges:
+                observed = list(recognition.utterances)
+                # Existing confirmed words may still fall inside the retained
+                # rolling window and must count as covered evidence.
+                for previous in self.segments:
+                    a = (int(previous["start_sample"]) - start_offset) * 1000 // sr
+                    b = (int(previous["end_sample"]) - start_offset) * 1000 // sr
+                    if b > 0 and a < len(audio) * 1000 // sr:
+                        observed.append(Utterance(
+                            str(previous.get("text") or ""),
+                            max(0, a), min(len(audio) * 1000 // sr, b),
+                        ))
+                if len(self._coverage_hold_attempts) > 2048:
+                    # Absolute keys older than the current retained audio
+                    # cannot affect future reclamation decisions.
+                    floor = (start_offset * 1000 // sr) // 250
+                    self._coverage_hold_attempts = {
+                        key: value for key, value
+                        in self._coverage_hold_attempts.items()
+                        if key >= floor
+                    }
+                local_end, exhausted = choose_safe_drop(
+                    proposed_drop_samples=local_end,
+                    audio_samples=len(audio),
+                    sample_rate=sr,
+                    global_start_samples=start_offset,
+                    speech_intervals_ms=voice_ranges,
+                    utterances=tuple(observed),
+                    attempts=self._coverage_hold_attempts,
+                    final=final,
+                )
+                for gap in exhausted:
+                    if any(
+                        abs(int(old["start_ms"]) - gap["start_ms"]) < 600
+                        and abs(int(old["end_ms"]) - gap["end_ms"]) < 1200
+                        for old in self._speech_coverage_gaps
+                    ):
+                        continue
+                    self._speech_coverage_gaps.append(gap)
+                    self._speech_coverage_gaps = self._speech_coverage_gaps[-256:]
+                    metrics.increment("asr_untranscribed_voice_gaps")
+                    self._put({
+                        "type": "speech_coverage",
+                        "gap": gap,
+                        "message": (
+                            "Voice activity had no verified transcript. "
+                            "Review source audio if recording is available."
+                        ),
+                    })
         # Handle transcripts and speaker assignments.
         if local_end > 0:
             # Preserve any earlier unfinished utterance before advancing audio.
