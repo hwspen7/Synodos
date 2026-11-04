@@ -89,6 +89,7 @@ def benchmark(
     root: Path, meeting: str, model: str, *, device: str = "cpu",
     replay: Path | None = None, allow_model_download: bool = False,
     model_id: str | None = None, injected_pipeline: Any = None,
+    diarizen_embedding_model: str | None = None,
 ) -> dict:
     root = root.resolve(strict=True)
     wav, case, case_sha = pinned_case(root, meeting)
@@ -121,6 +122,7 @@ def benchmark(
             device=device, model_id=model_id,
             allow_download=allow_model_download,
             pipeline=injected_pipeline,
+            diarizen_embedding_model=diarizen_embedding_model,
         )
     else:
         raise ValueError(f"Unknown Phase 1B model: {model}")
@@ -134,6 +136,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", choices=["nemotron3", *MODELS], required=True)
     parser.add_argument("--replay", type=Path)
     parser.add_argument("--model-id")
+    parser.add_argument("--diarizen-embedding-model")
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     parser.add_argument("--allow-model-download", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
@@ -149,6 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     report = benchmark(
         root, args.meeting, args.model, device=args.device,
         replay=args.replay, model_id=args.model_id,
+        diarizen_embedding_model=args.diarizen_embedding_model,
         allow_model_download=args.allow_model_download,
     )
     output.parent.mkdir(parents=True, exist_ok=True)
