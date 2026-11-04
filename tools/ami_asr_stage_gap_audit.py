@@ -21,7 +21,12 @@ STAGES = (
 )
 
 
-def audit_stages(root: Path, meeting: str, replay_path: Path) -> dict:
+def audit_stages(
+    root: Path, meeting: str, replay_path: Path, *,
+    reference_protocol: str = "only_words",
+) -> dict:
+    if reference_protocol not in ("only_words", "forced_aligned"):
+        raise ValueError("Unsupported reference protocol")
     verified = score_case(root, meeting, replay_path)
     replay = json.loads(replay_path.read_text(encoding="utf-8"))
     trace = replay.get("asr_coverage_trace")
@@ -37,11 +42,21 @@ def audit_stages(root: Path, meeting: str, replay_path: Path) -> dict:
     duration_ms = round(replay["source_audio_duration_s"] * 1000)
     if duration_ms != 240000:
         raise ValueError("Expected frozen 240 s AMI excerpt")
-    reference = _reference_turns(json.loads(
-        (root / "cases" / (meeting + ".json")).read_text(
-            encoding="utf-8",
+    if reference_protocol == "only_words":
+        reference = _reference_turns(json.loads(
+            (root / "cases" / (meeting + ".json")).read_text(
+                encoding="utf-8",
+            )
+        )["reference_turns"], duration_ms)
+        reference_hash = verified["reference_source_sha256"]
+    else:
+        # Use an explicitly different, pinned annotation. Never silently
+        # change the original only_words benchmark used for acceptance.
+        from tools.ami_nemotron_reference_diagnostic import (
+            fetch_forced_rttm, forced_reference,
         )
-    )["reference_turns"], duration_ms)
+        raw, reference_hash, _ = fetch_forced_rttm(root, meeting)
+        reference = forced_reference(raw, meeting, dict(SELECTED)[meeting])
     all_intervals = {}
     for key in STAGES:
         raw = []
@@ -114,13 +129,26 @@ def audit_stages(root: Path, meeting: str, replay_path: Path) -> dict:
     recorded_missing = verified[
         "reference_speech_without_captions"
     ]["reference_speech_without_captions_seconds"]
-    if abs(measured_missing - recorded_missing) > 0.15:
+    if (reference_protocol == "only_words"
+            and abs(measured_missing - recorded_missing) > 0.15):
         raise ValueError("ASR stage audit disagrees with caption reference")
+    recoveries = {
+        key: sum(max(0, int(cycle.get(key) or 0)) for cycle in trace["cycles"])
+        for key in ("recovery_attempted", "recovery_confirmed", "recovery_failed")
+    }
+    bypassed_cycles = sum(bool(cycle.get("window_internal_vad_bypassed"))
+                          for cycle in trace["cycles"])
     return {
         "schema": "meeting-ami-asr-stage-gap-audit-v1",
         "meeting": meeting,
         "source_audio_sha256": verified["source_audio_sha256"],
-        "reference_source_sha256": verified["reference_source_sha256"],
+        "reference_source_sha256": reference_hash,
+        "reference_protocol": reference_protocol,
+        "independent_reference_protocol_from_original": (
+            reference_protocol != "only_words"
+        ),
+        "window_internal_vad_bypassed_cycles": bypassed_cycles,
+        "recovery_counts": recoveries,
         "reference_clock_no_caption_seconds": measured_missing,
         "reference_clock_covered_seconds": counts["final_caption_covered"] / 10,
         "gap_causes_seconds": {
@@ -149,6 +177,10 @@ def main() -> int:
                         required=True)
     parser.add_argument("--replay", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--reference-protocol", default="only_words",
+        choices=("only_words", "forced_aligned"),
+    )
     args = parser.parse_args()
     root = args.root.resolve()
     path = args.output.resolve()
@@ -156,7 +188,10 @@ def main() -> int:
             or not path.is_relative_to(root)
             or path.suffix != ".json" or path.exists()):
         parser.error("Choose a NEW private JSON inside the Fixed195 root")
-    report = audit_stages(root, args.meeting, args.replay)
+    report = audit_stages(
+        root, args.meeting, args.replay,
+        reference_protocol=args.reference_protocol,
+    )
     with path.open("x", encoding="utf-8") as handle:
         json.dump(report, handle, indent=2)
         handle.write("\n")
