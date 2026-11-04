@@ -11,6 +11,10 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from core.runtime import meeting_store, meeting_sessions, sessions, speaker_store, hotword_store
 from api.session_lifecycle import meeting_connection_lock, stop_and_join
 
+from sessions.manual_review import (
+    UNSET, ReviewConflict, ReviewValidationError, apply_review,
+)
+
 router = APIRouter()
 
 class MeetingSettingsPayload(BaseModel):
@@ -101,6 +105,95 @@ async def get_meeting_segments(meeting_id: str) -> dict:
         None, meeting_store.list_speech_coverage_gaps, meeting_id
     )
     return {"segments": segments, "speech_coverage_gaps": gaps or []}
+
+
+@router.patch("/api/meetings/{meeting_id}/segments/{segment_id}/review")
+async def review_saved_segment(
+    meeting_id: str, segment_id: int, payload: dict,
+) -> dict:
+    """Review a stopped meeting with optimistic segment revisions.
+
+    Saved meeting state is the source of truth for Phase 3 indexing.
+    Refuse edits while a capture session could overwrite the same state.
+    """
+    if not meeting_store.valid_id(meeting_id):
+        raise HTTPException(400, "invalid meeting id")
+    if segment_id < 0 or type(payload) is not dict:
+        raise HTTPException(400, "invalid review payload")
+    allowed = {"expected_revision", "text", "speaker_profile_id", "reason"}
+    if set(payload) - allowed:
+        raise HTTPException(400, "unsupported review fields")
+    expected = payload.get("expected_revision")
+    if type(expected) is not int or expected < 0:
+        raise HTTPException(400, "expected_revision must be a nonnegative integer")
+
+    async with meeting_connection_lock(meeting_id):
+        if meeting_id in meeting_sessions:
+            raise HTTPException(409, "Stop the meeting before manual review")
+        state = await asyncio.to_thread(meeting_store.load_state, meeting_id)
+        if state is None:
+            raise HTTPException(404, "meeting not found")
+        state.pop("meta", None)
+        state["id"] = meeting_id
+        if not state.get("segments"):
+            raise HTTPException(404, "segment not found")
+        args = {
+            "reason": payload.get("reason", ""),
+        }
+        if "text" in payload:
+            args["text"] = payload["text"]
+        if "speaker_profile_id" in payload:
+            profile_id = payload["speaker_profile_id"]
+            if profile_id is not None:
+                if not speaker_store.valid_id(profile_id):
+                    raise HTTPException(400, "invalid speaker profile id")
+                profiles = await asyncio.to_thread(
+                    speaker_store.get_for_matching, [profile_id]
+                )
+                if not profiles:
+                    raise HTTPException(404, "speaker profile not found")
+                args["profile_name"] = profiles[0]["name"]
+            args["profile_id"] = profile_id
+        try:
+            event = apply_review(state, segment_id, expected, **args)
+        except ReviewConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ReviewValidationError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(404, "segment not found") from exc
+        await asyncio.to_thread(meeting_store.save_state, state)
+        segments = await asyncio.to_thread(meeting_store.list_segments, meeting_id)
+        reviewed = next(
+            (item for item in segments or [] if item["id"] == segment_id),
+            None,
+        )
+        return {"segment": reviewed, "review": event}
+
+
+@router.get("/api/meetings/{meeting_id}/segments/{segment_id}/revisions")
+async def get_segment_revisions(meeting_id: str, segment_id: int) -> dict:
+    """Read immutable review events without exposing voiceprint vectors."""
+    if not meeting_store.valid_id(meeting_id) or segment_id < 0:
+        raise HTTPException(400, "invalid meeting/segment id")
+    state = await asyncio.to_thread(meeting_store.load_state, meeting_id)
+    if state is None:
+        raise HTTPException(404, "meeting not found")
+    segment = next(
+        (s for s in state.get("segments") or []
+         if int(s.get("id", -1)) == segment_id),
+        None,
+    )
+    if segment is None:
+        raise HTTPException(404, "segment not found")
+    return {
+        "segment_id": segment_id,
+        "revision": int(segment.get("revision", 0)),
+        "original_asr_text": segment.get(
+            "original_asr_text", segment.get("text", "")
+        ),
+        "corrections": list(segment.get("corrections") or []),
+    }
 
 
 @router.post("/api/meetings")
