@@ -55,11 +55,11 @@ class WhisperEngine:
         }
         if terms.strip():
             kwargs["hotwords"] = terms[:1500]
-        # Controlled experiment only: preserve verified segment text when
-        # its forced word alignment fails acoustic support checks.
-        # Disabled by default until all-language and overlap regression gates.
+        # Preserve verified Whisper segment text when forced word alignment does
+        # not find sufficient acoustic support. Word timing remains unavailable
+        # for disputed text, so downstream code must not treat it as aligned.
         preserve_disputed = os.environ.get(
-            "MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT", "0"
+            "MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT", "1"
         ).strip().lower() in ("1", "true", "yes")
         with self._infer_lock:
             speech_regions = get_speech_timestamps(samples, options, sampling_rate=16000)
@@ -73,7 +73,11 @@ class WhisperEngine:
                 "MEETING_WHISPER_WINDOW_LID", "1"
             ).strip().lower() in ("1", "true", "yes"):
                 from speech.multilingual_windows import recognize_windows
-                window_kwargs = dict(kwargs, multilingual=True)
+                # Speech windows were already selected by this engine's VAD.
+                # Running Whisper's internal VAD a second time can remove
+                # quiet words at the edges of short turns.
+                window_kwargs = dict(kwargs, multilingual=True, vad_filter=False)
+                window_kwargs.pop("vad_parameters", None)
                 from dataclasses import replace as dataclass_replace
                 recognized = recognize_windows(
                     samples, speech_regions,

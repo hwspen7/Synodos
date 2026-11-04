@@ -33,17 +33,10 @@ const partialLanguage = ref('')
 const audioAnalysis = ref('')
 const recordingList = ref<Array<{ name: string, bytes: number, duration_s: number | null, modified_at: string }>>([])
 const supportedLanguages = [
-  ['auto', 'Detect automatically'], ['ar', 'Arabic'], ['bn', 'Bengali'],
-  ['bg', 'Bulgarian'], ['ca', 'Catalan'], ['zh', 'Chinese'], ['hr', 'Croatian'],
-  ['cs', 'Czech'], ['da', 'Danish'], ['nl', 'Dutch'], ['en', 'English'],
-  ['fi', 'Finnish'], ['fr', 'French'], ['de', 'German'], ['el', 'Greek'],
-  ['he', 'Hebrew'], ['hi', 'Hindi'], ['hu', 'Hungarian'], ['id', 'Indonesian'],
-  ['it', 'Italian'], ['ja', 'Japanese'], ['ko', 'Korean'], ['ms', 'Malay'],
-  ['mr', 'Marathi'], ['no', 'Norwegian'], ['fa', 'Persian'], ['pl', 'Polish'],
-  ['pt', 'Portuguese'], ['ro', 'Romanian'], ['ru', 'Russian'], ['sr', 'Serbian'],
-  ['sk', 'Slovak'], ['es', 'Spanish'], ['sv', 'Swedish'], ['ta', 'Tamil'],
-  ['te', 'Telugu'], ['th', 'Thai'], ['tr', 'Turkish'], ['uk', 'Ukrainian'],
-  ['ur', 'Urdu'], ['vi', 'Vietnamese'],
+  ['auto', 'Detect automatically'],
+  ['en', 'English'], ['zh', 'Chinese'], ['hi', 'Hindi'], ['es', 'Spanish'],
+  ['fr', 'French'], ['ar', 'Arabic'], ['bn', 'Bengali'], ['pt', 'Portuguese'],
+  ['ru', 'Russian'], ['id', 'Indonesian'], ['de', 'German'], ['ja', 'Japanese'],
 ]
 
 type Status = 'idle' | 'connecting' | 'recording' | 'stopping' | 'disconnected'

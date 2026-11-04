@@ -267,8 +267,12 @@ async def ws_audio(
                         if audio_archive is not None:
                             # Keep the WAV archive in raw PCM even when the
                             # transport uses the versioned frame header.
-                            audio_archive.append(
-                                data[16:] if frame_sequence.versioned else data
+                            # Checkpointing calls fsync. Keep disk I/O off
+                            # the event loop so one recording cannot stall
+                            # every active WebSocket connection.
+                            await asyncio.to_thread(
+                                audio_archive.append,
+                                data[16:] if frame_sequence.versioned else data,
                             )
                         # A running microphone UI must be backed by confirmed
                         # server-side PCM, not just by browser permissions.

@@ -1,9 +1,11 @@
 # Stage 1: isolated speaker-model comparison
 
 This phase implements **candidate interfaces and reference-backed experiments**.
-It does not silently switch the production diarizer or replace saved speaker
-voiceprints. The live baseline remains FunASR CAM++ + the existing clustering
-and historical label stability rules.
+It does not replace saved speaker voiceprints. The live path uses CAM++ embeddings
+and the bounded spherical candidate clusterer by default. It abstains as Unidentified when the candidate is
+unsupported or exceeds its capacity; FunASR clustering remains an explicit
+legacy/bootstrap option. A candidate partition is still not ground truth and
+must be compared with human-labeled meetings before claiming a DER improvement.
 
 ## Why the models are separate
 

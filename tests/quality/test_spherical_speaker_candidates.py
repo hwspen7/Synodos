@@ -80,7 +80,7 @@ class SphericalCandidateTests(unittest.TestCase):
         self.assertEqual(receipt["cluster_count"], 4)
         self.assertNotIn("embeddings_raw", str(receipt))
 
-    def test_forced_candidate_abstention_reports_funasr_fallback(self):
+    def test_forced_candidate_abstention_fails_closed_as_unidentified(self):
         model = mock_model()
         rng = np.random.default_rng(167)
         samples = rng.normal(size=(64, 256)).astype(np.float32)
@@ -94,9 +94,10 @@ class SphericalCandidateTests(unittest.TestCase):
                 "available": False, "reason": "weak_acoustic_separation",
             })
             labels, receipt = model._cluster_embeddings_with_info(samples)
-        self.assertEqual(receipt["strategy_executed"], "funasr_legacy")
+        self.assertEqual(receipt["strategy_executed"], "abstain_unidentified")
         self.assertEqual(receipt["fallback_reason"], "weak_acoustic_separation")
-        self.assertEqual(len(set(labels)), 1)
+        self.assertTrue(np.all(labels == -3))
+        self.assertEqual(receipt["cluster_count"], 0)
 
     def test_bootstrap_and_legacy_paths_still_supported(self):
         model = mock_model()

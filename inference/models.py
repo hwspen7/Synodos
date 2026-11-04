@@ -209,15 +209,15 @@ class ModelManager:
     ) -> tuple[np.ndarray, dict]:
         """One bounded clustering call with an explicit execution receipt.
 
-        The experimental spherical partition is never considered identity
-        ground truth. Failure falls back to legacy and reports why.
+        The spherical partition is a bounded candidate path, not identity
+        ground truth. Unsupported evidence abstains and reports why.
         """
         data = np.asarray(embeddings, dtype=np.float32)
         if data.ndim != 2:
             raise ValueError("embeddings must be a [N,D] matrix")
         n = len(data)
         requested = os.getenv(
-            "MEETING_SPEAKER_CLUSTER_STRATEGY", "bootstrap"
+            "MEETING_SPEAKER_CLUSTER_STRATEGY", "candidate"
         ).strip().lower()
         if requested not in ("legacy", "bootstrap", "candidate", "strict"):
             raise ValueError("Invalid speaker cluster strategy")
@@ -229,7 +229,7 @@ class ModelManager:
             "cluster_count": 0,
         }
         if n == 0:
-            return np.empty(0, dtype=int), receipt
+            return np.empty(0, dtype=np.int32), receipt
 
         threshold = float(os.getenv(
             "MEETING_SPEAKER_BOOTSTRAP_SIMILARITY", "0.76"
@@ -237,10 +237,18 @@ class ModelManager:
         if not np.isfinite(threshold) or not 0.1 < threshold < 0.99:
             raise ValueError("Invalid acoustic clustering threshold")
 
+        # Candidate mode is the production default. If the acoustic evidence
+        # cannot support a stable partition, preserve the transcript and
+        # abstain from assigning identities instead of silently collapsing
+        # every voice into FunASR's legacy result.
+        if requested == "candidate" and n < 4:
+            receipt["strategy_executed"] = "abstain_unidentified"
+            receipt["fallback_reason"] = "insufficient_repeated_samples"
+            return np.full(n, -3, dtype=np.int32), receipt
+
         use_strict = (
             (requested == "bootstrap" and n < 20)
             or (requested == "strict" and n <= 256)
-            or (requested == "candidate" and n < 4)
         )
         if use_strict:
             from speech.adaptive_cluster import complete_link_clusters
@@ -253,8 +261,15 @@ class ModelManager:
                 receipt["fallback_reason"] = "complete_link_rejected_" + (
                     type(exc).__name__
                 )
+                if requested == "strict":
+                    receipt["strategy_executed"] = "abstain_unidentified"
+                    return np.full(n, -3, dtype=np.int32), receipt
 
-        if requested == "candidate" and 4 <= n <= 256:
+        if requested == "candidate":
+            if n > 256:
+                receipt["strategy_executed"] = "abstain_unidentified"
+                receipt["fallback_reason"] = "input_exceeds_256"
+                return np.full(n, -3, dtype=np.int32), receipt
             from speech.spherical_cluster import spherical_speaker_candidates
             try:
                 candidate = spherical_speaker_candidates(data)
@@ -270,9 +285,17 @@ class ModelManager:
                 receipt["fallback_reason"] = "candidate_rejected_" + (
                     type(exc).__name__
                 )
-        if requested in ("strict", "candidate") and n > 256:
+            receipt["strategy_executed"] = "abstain_unidentified"
+            return np.full(n, -3, dtype=np.int32), receipt
+
+        if requested == "strict" and n > 256:
+            receipt["strategy_executed"] = "abstain_unidentified"
             receipt["fallback_reason"] = "input_exceeds_256"
-        # Keep the original backend as the explicit, traceable fallback.
+            return np.full(n, -3, dtype=np.int32), receipt
+
+        # The older backend remains available only as an explicit legacy or
+        # bootstrap choice. Candidate and strict modes never silently fall
+        # through to it.
         with self._infer_lock:
             labels = self._load_cluster()(data, oracle_num=None)
         labels = np.asarray(labels).reshape(-1).astype(int)

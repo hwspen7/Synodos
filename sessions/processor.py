@@ -144,7 +144,7 @@ class SessionProcessor(threading.Thread):
             "fallback_reason": None,
         }
         self._speaker_min_audio_s = float(
-            os.getenv("MEETING_SPEAKER_PROBE_MIN_S", "1.2")
+            os.getenv("MEETING_SPEAKER_PROBE_MIN_S", "0.8")
         )
         if not 0.8 <= self._speaker_min_audio_s <= 1.2:
             raise ValueError("MEETING_SPEAKER_PROBE_MIN_S must be 0.8..1.2")
@@ -752,7 +752,7 @@ class SessionProcessor(threading.Thread):
         self._next_acoustic_sample = max(self._next_acoustic_sample, start_offset)
         # Never allocate an unbounded acoustic task backlog.
         while (self._next_acoustic_sample + self._acoustic_window_samples <= end
-               and len(self._acoustic_tasks) < 10):
+               and len(self._acoustic_tasks) < 4):
             start = self._next_acoustic_sample
             left = start - start_offset
             right = left + self._acoustic_window_samples
