@@ -651,7 +651,19 @@ class SessionProcessor(threading.Thread):
         if final and (self._speech_settings.enable_events or self._speech_settings.enable_overlap):
             try:
                 from speech.analysis import analyze
-                self._put({"type": "audio_analysis", "result": analyze(audio, self._speech_settings)})
+                result = analyze(audio, self._speech_settings)
+                base_ms = round(start_offset * 1000 / sr)
+                result["audio_window_start_ms"] = base_ms
+                result["audio_window_end_ms"] = round(absolute_end * 1000 / sr)
+                result["covers_entire_meeting"] = start_offset == 0
+                # The final buffer is normally just the remaining tail.
+                # Convert segment-local overlap candidates to meeting time;
+                # never imply they are an all-meeting DER prediction.
+                for key in ("overlap", "separated_candidates"):
+                    for event in result.get(key, []):
+                        event["start_ms"] += base_ms
+                        event["end_ms"] += base_ms
+                self._put({"type": "audio_analysis", "result": result})
             except Exception as exc:
                 self._put({"type": "feature_warning", "feature": "audio_analysis", "message": str(exc)})
         # Handle transcripts and speaker assignments.
