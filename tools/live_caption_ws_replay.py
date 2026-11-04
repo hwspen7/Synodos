@@ -624,6 +624,13 @@ async def replay(args) -> dict:
             summary["asr_cer"] = score["cer"]
             summary["asr_wer"] = score["wer"]
             summary["reference_scoring"] = score
+            summary["reference_text_sha256"] = sha256(
+                args.reference_text.read_bytes()
+            ).hexdigest()
+            summary["hypothesis_text_sha256"] = sha256(
+                recognized.encode("utf-8")
+            ).hexdigest()
+            summary["reference_source"] = "operator_supplied_not_independently_verified"
             summary["subtitle_completeness"] = (
                 "reference_scored_manual_review_still_required"
             )
