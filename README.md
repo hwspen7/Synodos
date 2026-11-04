@@ -2,6 +2,27 @@
 
 Meeting of Pioneers is a local-first meeting transcription application built with Vue 3, TypeScript, FastAPI, and FunASR. Its source code, interface labels, documentation, default names, logging descriptions, and error messages are maintained in English. The recognition engine still supports Chinese-language speech, and existing user-provided data is never translated automatically.
 
+## Phase 1 language support (ten languages)
+
+The supported product languages for Phase 1 are **English (en), Chinese
+(zh), French (fr), Spanish (es), Arabic (ar), Indonesian (id), Japanese
+(ja), Russian (ru), German (de), and Hindi (hi)**. Portuguese (pt) and
+Bengali (bn) are not part of this release scope.
+
+The spoken-language menu also provides `auto` detection. Model-detected
+languages outside the approved ten may still appear in historically saved
+captions or automatic detection output; their recognized text is not
+silently deleted. An explicitly requested unsupported language is
+rejected before starting a new recording. The translation menu limits
+target choices to the same ten codes or disabled, but actual translation
+depends on installed local language-pair packages.
+
+The original 12-language / 130-single-clip Fixed195 archive is frozen
+and unchanged. Phase 1 scores the **110 selected clips** through
+`tools.phase1_ten_language_gate`, preserving the original 130-case
+score as historical evidence. This subset is *not* a retrained or improved
+Whisper result. See [Phase 1 text acceptance](docs/phase1_text_acceptance.md).
+
 ## Capabilities
 
 - Live microphone capture with 16 kHz mono PCM streaming over WebSocket.
