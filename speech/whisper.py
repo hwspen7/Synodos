@@ -79,6 +79,11 @@ class WhisperEngine:
         recovery_gap_ms = int(os.getenv("MEETING_WHISPER_RECOVERY_MIN_GAP_MS", "900"))
         if not 300 <= recovery_gap_ms <= 2000:
             raise ValueError("Recovery minimum gap must be 300..2000 ms")
+        short_voice_support_ms = int(os.getenv(
+            "MEETING_WHISPER_SHORT_VOICE_SUPPORT_MS", "160",
+        ))
+        if not 80 <= short_voice_support_ms <= 160:
+            raise ValueError("Short voice support must be 80..160 ms")
         with self._infer_lock:
             speech_regions = get_speech_timestamps(
                 samples, options, sampling_rate=16000
@@ -105,6 +110,7 @@ class WhisperEngine:
                     lambda chunk, **kw: self._get_model().transcribe(chunk, **kw),
                     dict(kwargs, multilingual=True),
                     preserve_disputed_text=preserve_disputed,
+                    short_voice_support_ms=short_voice_support_ms,
                 )
                 primary = recognized.utterances
                 detected = recognized.language
@@ -122,6 +128,7 @@ class WhisperEngine:
                     pieces, speech_regions,
                     round(len(samples) * 1000 / 16000), detected,
                     preserve_disputed_text=preserve_disputed,
+                    short_voice_support_ms=short_voice_support_ms,
                 )
 
             # Bounded actual ASR retry for a VAD-positive interval omitted
@@ -133,6 +140,7 @@ class WhisperEngine:
                     lambda chunk, **kw: self._get_model().transcribe(chunk, **kw),
                     kwargs, language=language,
                     min_uncovered_ms=recovery_gap_ms,
+                    short_voice_support_ms=short_voice_support_ms,
                 )
             else:
                 recovery = {
