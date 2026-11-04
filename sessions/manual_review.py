@@ -12,6 +12,26 @@ from typing import Any
 UNSET = object()
 
 
+def original_asr_text(segment: dict[str, Any]) -> str:
+    """Recover earliest raw text from historical review events when possible.
+
+    Older saved meetings used the correction event's text field rather than
+    original_asr_text. Never mistake a subsequently edited text for raw ASR.
+    """
+    original = segment.get("original_asr_text")
+    if isinstance(original, str):
+        return original
+    for event in segment.get("corrections") or []:
+        if not isinstance(event, dict):
+            continue
+        before = event.get("before")
+        if isinstance(before, dict) and isinstance(before.get("text"), str):
+            return before["text"]
+        if isinstance(event.get("text"), str):
+            return event["text"]
+    return str(segment.get("text") or "")
+
+
 class ReviewConflict(Exception):
     """The caller edited a stale segment revision."""
 
@@ -106,7 +126,7 @@ def apply_review(
 
     if text is not UNSET:
         if not isinstance(segment.get("original_asr_text"), str):
-            segment["original_asr_text"] = before["text"]
+            segment["original_asr_text"] = original_asr_text(segment)
         segment["text"] = text
         segment["manually_corrected"] = True
 
