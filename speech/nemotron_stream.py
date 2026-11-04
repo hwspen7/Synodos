@@ -325,6 +325,11 @@ class NemotronRealtimeWorker:
         with self._lock:
             return self._state == "completed"
 
+    def is_complete(self) -> bool:
+        """Whether final speaker activity covers a successfully closed stream."""
+        with self._lock:
+            return self._state == "completed"
+
     def activity_snapshot(self) -> np.ndarray | None:
         with self._lock:
             if self._state not in ("running", "completed"):
