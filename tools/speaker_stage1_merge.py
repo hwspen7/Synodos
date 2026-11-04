@@ -20,6 +20,8 @@ def merge_verification(camplus: dict, ecapa: dict) -> dict:
         raise ValueError("Cannot compare different or unversioned manifests")
     if camplus.get("reference_status") != ecapa.get("reference_status"):
         raise ValueError("Reference statuses disagree")
+    if camplus.get("verification_provenance") != ecapa.get("verification_provenance"):
+        raise ValueError("Verification provenance differs between model reports")
     left = camplus.get("verification") or {}
     right = ecapa.get("verification") or {}
     if set(left.get("models", {})) != {"camplus"}:
@@ -45,6 +47,7 @@ def merge_verification(camplus: dict, ecapa: dict) -> dict:
         "models": model_results,
         "paired_comparison_complete": complete,
         "reference_status": camplus["reference_status"],
+        "verification_provenance": camplus.get("verification_provenance"),
         "candidate_models_not_promoted": True,
         "note": (
             "Scores use separate within-model embedding spaces and the same "
