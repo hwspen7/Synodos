@@ -87,6 +87,88 @@ def unidentified_segments(timeline: dict, reference: list[dict],
     }
 
 
+def missed_speaker_time_breakdown(
+    timeline: dict, reference: list[dict], duration_ms: int,
+    *, step_ms: int = 100,
+) -> dict:
+    """Partition missed reference speaker-time by visible transcript coverage.
+
+    A missing label may coexist with an unidentified subtitle, with no
+    visible subtitle, or with another known speaker during an overlap.
+    These are descriptive time categories, not inferred root causes.
+    """
+    if step_ms != 100 or duration_ms <= 0:
+        raise ValueError("This diagnostic uses fixed 100 ms scoring frames")
+    intervals = timeline["segments"]
+    counts = {
+        "unidentified_transcript_ms": 0,
+        "no_transcript_ms": 0,
+        "simultaneous_speaker_shortfall_ms": 0,
+        "total_missed_ms": 0,
+        "reference_speaker_ms": 0,
+    }
+    for time_ms in range(0, duration_ms, step_ms):
+        active_ref = {
+            turn["speaker"] for turn in reference
+            if turn["start_ms"] <= time_ms < turn["end_ms"]
+        }
+        if not active_ref:
+            continue
+        active_labeled = {
+            row["published_speaker_id"] for row in intervals
+            if type(row.get("published_speaker_id")) is int
+            and row["published_speaker_id"] > 0
+            and row["start_ms"] <= time_ms < row["end_ms"]
+        }
+        unidentified_visible = any(
+            (type(row.get("published_speaker_id")) is not int
+             or row["published_speaker_id"] <= 0)
+            and row["start_ms"] <= time_ms < row["end_ms"]
+            for row in intervals
+        )
+        missing = max(0, len(active_ref) - len(active_labeled))
+        counts["reference_speaker_ms"] += len(active_ref) * step_ms
+        counts["total_missed_ms"] += missing * step_ms
+        if not missing:
+            continue
+        if not active_labeled:
+            field = (
+                "unidentified_transcript_ms"
+                if unidentified_visible else "no_transcript_ms"
+            )
+        else:
+            field = "simultaneous_speaker_shortfall_ms"
+        counts[field] += missing * step_ms
+    if (counts["unidentified_transcript_ms"]
+            + counts["no_transcript_ms"]
+            + counts["simultaneous_speaker_shortfall_ms"]
+            != counts["total_missed_ms"]):
+        raise AssertionError("Missed speaker-time categories must add up")
+    return {
+        "unidentified_transcript_s": round(
+            counts["unidentified_transcript_ms"] / 1000, 2
+        ),
+        "without_transcript_s": round(
+            counts["no_transcript_ms"] / 1000, 2
+        ),
+        "simultaneous_speaker_shortfall_s": round(
+            counts["simultaneous_speaker_shortfall_ms"] / 1000, 2
+        ),
+        "total_missed_speaker_seconds": round(
+            counts["total_missed_ms"] / 1000, 2
+        ),
+        "reference_speaker_seconds": round(
+            counts["reference_speaker_ms"] / 1000, 2
+        ),
+        "note": (
+            "All values are reference speaker-time, not distinct clock-time. "
+            "No transcript at a frame may reflect ASR omission, boundaries, "
+            "or processing. Simultaneous speaker shortfall does not "
+            "establish a particular model failure cause."
+        ),
+    }
+
+
 def score_case(root: Path, meeting: str, replay_path: Path) -> dict:
     root = root.resolve()
     replay_path = replay_path.resolve()
@@ -151,6 +233,16 @@ def score_case(root: Path, meeting: str, replay_path: Path) -> dict:
     if type(expected_unknown) is not int or unknown["count"] != expected_unknown:
         raise ValueError("Unidentified timeline differs from final replay")
     metrics = _score_diarization(reference, predictions)
+    missed_breakdown = missed_speaker_time_breakdown(
+        timeline, reference, duration_ms,
+    )
+    reference_seconds = missed_breakdown["reference_speaker_seconds"]
+    if (reference_seconds
+            and abs(
+                missed_breakdown["total_missed_speaker_seconds"] / reference_seconds
+                - metrics["missed_speaker_time"]
+            ) > 0.002):
+        raise ValueError("AMI missed-time decomposition does not match DER")
     return {
         "schema": SCHEMA,
         "meeting": meeting,
@@ -162,6 +254,7 @@ def score_case(root: Path, meeting: str, replay_path: Path) -> dict:
         "frame_step_ms": metrics["frame_step_ms"],
         "collar_ms": 0,
         "metrics": metrics,
+        "missed_speaker_time_breakdown": missed_breakdown,
         "unidentified": unknown,
         "confirmed_segment_count": timeline["total_segments"],
         "shadow_diagnostics": replay.get("speaker_shadow_diagnostics"),
@@ -201,6 +294,7 @@ def main() -> int:
     summary = {
         "meeting": result["meeting"],
         "metrics": result["metrics"],
+        "missed_speaker_time_breakdown": result["missed_speaker_time_breakdown"],
         "unidentified_count": result["unidentified"]["count"],
         "unidentified_with_reference_speech":
             result["unidentified"]["with_reference_speech"],
