@@ -28,6 +28,9 @@ from tools.phase07_benchmark import load_wav
 from tools.replay_transcript_score import (
     finalized_transcript, score_reference, write_private_transcript,
 )
+from tools.live_caption_segment_audit import (
+    build_segment_audit, capture_segment_audit, write_private_segment_audit,
+)
 
 HEADER = struct.Struct(">4sIQ")
 FRAME_SAMPLES = 3200
@@ -192,6 +195,14 @@ def capture_event(state: dict, message: dict, elapsed_ms: float,
         else:
             state["last_transcript_version"] = version
         incoming = message.get("segments") or []
+        if state["segment_audit_enabled"]:
+            capture_segment_audit(
+                state, incoming, elapsed_ms,
+                media_elapsed_ms=(
+                    sent_samples * 1000 / SAMPLE_RATE
+                    if type(sent_samples) is int else None
+                ),
+            )
         if incoming and state["first_confirmed_ms"] is None:
             state["first_confirmed_ms"] = round(elapsed_ms, 1)
         previous = state["segment_speakers"]
@@ -288,7 +299,9 @@ def capture_event(state: dict, message: dict, elapsed_ms: float,
     return False
 
 
-def new_capture(interval_seconds: int = 300) -> dict:
+def new_capture(
+    interval_seconds: int = 300, *, segment_audit_enabled: bool = False,
+) -> dict:
     if not 30 <= interval_seconds <= 1800:
         raise ValueError("Timing interval must be within 30..1800 seconds")
     return {
@@ -299,6 +312,9 @@ def new_capture(interval_seconds: int = 300) -> dict:
         "last_preview_chars": 0, "clear_events": 0,
         "segment_speakers": {}, "segment_speaker_names": {},
         "segment_texts": {}, "segment_order": [],
+        "segment_audit_enabled": segment_audit_enabled,
+        "segment_audit_segments": {}, "segment_audit_order": [],
+        "segment_audit_events": [],
         "speaker_reassignments": 0,
         "speaker_change_types": Counter(),
         "speaker_change_counts": Counter(),
@@ -329,6 +345,8 @@ async def replay(args) -> dict:
         raise ValueError("--loops must be between 1 and 100")
     if getattr(args, "reference_text", None) and args.loops != 1:
         raise ValueError("Text accuracy scoring requires exactly one audio loop")
+    if getattr(args, "segment_audit_output", None) and args.loops != 1:
+        raise ValueError("Segment audit requires exactly one audio loop")
     if not 0.25 <= args.speed <= 8:
         raise ValueError("--speed must be 0.25..8")
     if not 0 <= args.gap_ms <= 3000:
@@ -338,7 +356,10 @@ async def replay(args) -> dict:
         np.clip(np.round(wave * 32768), -32768, 32767).astype("<i2")
     ]
 
-    counters = new_capture(args.interval_seconds)
+    counters = new_capture(
+        args.interval_seconds,
+        segment_audit_enabled=bool(getattr(args, "segment_audit_output", None)),
+    )
     sent_samples = 0
     sent_sequence = 0
     first_send = None
@@ -515,8 +536,9 @@ async def replay(args) -> dict:
     if not counters["server_closed"]:
         summary["flags"].append("server_did_not_finish")
 
-    if getattr(args, "reference_text", None) or getattr(
-            args, "transcript_output", None):
+    if (getattr(args, "reference_text", None)
+            or getattr(args, "transcript_output", None)
+            or getattr(args, "segment_audit_output", None)):
         # Explicit opt-in only. The default report remains transcript-free.
         # Never score a truncated/broken session as an accurate meeting.
         if not (summary["server_closed"] and summary["delivery_matched"]
@@ -535,6 +557,11 @@ async def replay(args) -> dict:
             )
         if getattr(args, "transcript_output", None):
             write_private_transcript(args.transcript_output, recognized)
+        if getattr(args, "segment_audit_output", None):
+            write_private_segment_audit(
+                args.segment_audit_output,
+                build_segment_audit(counters, summary),
+            )
 
     if args.output:
         atomic_json(args.output, summary)
@@ -566,6 +593,10 @@ def main() -> int:
     parser.add_argument("--transcript-output", type=Path,
                         help="Explicit opt-in: export final ASR text to a new "
                              "gitignored benchmark/fixed195/*.txt for human review")
+    parser.add_argument("--segment-audit-output", type=Path,
+                        help="Explicit opt-in: privately export final segments, "
+                             "speaker relabel history and text revisions to a "
+                             "NEW gitignored benchmark/fixed195/*.json file")
     args = parser.parse_args()
     summary = asyncio.run(replay(args))
     print(json.dumps(summary, ensure_ascii=False, indent=2))
