@@ -1018,3 +1018,48 @@ Never treat a favorable oracle-window score as a production speaker
 count guarantee. The next necessary test is the actual same-input
 live V6 pipeline against annotated RTTM, followed by held-out AMI
 cases, not threshold selection on this one meeting.
+
+
+## V6 16-probe cluster audit: singleton low-frequency speaker
+
+The operator-provided CAM++ oracle-clean sample partition found:
+
+- Spherical auto: 16 embeddings, 3 predicted groups, Pair F1
+  0.95652, ARI 0.93902, 33 TP / 3 FP / 0 FN sample pairs.
+  MTD0010ID's three probes are grouped, but the one MTD011UID
+  voiceprint is folded into the same cluster. Automatic K=4
+  was rejected because it contained a single sample.
+- Complete-link cosine thresholds 0.58/0.62/0.66 give
+  5 groups, F1 0.86207, ARI 0.81921, with higher thresholds
+  further fragmenting coherent speakers.
+- The distinct third-speaker probe's cross-person cosine to
+  the fourth person's three samples was 0.3088–0.35342,
+  versus fourth-person within-group minimum 0.67402.
+  These values support REVIEW of an isolated voice candidate,
+  but one anomalous mixed/noisy frame can look similar.
+
+An **offline-only** spherical_provisional_outliers diagnostic
+now tests whether one sample inside a predicted group has 3+
+mutually coherent peers (minimum pairwise cosine 0.60), yet
+differs from each peer by a margin of at least 0.15. If so,
+the tool scores an experimental separate group and reports
+its index. These are uncalibrated hypothesis thresholds, NOT
+a new production speaker detection rule. It does not modify
+any real-time transcript, participant, or database.
+
+    cd E:\Meeting-Fixed10-Test
+    git pull --ff-only origin feature/multilingual-fixed10-ui-refresh
+    python -m unittest tests.quality.test_ami_oracle_cluster_eval -v
+    python -m tools.ami_oracle_solo_probe --root benchmark/fixed195/ami_shadow10 --meeting TS3003b --replay benchmark/fixed195/ami_shadow10/replay_TS3003b_v6.json --cluster-analysis --output benchmark/fixed195/ami_shadow10/oracle_solo_cluster_eval_TS3003b_v6_singleton.json
+
+Inspect:
+
+    $r = Get-Content benchmark/fixed195/ami_shadow10/oracle_solo_cluster_eval_TS3003b_v6_singleton.json -Raw | ConvertFrom-Json
+    $r.clustering_evaluation.methods | Where-Object { $_.method -in @("spherical_auto", "spherical_provisional_outliers") } | ConvertTo-Json -Depth 8
+
+A better pair score on human-selected solo clips would show
+only that this hypothesis explains that acoustic grouping.
+It is not a real-time DER gain. Additional independently
+recorded evidence from other sessions is necessary before
+promoting a singleton to a published speaker identity.
+The V6 live DER baseline is still 0.40534.
