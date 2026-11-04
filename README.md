@@ -27,6 +27,18 @@ The latter gathers the original official human-word annotations and
 authenticated GitHub check-run annotations without altering saved captions
 or claiming release acceptance before real field metrics and hosted CI pass.
 
+## Phase 1/2 integrated safety upgrade
+
+The integrated upgrade implements versioned human transcript review, enrolled
+speaker identity suggestions that abstain on ambiguous evidence, original-ASR
+provenance, and an AMI word-timestamp parser repair. See
+[Phase 1/2 acceptance and E-drive instructions](docs/phase12_integrated_upgrade.md).
+
+**Release status is evidence-gated.** Existing 10-language ASR results do not
+prove real meeting DER/CER or GitHub Actions success; no model quality
+improvement is claimed until the frozen audio and independent references
+have been replayed and checked.
+
 ## Capabilities
 
 - Live microphone capture with 16 kHz mono PCM streaming over WebSocket.
