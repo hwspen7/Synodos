@@ -10,13 +10,13 @@ as overlap evidence but NEVER given the same word as a second transcript.
 """
 from __future__ import annotations
 
-import math
-import unicodedata
 from collections.abc import Mapping, Sequence
 
 
 def _plain(text: str) -> str:
-    return unicodedata.normalize("NFKC", text).strip()
+    # Literal identity matters in multilingual transcripts. NFKC would
+    # equate distinct glyphs (e.g. Roman numerals) and is too permissive.
+    return text.strip()
 
 
 def _valid_clock(value: object) -> bool:
