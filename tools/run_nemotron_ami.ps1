@@ -11,6 +11,7 @@ param(
     [switch]$RecoverVadGaps,
     [switch]$ContentFirst,
     [switch]$PreserveVerifiedText,
+    [switch]$ExportPrivateTranscript,
     [string]$HumanReferenceText = "",
     [string]$ExpectedReferenceSha256 = "",
     [switch]$HumanReferenceVerified,
@@ -135,6 +136,8 @@ $gaps = Join-Path $root "audit_TS3003b_asr_stages_$timestamp.json"
 $forced = Join-Path $root "audit_TS3003b_forced_comparison_$timestamp.json"
 $forcedGaps = Join-Path $root "audit_TS3003b_forced_asr_stages_$timestamp.json"
 $textGateReport = Join-Path $root "audit_TS3003b_phase1_human_text_$timestamp.json"
+$privateTranscript = Join-Path $root "transcript_TS3003b_live_$timestamp.txt"
+$privateSegmentAudit = Join-Path $root "transcript_TS3003b_segment_audit_$timestamp.json"
 $outLog = Join-Path $root "nemotron_server_$timestamp.stdout.log"
 $errLog = Join-Path $root "nemotron_server_$timestamp.stderr.log"
 
@@ -215,6 +218,12 @@ try {
         if ($HumanReferenceText) {
             $replayArgs += @("--reference-text", $HumanReferenceText)
         }
+        if ($ExportPrivateTranscript.IsPresent) {
+            $replayArgs += @(
+                "--transcript-output", $privateTranscript,
+                "--segment-audit-output", $privateSegmentAudit
+            )
+        }
         & $PythonExe @replayArgs
         if ($LASTEXITCODE -ne 0) {
             throw "Realtime replay failed. Inspect $errLog"
@@ -293,6 +302,10 @@ try {
         Write-Host "Paired forced-reference comparison: $forced"
         Write-Host "Forced-reference ASR-stage gaps: $forcedGaps"
         Write-Host "Backend logs: $errLog"
+        if ($ExportPrivateTranscript.IsPresent) {
+            Write-Host "Private finalized transcript: $privateTranscript"
+            Write-Host "Private segment audit: $privateSegmentAudit"
+        }
         Write-Host ("Original only_words independent DER: {0:P3}" -f ([double]$d.original_only_words_independent_der))
         Write-Host ("Forced reference independent DER: {0:P3}" -f ([double]$d.forced_aligned_independent_der))
         Write-Host ("Forced reference caption-clock counterfactual DER: {0:P3}" -f $clockMasked)
