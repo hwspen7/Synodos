@@ -7,6 +7,7 @@ review evidence, NOT an estimate of word accuracy or diarization DER.
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 
 
@@ -55,16 +56,29 @@ def overlap_content_risk(
             "review_spans": [], "note": "No finalized overlapping voice evidence",
         }
 
-    boundaries = sorted({
-        clock for start, end, _ in intervals + captions
-        for clock in (start, end)
-    })
+    # O(N log N) sweep rather than rescanning all turns per boundary.
+    # Counters preserve a speaker even when overlapping adjacent turns for
+    # that same channel have independent start/end events.
+    changes = defaultdict(lambda: [defaultdict(int), defaultdict(int)])
+    for a, b, sid in intervals:
+        changes[a][0][sid] += 1
+        changes[b][0][sid] -= 1
+    for a, b, sid in captions:
+        changes[a][1][sid] += 1
+        changes[b][1][sid] -= 1
+    timeline = sorted(changes)
+    active_acoustic = defaultdict(int)
+    active_caption = defaultdict(int)
     spans = []
-    for start, end in zip(boundaries, boundaries[1:]):
-        acoustic = {sid for a, b, sid in intervals if a < end and b > start}
+    for start, end in zip(timeline, timeline[1:]):
+        for speaker, delta in changes[start][0].items():
+            active_acoustic[speaker] += delta
+        for speaker, delta in changes[start][1].items():
+            active_caption[speaker] += delta
+        acoustic = {sid for sid, n in active_acoustic.items() if n > 0}
         if len(acoustic) < 2:
             continue
-        published = {sid for a, b, sid in captions if a < end and b > start}
+        published = {sid for sid, n in active_caption.items() if n > 0}
         state = ("no_caption" if not published
                  else "underrepresented" if not acoustic.issubset(published)
                  else "represented")
