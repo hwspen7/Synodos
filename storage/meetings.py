@@ -168,6 +168,11 @@ class MeetingStore:
             ),
             "speaker_activity_fraction": s.get("speaker_activity_fraction"),
             "speaker_activity_time_source": s.get("speaker_activity_time_source"),
+            "caption_cues": s.get("caption_cues", []),
+            "overlap_intervals_ms": s.get("overlap_intervals_ms", []),
+            "caption_projection_status": s.get(
+                "caption_projection_status", "disabled",
+            ),
         }
 
     def list_segments(self, meeting_id: str) -> list[dict] | None:
