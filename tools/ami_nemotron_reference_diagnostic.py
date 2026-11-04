@@ -19,7 +19,7 @@ from tools.ami_shadow10_prepare import SELECTED, checksum
 from tools.ami_nemotron_live_score import _validated_independent, _solo_only
 from tools.ami_shadow10_score import score_case
 from tools.phase09_speaker_benchmark import evaluate
-from tools.speaker_stage1_compare import diarization_details, _reference_turns
+from tools.speaker_stage1_compare import diarization_details, _reference_turns, baseline_turns
 
 REFERENCE_COMMIT = "9527b7c64846fb38316a610f32e9d3466bd6d8b7"
 REFERENCE_SOURCE = "nttcslab-sp/diar-forced-alignment"
@@ -116,6 +116,15 @@ def alternate_score(root: Path, meeting: str, replay_path: Path) -> dict:
     measured = evaluate(reference, prediction, step_ms=100)
     details = diarization_details(reference, prediction, measured)
     measured.pop("speaker_mapping", None)
+    # Measure the actual final published captions under the SAME forced
+    # reference, not only the independent raw speaker stream. This isolates
+    # audio-model quality from text-alignment/fusion degradation.
+    caption_prediction = baseline_turns(replay, duration_ms=DURATION_MS)
+    caption_measured = evaluate(reference, caption_prediction, step_ms=100)
+    caption_details = diarization_details(
+        reference, caption_prediction, caption_measured,
+    )
+    caption_measured.pop("speaker_mapping", None)
     solo = _solo_only(reference, prediction, duration_ms=DURATION_MS)
     return {
         "schema": "meeting-ami-forced-reference-diagnostic-v1",
@@ -133,6 +142,10 @@ def alternate_score(root: Path, meeting: str, replay_path: Path) -> dict:
         "original_only_words_caption_der": original["metrics"]["der"],
         "forced_aligned_independent_der": measured["der"],
         "forced_aligned_independent_metrics": {**measured, **details},
+        "forced_aligned_caption_der": caption_measured["der"],
+        "forced_aligned_caption_metrics": {
+            **caption_measured, **caption_details,
+        },
         "forced_aligned_solo_only_metrics": solo,
         "note": (
             "This uses different ground truth and cannot be called an "
