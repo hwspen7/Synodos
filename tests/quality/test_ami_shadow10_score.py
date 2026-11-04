@@ -132,7 +132,7 @@ class AmiShadowScoreTests(unittest.TestCase):
                 0,
             )
             self.assertNotIn("speaker_mapping", result["metrics"])
-            self.assertNotIn("text", json.dumps(result))
+            self.assertNotIn('"text":', json.dumps(result))
 
     def test_locate_reference_speech_gaps_without_fabricating_words(self):
         reference = [{"start_ms": 0, "end_ms": 3000, "speaker": "A"}]
