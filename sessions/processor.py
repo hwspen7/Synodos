@@ -147,6 +147,8 @@ class SessionProcessor(threading.Thread):
         # CAM++ acoustic embeddings and reclustering votes.
         self.independent_diarization = None
         self._independent_published: dict[int, int] = {}
+        self._independent_pcm_origin_samples = 0
+        self._independent_id_offset = 0
         self._transcript_version = 0
         self._last_state_sent = 0.0
         self._last_inferred_absolute_end = -1
@@ -453,11 +455,25 @@ class SessionProcessor(threading.Thread):
                     "end_sample": s["end_sample"],
                     "text": s["text"],
                     "cluster": s["cluster"],
-                    "speaker_id": s.get(
-                        "speaker_id",
-                        self._speaker_map.get(s["cluster"], s["cluster"]),
+                    "speaker_id": self._independent_published.get(
+                        int(s["id"]),
+                        s.get("saved_nemotron_id") or s.get(
+                            "speaker_id",
+                            self._speaker_map.get(s["cluster"], s["cluster"]),
+                        ),
                     ),
-                    "speaker_name": s.get("speaker_name", ""),
+                    "speaker_name": (
+                        f"Speaker {self._independent_published[int(s['id'])]}"
+                        if (int(s["id"]) in self._independent_published
+                            and not s.get("speaker_override"))
+                        else s.get("speaker_name", "")
+                    ),
+                    "speaker_diarization_source": (
+                        "nemotron3"
+                        if (int(s["id"]) in self._independent_published
+                            and not s.get("speaker_override"))
+                        else s.get("speaker_diarization_source", "camplus")
+                    ),
                     "speaker_uncertain": bool(s.get("speaker_uncertain", False)),
                     "emb": s["emb"],  # Preserve behavior.
                     "language": s.get("language", "und"),
@@ -501,6 +517,16 @@ class SessionProcessor(threading.Thread):
                     "cluster": int(item.get("cluster", -1)),
                     "speaker_id": int(item.get("speaker_id", item.get("cluster", -1))),
                     "speaker_name": item.get("speaker_name", ""),
+                    "saved_nemotron_id": (
+                        int(item["speaker_id"])
+                        if item.get("speaker_diarization_source") == "nemotron3"
+                        and type(item.get("speaker_id")) is int
+                        and item["speaker_id"] > 0
+                        else None
+                    ),
+                    "speaker_diarization_source": item.get(
+                        "speaker_diarization_source", "camplus",
+                    ),
                     "speaker_uncertain": bool(item.get("speaker_uncertain", False)),
                     "text": item.get("text", "") or "",
                     "language": item.get("language", "und"),
@@ -1415,15 +1441,36 @@ class SessionProcessor(threading.Thread):
         # 10 ms Nemotron activity has sufficient evidence.
         independent = self.independent_diarization
         self._independent_published = {}
+        origin = self._independent_pcm_origin_samples
+        for item, source in zip(items, ordered):
+            if source.get("speaker_override"):
+                item["speaker_diarization_source"] = "manual_override"
+                continue
+            saved = source.get("saved_nemotron_id")
+            if type(saved) is int and saved > 0:
+                item["speaker_id"] = saved
+                item["speaker_name"] = f"Speaker {saved}"
+                item["speaker_diarization_source"] = "nemotron3"
+                self._independent_published[int(item["id"])] = saved
         if independent is not None:
             activity = independent.activity_snapshot()
             if activity is not None and len(activity):
                 for item, source in zip(items, ordered):
-                    if source.get("speaker_override"):
-                        item["speaker_diarization_source"] = "manual_override"
+                    if (source.get("speaker_override")
+                            or int(source["end_sample"]) <= origin):
+                        continue
+                    start_ms = round(
+                        (int(source["start_sample"]) - origin) * 1000
+                        / self.settings.sample_rate
+                    )
+                    end_ms = round(
+                        (int(source["end_sample"]) - origin) * 1000
+                        / self.settings.sample_rate
+                    )
+                    if start_ms < 0:
                         continue
                     decision = choose_caption_speaker(
-                        activity, int(item["start_ms"]), int(item["end_ms"]),
+                        activity, start_ms, end_ms,
                     )
                     item["speaker_activity_score"] = decision.activity_score
                     item["speaker_activity_margin"] = decision.margin
@@ -1432,15 +1479,16 @@ class SessionProcessor(threading.Thread):
                         "nemotron_frame_activity_not_identity_probability"
                     )
                     if decision.speaker_id is not None:
-                        item["speaker_id"] = decision.speaker_id
-                        item["speaker_name"] = f"Speaker {decision.speaker_id}"
+                        published = decision.speaker_id + self._independent_id_offset
+                        item["speaker_id"] = published
+                        item["speaker_name"] = f"Speaker {published}"
                         item["speaker_status"] = "acoustic_primary"
                         item["speaker_diarization_source"] = "nemotron3"
+                        self._independent_published[int(item["id"])] = published
                     else:
-                        item["speaker_diarization_source"] = "camplus_fallback"
-                    self._independent_published[int(item["id"])] = int(
-                        item["speaker_id"]
-                    )
+                        item.setdefault(
+                            "speaker_diarization_source", "camplus_fallback",
+                        )
         phase07_speaker = speaker_stats(items)
         metrics.gauge("phase07_speaker_changes", phase07_speaker["speaker_switches"])
         metrics.gauge("phase07_unidentified_segments", phase07_speaker["unidentified_segments"])
