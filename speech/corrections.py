@@ -1,6 +1,7 @@
 """Optimistic transcript corrections, preserving provenance and revision history."""
 from __future__ import annotations
 from datetime import datetime, timezone
+from sessions.manual_review import original_asr_text
 
 
 class RevisionConflict(RuntimeError):
@@ -22,7 +23,7 @@ def correct_segment(state: dict, segment_id: int, text: str, expected_revision: 
             return segment
         old_text = str(segment.get("text") or "")
         if not isinstance(segment.get("original_asr_text"), str):
-            segment["original_asr_text"] = old_text
+            segment["original_asr_text"] = original_asr_text(segment)
         segment.setdefault("corrections", []).append({
             "revision": previous,
             "applied_revision": previous + 1,
