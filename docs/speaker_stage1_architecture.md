@@ -513,3 +513,74 @@ After pulling, **restart the backend** and replay the same WAV under a
 NEW report filename. An old backend keeps its previous module versions
 even when the checkout has changed. This repair does not alter CAM++,
 published captions, stored identities or manually corrected labels.
+
+
+## AMI Shadow10 accuracy audit and shutdown accounting (stage 1c)
+
+The shadow worker now has a bounded **post-save** drain (maximum 1.5
+seconds). The final WebSocket `closed` report is captured after it
+finishes or discards outstanding work. It includes:
+
+- `submitted`, `completed`, `failed`
+- `in_progress` (current active inference, zero after closure)
+- `remaining` (queued work, zero after closure)
+- `discarded_on_shutdown` (accepted requests not completed)
+- `closed` and the existing rank/capacity/error counters
+
+After closure, `submitted = completed + failed +
+discarded_on_shutdown`. A zero queue length **does not** prove
+successful completion. The optional wait runs only after the final
+transcript has already been saved, and the production CAM++ identity
+logic is unchanged.
+
+### Generate a scoreable replay
+
+Stop the backend, update the branch and restart **with both diagnostics
+flags** in the backend's PowerShell window:
+
+    cd E:\Meeting-Fixed10-Test
+    git pull --ff-only origin feature/multilingual-fixed10-ui-refresh
+    python -m unittest tests.quality.test_ecapa_shadow_shutdown tests.quality.test_ami_shadow10_score -v
+
+    $env:MEETING_ECAPA_SHADOW = "1"
+    $env:MEETING_ECAPA_SHADOW_DEVICE = "cpu"
+    $env:MEETING_ECAPA_SHADOW_PYTHON = "E:\Meeting-Fixed10-Test\.venv-speaker-ecapa\Scripts\python.exe"
+    $env:MEETING_ECAPA_SHADOW_CACHE_ROOT = "E:\Meeting-AI-Cache"
+    $env:MEETING_DIARIZATION_DIAGNOSTICS = "1"
+    python -m uvicorn main:app --host 127.0.0.1 --port 8000
+
+Replay the **same** AMI clip into a **new** report file. The previous
+v2 report cannot be retroactively scored if the server was not started
+with the diagnostic timeline flag:
+
+    python -m tools.live_caption_ws_replay --audio benchmark/fixed195/ami_shadow10/audio/ami-TS3003b-1500-1740.wav --loops 1 --speed 1.0 --output benchmark/fixed195/ami_shadow10/replay_TS3003b_v3.json
+
+Compute reference-backed, 100ms frame-based, no-collar DER and export
+the *anonymous* timestamps of unidentified transcript segments:
+
+    python -m tools.ami_shadow10_score --root benchmark/fixed195/ami_shadow10 --meeting TS3003b --replay benchmark/fixed195/ami_shadow10/replay_TS3003b_v3.json --output benchmark/fixed195/ami_shadow10/audit_TS3003b_v3.json
+
+The scorer:
+1. Requires exactly 240 seconds of unchanged 16 kHz audio, validated
+   by SHA256 against the AMI case record and the replay's source hash.
+2. Recalculates the speaker reference from the saved AMI RTTM, verifies
+   its checksum, and rejects any mismatch with the prepared case.
+3. Requires `delivery_matched=true`, `server_closed=true`,
+   no replay error/flags, a complete untruncated speaker timeline, and
+   matching final segment counts.
+4. Measures approximate `der`, missed speaker-time, false-alarm
+   speaker-time, speaker confusion, speaker-count error and overlap
+   recall, with anonymous CAM++ identity permutation.
+5. Lists each unidentified segment's **clip-local** start/end times and
+   how many milliseconds overlap human-annotated speech. This is for
+   targeted audio review, not an inferred causal diagnosis.
+
+The output is private under the gitignored Fixed195 root; it contains
+no transcript text, voiceprints or person names. A high DER may reflect
+missing speech, confusions, overlap, ASR-aligned boundaries and the
+limitations of the only-words reference. This first stage scores **CAM++
+published diarization only**; ECAPA shadow rank consistency is *not*
+a separate identity-accuracy score. The ten selected AMI excerpts are
+not necessarily speaker-disjoint, so do not infer cross-meeting
+verification accuracy without an explicit independent enrollment/test
+protocol.
