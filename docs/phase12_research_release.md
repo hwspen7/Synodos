@@ -77,7 +77,11 @@ may require Python 3.10. Confirm its current README and license first.
   use the official `BUTSpeechFIT/DiariZen` install procedure in a separate
   compatible environment. The **code is MIT**, but the pretrained
   `BUT-FIT/diarizen-wavlm-large-s80-md` weights are **CC BY-NC 4.0**.
-  They are not embedded, redistributed or enabled by default.
+  They are not embedded, redistributed or enabled by default. Local DiariZen
+  loading also needs a separate local
+  `pyannote/wespeaker-voxceleb-resnet34-LM` `pytorch_model.bin`; use
+  `-DiarizenEmbeddingModelPath`. Its upstream from_pretrained() downloader
+  does not accept an ordinary local model directory as a repo ID.
 - Qwen3-ASR:
   `pip install qwen-asr faster-whisper` in a dedicated Python 3.12
   environment, with a locally downloaded
@@ -179,7 +183,8 @@ powershell -NoProfile -ExecutionPolicy Bypass `
   -QwenPython "E:\Meeting-Models\qwen\Scripts\python.exe" `
   -NemotronReplayManifest "benchmark/fixed195/ami_shadow10/phase1b_existing_replays.json" `
   -PyannoteModelPath "E:\AI-Cache\Models\pyannote-community1" `
-  -DiarizenModelPath "E:\AI-Cache\Models\diarizen-large" `
+  -DiarizenModelPath "E:\AI-Cache\Models\diarizen-large"
+  -DiarizenEmbeddingModelPath "E:\AI-Cache\Models\wespeaker\pytorch_model.bin" `
   -QwenModelPath "E:\AI-Cache\Models\Qwen3-ASR-1.7B" `
   -QwenAudio "benchmark/fixed195/ami_shadow10/audio/ami-TS3003b-1500-1740.wav" `
   -QwenSegmentAudit "benchmark/fixed195/ami_shadow10/transcript_TS3003b_segment_audit_YYYYMMDD-HHMMSS.json" `
