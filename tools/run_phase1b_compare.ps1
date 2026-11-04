@@ -115,8 +115,11 @@ foreach ($meeting in $meetings) {
 }
 $combined = Join-Path $runDir "paired_comparison.json"
 & $PythonExe -m tools.phase1b_compare --reports @results --output $combined --min-meetings 10
-if ($LASTEXITCODE -ne 0) {
-    throw "Paired model comparison did not meet the acoustic quality gate. See $combined"
+if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
+    throw "Paired model comparison could not be scored. See $combined"
+}
+if ($LASTEXITCODE -eq 2) {
+    Write-Warning "The paired model comparison did not meet the acoustic quality target. This is valid FAIL evidence, not release acceptance."
 }
 Write-Host "All three models paired. Review $combined; never auto-promote a model."
 ) {
