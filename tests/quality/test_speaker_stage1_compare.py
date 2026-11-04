@@ -256,6 +256,50 @@ class SpeakerStageOneTests(unittest.TestCase):
         self.assertIsNone(result["eer"])
         self.assertIsNone(result["auc"])
 
+    def test_merged_verification_requires_same_frozen_manifest(self):
+        from tools.speaker_stage1_compare import SCHEMA
+        from tools.speaker_stage1_merge import merge_verification
+
+        def artifact(name, digest="a" * 64, passed=True):
+            return {
+                "schema": SCHEMA,
+                "manifest_sha256": digest,
+                "reference_status": "operator_supplied_not_independently_verified",
+                "verification": {
+                    "pair_count": 2,
+                    "models": {
+                        name: {
+                            "requested": 2,
+                            "completed": 2 if passed else 1,
+                            "failed": 0 if passed else 1,
+                            "metrics": {"eer": 0.1},
+                        },
+                    },
+                },
+            }
+
+        merged = merge_verification(artifact("camplus"), artifact("ecapa"))
+        self.assertTrue(merged["paired_comparison_complete"])
+        self.assertTrue(merged["candidate_models_not_promoted"])
+        with self.assertRaisesRegex(ValueError, "different"):
+            merge_verification(
+                artifact("camplus"), artifact("ecapa", digest="b" * 64),
+            )
+        incomplete = merge_verification(
+            artifact("camplus"), artifact("ecapa", passed=False),
+        )
+        self.assertFalse(incomplete["paired_comparison_complete"])
+        with self.assertRaisesRegex(ValueError, "CAM\\+\\+"):
+            merge_verification(artifact("ecapa"), artifact("ecapa"))
+
+    def test_nemotron_numpy_scalars_are_accepted(self):
+        values = normalize_nemotron_turns(
+            [{"Speaker": np.int64(3), "Start": np.float32(0.0),
+              "End": np.float32(1.0)}],
+            duration_ms=1000,
+        )
+        self.assertEqual(values[0]["speaker_id"], 4)
+
     def test_manifest_rejects_duplicate_and_missing_references(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "manifest.json"
