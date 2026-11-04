@@ -9,6 +9,7 @@ on:
       - 'tools/run_nemotron_ami.ps1'
       - 'tools/run_phase1_engineering.ps1'
       - 'tools/diagnose_github_actions.ps1'
+      - 'tools/run_phase1_closure.ps1'
       - '.github/workflows/windows-launcher.yml'
   pull_request:
     paths:
@@ -33,7 +34,8 @@ jobs:
             'tools/windows/Start-Meeting.ps1',
             'tools/run_nemotron_ami.ps1',
             'tools/run_phase1_engineering.ps1',
-            'tools/diagnose_github_actions.ps1'
+            'tools/diagnose_github_actions.ps1',
+            'tools/run_phase1_closure.ps1'
           )
           foreach ($script in $scripts) {
             $tokens = $null
