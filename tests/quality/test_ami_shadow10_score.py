@@ -13,7 +13,7 @@ from tools.ami_shadow10_prepare import SELECTED, checksum
 from tools.ami_shadow10_score import (
     score_case, reference_union_overlap, unidentified_segments,
     missed_speaker_time_breakdown, reference_speech_without_captions,
-    reference_speaker_coverage,
+    reference_speaker_coverage, reference_speaker_context_breakdown,
 )
 
 
@@ -112,6 +112,10 @@ class AmiShadowScoreTests(unittest.TestCase):
             self.assertEqual(result["unidentified"]["outside_reference_speech"], 1)
             per_voice = result["reference_speaker_coverage"]["speakers"]
             self.assertEqual([x["reference_speaker"] for x in per_voice], ["A", "B"])
+            contexts = result["reference_speaker_context"]["speakers"]
+            self.assertEqual(contexts[0]["solo"]["reference_speech_seconds"], 100.0)
+            self.assertEqual(contexts[1]["solo"]["reference_speech_seconds"], 80.0)
+            self.assertEqual(contexts[1]["overlap"]["reference_speech_seconds"], 0.0)
             self.assertEqual(per_voice[0]["reference_speech_seconds"], 100.0)
             self.assertEqual(per_voice[0]["positive_caption_seconds"], 100.0)
             self.assertEqual(per_voice[1]["reference_speech_seconds"], 80.0)
@@ -188,6 +192,52 @@ class AmiShadowScoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "100ms"):
             reference_speaker_coverage(timeline, reference, 3000,
                                        frame_step_ms=50)
+
+    def test_context_breakdown_keeps_solo_and_overlap_evidence_separate(self):
+        reference = [
+            {"start_ms": 0, "end_ms": 4000, "speaker": "A"},
+            {"start_ms": 1000, "end_ms": 2000, "speaker": "B"},
+            {"start_ms": 3000, "end_ms": 6000, "speaker": "B"},
+        ]
+        timeline = {"segments": [
+            {"start_ms": 0, "end_ms": 2000,
+             "published_speaker_id": 1, "embedding_available": True},
+            {"start_ms": 3000, "end_ms": 4000,
+             "published_speaker_id": -1, "embedding_available": False},
+            {"start_ms": 4000, "end_ms": 5000,
+             "published_speaker_id": 2, "embedding_available": False},
+            {"start_ms": 5000, "end_ms": 6000,
+             "published_speaker_id": 2, "embedding_available": True},
+        ]}
+        data = reference_speaker_context_breakdown(
+            timeline, reference, 6000,
+        )
+        a, b = data["speakers"]
+        self.assertEqual([x["reference_speaker"] for x in (a, b)],
+                         ["A", "B"])
+        self.assertEqual(a["solo"]["reference_speech_seconds"], 2.0)
+        self.assertEqual(a["solo"]["without_caption_seconds"], 1.0)
+        self.assertEqual(a["overlap"]["reference_speech_seconds"], 2.0)
+        self.assertEqual(a["overlap"]["unknown_only_caption_seconds"], 1.0)
+        self.assertEqual(a["overlap"]["positive_label_contacts"], [
+            {"published_label": 1, "temporal_overlap_seconds": 1.0},
+        ])
+        self.assertEqual(b["solo"]["reference_speech_seconds"], 2.0)
+        self.assertEqual(b["solo"]["caption_without_embedding_seconds"], 1.0)
+        self.assertEqual(b["solo"]["caption_with_embedding_seconds"], 1.0)
+        self.assertEqual(b["overlap"]["reference_speech_seconds"], 2.0)
+        self.assertEqual(b["longest_solo_stretches"], [{
+            "start_ms": 4000, "end_ms": 6000, "duration_ms": 2000,
+        }])
+        self.assertEqual(a["longest_solo_stretches"], [
+            {"start_ms": 0, "end_ms": 1000, "duration_ms": 1000},
+            {"start_ms": 2000, "end_ms": 3000, "duration_ms": 1000},
+        ])
+        self.assertNotIn("utterance", json.dumps(data))
+        with self.assertRaisesRegex(ValueError, "100ms"):
+            reference_speaker_context_breakdown(
+                timeline, reference, 6000, frame_step_ms=50,
+            )
 
     def test_missed_speaker_time_breakdown_separates_three_causes(self):
         timeline = {"segments": [
