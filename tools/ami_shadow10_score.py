@@ -224,6 +224,126 @@ def reference_speech_without_captions(
     }
 
 
+def reference_speaker_coverage(
+    timeline: dict, reference: list[dict], duration_ms: int,
+    *, frame_step_ms: int = 100,
+) -> dict:
+    """Audit acoustic evidence per human reference voice, not speaker accuracy.
+
+    Published speaker labels are anonymized and NOT presumed to match AMI
+    reference speakers. A caption that temporally overlaps a reference
+    speaker may actually belong to a different speaker, especially during
+    overlap. The output is for reviewing missed/low-frequency speakers.
+    """
+    if frame_step_ms != 100 or duration_ms <= 0:
+        raise ValueError("Reference speaker audit requires 100ms frames")
+    speakers = sorted({turn["speaker"] for turn in reference})
+    if not speakers:
+        raise ValueError("Empty speaker reference")
+    states = {
+        speaker: {
+            "reference": 0, "no_caption": 0, "unknown_only": 0,
+            "positive_caption": 0, "caption_without_embedding": 0,
+            "caption_with_embedding": 0, "overlap": 0,
+            "contacts": {},
+        }
+        for speaker in speakers
+    }
+    for time_ms in range(0, duration_ms, frame_step_ms):
+        active_ref = {
+            row["speaker"] for row in reference
+            if row["start_ms"] <= time_ms < row["end_ms"]
+        }
+        if not active_ref:
+            continue
+        live = [
+            row for row in timeline["segments"]
+            if row["start_ms"] <= time_ms < row["end_ms"]
+        ]
+        positive = {
+            int(row["published_speaker_id"]) for row in live
+            if type(row.get("published_speaker_id")) is int
+            and row["published_speaker_id"] > 0
+        }
+        embedded = any(bool(row.get("embedding_available")) for row in live)
+        for speaker in active_ref:
+            state = states[speaker]
+            state["reference"] += 1
+            if len(active_ref) >= 2:
+                state["overlap"] += 1
+            if not live:
+                state["no_caption"] += 1
+            elif not positive:
+                state["unknown_only"] += 1
+            else:
+                state["positive_caption"] += 1
+                for label in positive:
+                    state["contacts"][label] = (
+                        state["contacts"].get(label, 0) + 1
+                    )
+            if live and not embedded:
+                state["caption_without_embedding"] += 1
+            elif embedded:
+                state["caption_with_embedding"] += 1
+
+    def seconds(frames: int) -> float:
+        return round(frames * frame_step_ms / 1000, 2)
+
+    rows = []
+    for speaker in speakers:
+        state = states[speaker]
+        turns = [item for item in reference if item["speaker"] == speaker]
+        if (state["reference"] != state["no_caption"]
+                + state["unknown_only"] + state["positive_caption"]):
+            raise AssertionError("Reference speaker coverage is inconsistent")
+        contacts = sorted(
+            state["contacts"].items(),
+            key=lambda pair: (-pair[1], pair[0]),
+        )
+        rows.append({
+            "reference_speaker": speaker,
+            "annotated_intervals": len(turns),
+            "short_intervals_under_1_2s": sum(
+                item["end_ms"] - item["start_ms"] < 1200
+                for item in turns
+            ),
+            "reference_speech_seconds": seconds(state["reference"]),
+            "without_caption_seconds": seconds(state["no_caption"]),
+            "unknown_only_caption_seconds": seconds(state["unknown_only"]),
+            "positive_caption_seconds": seconds(state["positive_caption"]),
+            "caption_without_embedding_seconds": seconds(
+                state["caption_without_embedding"]
+            ),
+            "caption_with_embedding_seconds": seconds(
+                state["caption_with_embedding"]
+            ),
+            "overlap_reference_seconds": seconds(state["overlap"]),
+            "positive_label_contacts": [
+                {
+                    "published_label": label,
+                    "temporal_overlap_seconds": seconds(frames),
+                }
+                for label, frames in contacts
+            ],
+        })
+    rows.sort(
+        key=lambda item: (-item["reference_speech_seconds"],
+                          item["reference_speaker"])
+    )
+    return {
+        "frame_step_ms": frame_step_ms,
+        "reference_speaker_count": len(rows),
+        "speakers": rows,
+        "interpretation": (
+            "Temporal caption and anonymous label coverage per AMI voice, "
+            "NOT identity correctness. One live label can contact multiple "
+            "reference speakers; simultaneous speech is counted for each "
+            "active speaker. RTTM only_words intervals are not necessarily "
+            "complete conversational turns. No transcript text is exported."
+        ),
+    }
+
+
 def score_case(root: Path, meeting: str, replay_path: Path) -> dict:
     root = root.resolve()
     replay_path = replay_path.resolve()
@@ -284,6 +404,9 @@ def score_case(root: Path, meeting: str, replay_path: Path) -> dict:
             or timeline["total_segments"] != replay.get("final_confirmed_segments")):
         raise ValueError("Published timeline count differs from final transcript")
     unknown = unidentified_segments(timeline, reference, duration_ms)
+    per_speaker = reference_speaker_coverage(
+        timeline, reference, duration_ms,
+    )
     caption_gaps = reference_speech_without_captions(
         timeline, reference, duration_ms,
     )
@@ -312,6 +435,7 @@ def score_case(root: Path, meeting: str, replay_path: Path) -> dict:
         "frame_step_ms": metrics["frame_step_ms"],
         "collar_ms": 0,
         "metrics": metrics,
+        "reference_speaker_coverage": per_speaker,
         "missed_speaker_time_breakdown": missed_breakdown,
         "unidentified": unknown,
         "reference_speech_without_captions": caption_gaps,
@@ -353,6 +477,7 @@ def main() -> int:
     summary = {
         "meeting": result["meeting"],
         "metrics": result["metrics"],
+        "speaker_coverage": result["reference_speaker_coverage"]["speakers"],
         "missed_speaker_time_breakdown": result["missed_speaker_time_breakdown"],
         "unidentified_count": result["unidentified"]["count"],
         "reference_speech_without_captions_seconds": (
