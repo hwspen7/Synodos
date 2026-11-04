@@ -5,3 +5,5 @@ numpy>=1.26,<3
 transformers>=5.18,<6
 accelerate>=1,<2
 safetensors>=0.4
+# Required by NemotronAsrStreamingFeatureExtractor during processor loading.
+librosa>=0.11,<1
