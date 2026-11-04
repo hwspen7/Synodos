@@ -74,9 +74,23 @@ def apply_review(
         "speaker_name": segment.get("speaker_name"),
         "speaker_profile_id": segment.get("speaker_profile_id"),
     }
+    mapping = dict(state.get("participant_label_map") or {})
+    if profile_id is UNSET:
+        reviewed_local_id = before["speaker_id"]
+    elif profile_id is None:
+        reviewed_local_id = -1
+    elif profile_id in mapping:
+        reviewed_local_id = int(mapping[profile_id])
+    else:
+        used = {
+            int(item.get("speaker_id", -1))
+            for item in segments
+        } | {int(value) for value in mapping.values()}
+        reviewed_local_id = max({0} | {n for n in used if n > 0}) + 1
+
     prospective = {
         "text": before["text"] if text is UNSET else text,
-        "speaker_id": before["speaker_id"],
+        "speaker_id": reviewed_local_id,
         "speaker_name": (
             before["speaker_name"] if profile_id is UNSET
             else (profile_name.strip() if profile_id is not None
@@ -99,12 +113,13 @@ def apply_review(
     if profile_id is not UNSET:
         segment["speaker_profile_id"] = profile_id
         segment["speaker_override"] = True
-        # A local numeric diarization ID and an enrolled cross-meeting
-        # identity are different namespaces. Preserve the former.
-        local_id = segment.get("speaker_id")
-        segment["speaker_override_id"] = (
-            local_id if type(local_id) is int and local_id > 0 else -1
-        )
+        # Speaker profile IDs are global; diarization IDs are local.
+        # Assign one consistent local label per enrolled profile.
+        if profile_id is not None:
+            mapping[profile_id] = reviewed_local_id
+            state["participant_label_map"] = mapping
+        segment["speaker_override_id"] = reviewed_local_id
+        segment["speaker_id"] = reviewed_local_id
         segment["speaker_override_name"] = (
             profile_name.strip() if profile_id is not None
             else "Unidentified Speaker"
