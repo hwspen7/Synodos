@@ -159,6 +159,16 @@ async def ws_audio(
         sessions[sid] = session
         if meeting_id:
             meeting_sessions[meeting_id] = session
+        # A saved meeting's recording preference must not be silently
+        # overridden by the server-wide default on reconnect. Explicit
+        # connection-level consent always takes precedence.
+        saved_recording = (loaded_state or {}).get("ui_settings") or {}
+        record_audio_selected = (
+            bool(record_audio) if record_audio is not None
+            else bool(saved_recording.get(
+                "record_audio", speech_config.record_audio
+            ))
+        )
         try:
             session.processor.speech_language = language
             session.processor.translate_target = speech_config.translate_to if translate_to is None else translate_to
@@ -166,7 +176,7 @@ async def ws_audio(
             session.processor.ui_settings = {
                 "language": language,
                 "translate_to": session.processor.translate_target,
-                "record_audio": bool(record_audio if record_audio is not None else speech_config.record_audio),
+                "record_audio": record_audio_selected,
                 "vad_threshold": vad_s,
                 "rec_threshold": rec_s,
                 "participant_ids": list(session.processor.participant_ids),
@@ -185,9 +195,7 @@ async def ws_audio(
             connection_lock.release()
 
     # Initialize the WAV writer before announcing whether recording is active.
-    recording_requested = bool(meeting_id) and (
-        record_audio if record_audio is not None else speech_config.record_audio
-    )
+    recording_requested = bool(meeting_id) and record_audio_selected
     archive_warning = None
     if recording_requested:
         try:
