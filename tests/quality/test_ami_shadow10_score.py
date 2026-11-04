@@ -23,13 +23,21 @@ def prepare(root: Path, *, diagnostics: bool = True):
     source = root / "audio" / "ami-TS3003b-1500-1740.wav"
     source.write_bytes(b"synthetic test only; load_wav mocked")
     ref = [
-        {"start_ms": 0, "end_ms": 100000, "speaker": "A"},
-        {"start_ms": 100000, "end_ms": 180000, "speaker": "B"},
+        {"start_ms": i * 12500, "end_ms": (i + 1) * 12500, "speaker": "A"}
+        for i in range(8)
+    ] + [
+        {"start_ms": 100000 + i * 10000,
+         "end_ms": 100000 + (i + 1) * 10000, "speaker": "B"}
+        for i in range(8)
     ]
     rttm = root / "rttm" / (meeting + ".rttm")
     rttm.write_text(
-        f"SPEAKER {meeting} 1 {offset}.0 100.0 <NA> <NA> A <NA> <NA>\n"
-        f"SPEAKER {meeting} 1 {offset + 100}.0 80.0 <NA> <NA> B <NA> <NA>\n",
+        "".join(
+            f"SPEAKER {meeting} 1 {offset + turn['start_ms'] / 1000:.3f} "
+            f"{(turn['end_ms'] - turn['start_ms']) / 1000:.3f} "
+            f"<NA> <NA> {turn['speaker']} <NA> <NA>\n"
+            for turn in ref
+        ),
         encoding="utf-8",
     )
     case = {
