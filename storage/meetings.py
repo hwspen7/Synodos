@@ -121,34 +121,58 @@ class MeetingStore:
             "ui_settings": dict(state.get("ui_settings") or {}),
         }
 
+    @staticmethod
+    def _segment_summary(segment: dict, sample_rate: int) -> dict:
+        """Safely expose transcript evidence, excluding voiceprint arrays."""
+        s = segment
+        start_ms = round(int(s["start_sample"]) * 1000 / sample_rate)
+        end_ms = round(int(s["end_sample"]) * 1000 / sample_rate)
+        return {
+            "id": int(s["id"]),
+            "text": s.get("text") or "",
+            "start_ms": start_ms,
+            "end_ms": end_ms,
+            "duration_s": round(max(0.0, (end_ms - start_ms) / 1000.0), 3),
+            "speaker_id": int(s.get("speaker_id", -1)),
+            "speaker_name": str(s.get("speaker_name") or "Unidentified Speaker"),
+            "language": s.get("language", "und"),
+            "translation": s.get("translation", ""),
+            "revision": int(s.get("revision", 0)),
+            "recognition_origin": s.get("recognition_origin", "primary"),
+            "text_confidence": s.get("asr_confidence"),
+            "timestamp_quality": s.get("timestamp_quality", "segment"),
+            "speaker_status": s.get("speaker_status", "unknown"),
+            "speaker_similarity": s.get("speaker_similarity"),
+            "speaker_margin": s.get("speaker_margin"),
+            "speaker_evidence_count": s.get("speaker_evidence_count", 0),
+            "speaker_evidence_status": s.get("speaker_evidence_status", "unavailable"),
+            "speaker_score_kind": "raw_cosine_not_probability",
+        }
+
     def list_segments(self, meeting_id: str) -> list[dict] | None:
-        """Return segment summaries without embeddings for speaker enrollment."""
+        """Return complete safe evidence for later summaries, no voiceprints."""
         payload = self._read_payload(meeting_id)
         if payload is None:
             return None
         meta = payload.get("meta") or {}
         state = payload.get("state") or {}
         sr = int(state.get("sample_rate", meta.get("sample_rate") or 16000))
-        segs = state.get("segments") or []
-        out: list[dict] = []
-        for s in segs:
-            start_ms = round(int(s["start_sample"]) * 1000 / sr)
-            end_ms = round(int(s["end_sample"]) * 1000 / sr)
-            out.append(
-                {
-                    "id": int(s["id"]),
-                    "text": s.get("text") or "",
-                    "start_ms": start_ms,
-                    "end_ms": end_ms,
-                    "duration_s": round(max(0.0, (end_ms - start_ms) / 1000.0), 3),
-                    "speaker_id": int(s.get("speaker_id", -1)),
-                    "speaker_name": str(s.get("speaker_name") or "Unidentified Speaker"),
-                    "language": s.get("language", "und"),
-                    "translation": s.get("translation", ""),
-                    "revision": int(s.get("revision", 0)),
-                }
-            )
-        return out
+        return [
+            self._segment_summary(s, sr)
+            for s in (state.get("segments") or [])
+        ]
+
+    def list_speech_coverage_gaps(self, meeting_id: str) -> list[dict] | None:
+        """Expose unresolved voice intervals, never imaginary transcript text."""
+        payload = self._read_payload(meeting_id)
+        if payload is None:
+            return None
+        state = payload.get("state") or {}
+        return [
+            dict(item)
+            for item in (state.get("speech_coverage_gaps") or [])
+            if isinstance(item, dict)
+        ]
 
     # ------------------------------------------------------------ state
     def save_state(self, state: dict) -> dict:
@@ -221,7 +245,20 @@ class MeetingStore:
 
         if fmt == "json":
             return json.dumps(
-                {"meta": meta, "transcript": {"paragraphs": paragraphs}},
+                {
+                    "meta": meta,
+                    "transcript": {
+                        "paragraphs": paragraphs,
+                        "segments": [
+                            self._segment_summary(s, sr) for s in segments
+                        ],
+                        "speech_coverage_gaps": [
+                            dict(item)
+                            for item in (state.get("speech_coverage_gaps") or [])
+                            if isinstance(item, dict)
+                        ],
+                    },
+                },
                 ensure_ascii=False,
                 indent=2,
             )
