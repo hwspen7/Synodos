@@ -5,11 +5,15 @@ on:
     paths:
       - 'Start-Meeting.cmd'
       - 'tools/windows/Start-Meeting.ps1'
+      - 'tools/run_nemotron_ami.ps1'
+      - 'tools/run_phase1_engineering.ps1'
       - '.github/workflows/windows-launcher.yml'
   pull_request:
     paths:
       - 'Start-Meeting.cmd'
       - 'tools/windows/Start-Meeting.ps1'
+      - 'tools/run_nemotron_ami.ps1'
+      - 'tools/run_phase1_engineering.ps1'
       - '.github/workflows/windows-launcher.yml'
 
 jobs:
@@ -22,16 +26,25 @@ jobs:
         run: |
           $tokens = $null
           $parseErrors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path 'tools/windows/Start-Meeting.ps1').Path,
-            [ref]$tokens,
-            [ref]$parseErrors
-          ) | Out-Null
-          if ($parseErrors.Count -ne 0) {
-            $parseErrors | Format-List -Force
-            exit 1
+          $scripts = @(
+            'tools/windows/Start-Meeting.ps1',
+            'tools/run_nemotron_ami.ps1',
+            'tools/run_phase1_engineering.ps1'
+          )
+          foreach ($script in $scripts) {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $script).Path,
+              [ref]$tokens,
+              [ref]$parseErrors
+            ) | Out-Null
+            if ($parseErrors.Count -ne 0) {
+              $parseErrors | Format-List -Force
+              exit 1
+            }
+            Write-Output "Windows PowerShell 5.1 syntax OK - $script"
           }
-          Write-Output 'Windows PowerShell 5.1 syntax OK'
       - name: Verify process identity guards
         shell: powershell
         run: .\tests\windows\test_launcher_safety.ps1
