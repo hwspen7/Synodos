@@ -116,7 +116,7 @@ git switch --track -c quality/ts3003b-audio-first-20261104 origin/quality/ts3003
 $PY = "E:\Meeting-Fixed10-Test\.venv\Scripts\python.exe"
 & $PY -m unittest tests.quality.test_audio_first_quality_experiments -v
 
-& $PY -m tools.ami_quality_experiments --profiles recovery,single_vad,speaker_candidate
+& $PY -m tools.ami_quality_experiments --profiles control,recovery,single_vad,speaker_candidate
 ```
 
 If the local quality branch already exists, use git switch without -c;
@@ -129,7 +129,8 @@ produces distinct, private JSON, log and strict-gate summaries. Exit code
 2 means none of the profiles achieved the frozen quality target; this is a
 valid negative finding, not an invocation failure.
 
-For explicit initial diagnosis the three profiles are:
+For explicit initial diagnosis the control uses the unchanged V6 acoustic flags.
+The three candidate profiles are:
 1. recovery: preserved acoustically supported ASR text, actual bounded
    second-pass decoding, 450ms VAD-based retry/retention and conservative
    100ms short voice support.
