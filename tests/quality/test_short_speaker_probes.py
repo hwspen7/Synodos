@@ -60,6 +60,22 @@ class ShortProbeTests(unittest.TestCase):
         self.assertIsNotNone(original["emb"])
         self.assertTrue(original["speaker_uncertain"])
         self.assertEqual(original["speaker_evidence_status"], "short_probe")
+        # A low-support short vector alone cannot be promoted into a
+        # published speaker identity.
+        processor._recluster()
+        self.assertLess(original["speaker_id"], 1)
+        self.assertTrue(original["speaker_uncertain"])
+        # Only after independent, time-aligned evidence agrees can the
+        # short candidate become eligible for normal speaker grouping.
+        processor._acoustic_timeline.add(
+            0, 32000, np.array([1.0, 0.0])
+        )
+        self.assertTrue(processor._collect_acoustic())
+        self.assertFalse(original["speaker_uncertain"])
+        self.assertEqual(
+            original["speaker_evidence_status"],
+            "short_probe_corroborated",
+        )
 
     def test_invalid_minimum_duration_rejected(self):
         with self.assertRaises(ValueError):
