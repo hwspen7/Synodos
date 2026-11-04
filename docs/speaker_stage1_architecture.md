@@ -637,3 +637,123 @@ Compare the v3 and v4 complete metrics, not just the 18 unidentified
 segments; the specific acoustic reconciliation change may not fix
 speaker-count collapse or simultaneous speech. Avoid claiming an
 improvement until actual same-input, reference-backed scores are in hand.
+
+
+## Stage 1d: multi-speaker remediation and evidence-based A/B
+
+The frozen AMI TS3003b V4 baseline is DER 0.41041, missed speaker-time
+0.35053, confusion 0.04376, false alarms 0.01612, 18 unlabeled
+segments and 2 published speakers versus 4 reference speakers. These
+are 100 ms, no-collar approximate scores, not industry certification.
+
+### Changes, all disabled for production promotion
+
+* FunASR ClusterBackend returns a single label below 20 embeddings.
+  The NEW default MEETING_SPEAKER_CLUSTER_STRATEGY=bootstrap uses
+  conservative complete-link speaker clustering for under 20 vectors.
+  At 20 or more vectors it keeps the existing FunASR backend.
+* Set MEETING_SPEAKER_CLUSTER_STRATEGY=candidate for an explicitly
+  experimental full re-clustering of up to 256 embeddings. This does
+  NOT automatically choose the right speaker count. Set legacy to
+  restore the exact previous clustering path. The candidate uses
+  MEETING_SPEAKER_BOOTSTRAP_SIMILARITY=0.76 by default. It may create
+  too many identity groups on noisy or overlapping speech.
+* The final anonymous diagnostics now include fresh_cluster_sweep,
+  which genuinely re-clusters acoustic embeddings at several thresholds.
+  The prior posthoc_merge_sweep could only MERGE existing clusters.
+  Neither is a real-world DER result.
+* Missing-voiceprint segments have an evidence-status enum, including
+  short_turn, turn_ambiguous, turn_no_voiceprint, acoustic_backfill,
+  and task-backpressure/failure. These are surfaced in the private
+  reference-scoring report without transcript text or voice vectors.
+* The prior overlap detector mistakenly treated ALL speech support
+  as overlapping speech. It now uses the pyannote Annotation.get_overlap
+  method and supports any number of simultaneous speakers detected
+  by the provider, not only two. Final-buffer analysis declares its
+  coverage and reports absolute timestamps correctly.
+* The offline Community-1 speaker review now exports the FULL
+  overlap-aware speaker diarization, retains exclusive speaker turns
+  separately for word alignment, and displays 2+ concurrent speaker
+  intervals in the existing review panel. It never edits saved labels.
+* ECAPA no longer stops at 64 accepted samples. It now samples at
+  approximately one existing-speaker excerpt per 10 seconds of meeting
+  time, allowing the first sample for every new CAM++ label. Bounded
+  queue and single-process admission remain unchanged.
+* The AMI scorer now exports time ranges where human-annotated speech
+  has no confirmed transcript. It also separates missing captions,
+  unidentified speaker segments and simultaneous-speaker deficits.
+* A separate AMI Nemotron comparison tool scores the existing CAM++
+  baseline and Nemotron on two independent 120-second windows against
+  the same pinned reference. Cross-window speaker identities are
+  NOT implicitly stitched.
+* A ten-meeting sequential replay tool writes a reference-time
+  weighted aggregate DER without overwriting any existing report.
+  It works only under the existing gitignored Fixed195 directory.
+
+Regression tests cover one through six synthetic speakers, no
+two-speaker cap, early clustering, actual overlap detection, up to
+three concurrent speaker turns, ECAPA sampling after 64 turns, and
+immutable reference-backed scoring. Green CI is not proof of real
+audio accuracy.
+
+### Explicit candidate A/B on E: drive
+
+Run in the existing test checkout:
+
+    cd E:\Meeting-Fixed10-Test
+    git pull --ff-only origin feature/multilingual-fixed10-ui-refresh
+    python -m unittest tests.quality.test_adaptive_speaker_clustering tests.quality.test_speaker_candidate_diagnostics tests.quality.test_multi_speaker_overlap tests.quality.test_ecapa_shadow tests.quality.test_ami_nemotron_compare tests.quality.test_ami_batch_replay -v
+
+Restart the backend in its own PowerShell terminal with the SAME
+ECAPA environment and cache settings as before, plus the following
+explicit candidate experiment:
+
+    $env:MEETING_SPEAKER_CLUSTER_STRATEGY = "candidate"
+    $env:MEETING_SPEAKER_BOOTSTRAP_SIMILARITY = "0.76"
+    $env:MEETING_SPEAKER_LABEL_REVISABLE_S = "0"
+    $env:MEETING_DIARIZATION_DIAGNOSTICS = "1"
+    $env:MEETING_ECAPA_SHADOW = "1"
+    $env:MEETING_ECAPA_SHADOW_DEVICE = "cpu"
+    $env:MEETING_ECAPA_SHADOW_PYTHON = "E:\Meeting-Fixed10-Test\.venv-speaker-ecapa\Scripts\python.exe"
+    $env:MEETING_ECAPA_SHADOW_CACHE_ROOT = "E:\Meeting-AI-Cache"
+    python -m uvicorn main:app --host 127.0.0.1 --port 8000
+
+The zero-second label-freeze value is for diagnostic A/B ONLY.
+The normal historical label stabilization default remains 120 seconds.
+Candidate clusters are NOT enrolled into persistent human identities
+without further validation.
+
+In another terminal, replay the unchanged four-minute sample and
+score against the same human annotation:
+
+    python -m tools.live_caption_ws_replay --audio benchmark/fixed195/ami_shadow10/audio/ami-TS3003b-1500-1740.wav --loops 1 --speed 1.0 --output benchmark/fixed195/ami_shadow10/replay_TS3003b_candidate_v5.json
+    python -m tools.ami_shadow10_score --root benchmark/fixed195/ami_shadow10 --meeting TS3003b --replay benchmark/fixed195/ami_shadow10/replay_TS3003b_candidate_v5.json --output benchmark/fixed195/ami_shadow10/audit_TS3003b_candidate_v5.json
+
+Once all ten AMI clips have been prepared, the long-form test is:
+
+    python -m tools.ami_shadow10_batch_replay --tag candidate_v5
+
+That command replays each four-minute recording at actual speed.
+Do not describe the batch runner as a real-time background automation;
+the user initiates it and it must remain running on the local machine.
+
+The existing Nemotron environment can optionally score independent
+120-second windows without any live model replacement:
+
+    .\.venv-speaker-nemotron\Scripts\python.exe -m tools.ami_shadow10_nemotron_compare --meeting TS3003b --replay benchmark/fixed195/ami_shadow10/replay_TS3003b_candidate_v5.json --device cuda --output benchmark/fixed195/ami_shadow10/nemotron_TS3003b_candidate_v5.json
+
+### Remaining evidence and capability boundaries
+
+The candidate may improve speaker discovery OR incorrectly split
+one individual into many labels. Production promotion must wait for
+independently held-out 3, 4 and 6 speaker meeting DER, confusion,
+false-alarm, short-interjection and end-to-end latency results.
+Audio shorter than 1.2s still may not provide a reliable voiceprint;
+unknown is preferable to inventing an identity. The measured no-caption
+gaps require audio/ASR inspection; the scoring utility cannot invent
+missing words. The current live transcript still assigns one speaker
+to a transcript interval and cannot fully transcribe three simultaneous
+voices. The experimental Sepformer source separator is two-source
+only; the offline review now preserves the full overlap timeline, not
+three independent separated word streams. No automatic ECAPA production
+identity promotion or cross-meeting threshold calibration is claimed.
