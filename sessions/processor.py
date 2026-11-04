@@ -49,6 +49,7 @@ from speech.quality_profile import (
     quality_candidate_enabled, speaker_candidate_enabled,
 )
 from speech.nemotron_activity import choose_caption_speaker
+from speech.asr_stage_trace import shifted
 from speech.contracts import Utterance
 from phase07.recovery import autosave_seconds
 from sessions.outbox import enqueue_message
@@ -154,6 +155,7 @@ class SessionProcessor(threading.Thread):
         # complete. A bounded retry is followed by an explicit gap record.
         self._coverage_hold_attempts: dict[int, int] = {}
         self._speech_coverage_gaps: list[dict] = []
+        self._asr_stage_trace: list[dict] = []
         self._last_reclustered_segment_id = 0
         self._last_clustering_receipt: dict = {
             "strategy_executed": "not_run",
@@ -309,6 +311,13 @@ class SessionProcessor(threading.Thread):
             independent = self.independent_diarization
             if independent is not None:
                 closed_payload["independent_diarization"] = independent.report()
+            if self._asr_stage_trace:
+                closed_payload["asr_coverage_trace"] = {
+                    "schema": "meeting-asr-stage-trace-v1",
+                    "cycles": list(self._asr_stage_trace),
+                    "truncated": len(self._asr_stage_trace) >= 1024,
+                    "contains_transcript_text": False,
+                }
             if os.getenv("MEETING_DIARIZATION_DIAGNOSTICS", "0").lower() in (
                 "1", "true", "yes"
             ):
@@ -628,6 +637,25 @@ class SessionProcessor(threading.Thread):
                 config=self._speech_settings,
             )
             sentences = [piece.as_legacy() for piece in recognition.utterances]
+            if os.getenv("MEETING_ASR_TRACE_STAGES", "0").lower() in (
+                "1", "true", "yes",
+            ):
+                trace = (
+                    recognition.recovery_diagnostics or {}
+                ).get("stage_trace")
+                if isinstance(trace, dict) and len(self._asr_stage_trace) < 1024:
+                    origin_ms = round(start_offset * 1000 / sr)
+                    stage = {
+                        "start_ms": origin_ms,
+                        "end_ms": round(absolute_end * 1000 / sr),
+                    }
+                    for key in (
+                        "vad_intervals_ms", "raw_model_intervals_ms",
+                        "verified_intervals_ms", "after_recovery_intervals_ms",
+                    ):
+                        stage[key] = shifted(trace.get(key) or [], origin_ms)
+                    stage["speech_windows"] = trace.get("speech_windows", 0)
+                    self._asr_stage_trace.append(stage)
         telemetry.observe_asr_cycle(buffer_s, time.monotonic() - phase07_asr_started)
         unconfirmed = []
         local_end = 0
