@@ -21,7 +21,11 @@ The original 12-language / 130-single-clip Fixed195 archive is frozen
 and unchanged. Phase 1 scores the **110 selected clips** through
 `tools.phase1_ten_language_gate`, preserving the original 130-case
 score as historical evidence. This subset is *not* a retrained or improved
-Whisper result. See [Phase 1 text acceptance](docs/phase1_text_acceptance.md).
+Whisper result. See [Phase 1 text acceptance](docs/phase1_text_acceptance.md) and
+[final AMI mixed-audio / GitHub CI release procedure](docs/phase1_final_ami_ci_closure.md).
+The latter gathers the original official human-word annotations and
+authenticated GitHub check-run annotations without altering saved captions
+or claiming release acceptance before real field metrics and hosted CI pass.
 
 ## Capabilities
 
