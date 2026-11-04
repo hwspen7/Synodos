@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import unittest
+import sys
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 
@@ -42,6 +45,14 @@ class Output:
         self.speaker_diarization = annotation
 
 
+class StubTensor:
+    def unsqueeze(self, _axis):
+        return self
+
+
+@patch.dict(sys.modules, {"torch": SimpleNamespace(
+    from_numpy=lambda _array: StubTensor(),
+)})
 class OverlapTests(unittest.TestCase):
     def test_diarization_wrapper_returns_only_true_overlaps(self):
         annotation = Annotation()
