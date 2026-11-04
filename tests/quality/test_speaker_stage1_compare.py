@@ -183,6 +183,10 @@ class SpeakerStageOneTests(unittest.TestCase):
                 row = report["models"][model]
                 self.assertEqual(row["summary"]["reference_weighted_der"], 0)
                 self.assertEqual(row["summary"]["completed"], 1)
+                self.assertNotIn(
+                    "speaker_mapping", row["cases"][0]["metrics"],
+                    "Human speaker names must not leave the scoring function",
+                )
             # The existing replay does not measure isolated CAM++ latency.
             self.assertIsNone(
                 report["models"]["camplus_live"]["summary"]["mean_inference_ms"]
