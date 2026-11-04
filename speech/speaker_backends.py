@@ -75,6 +75,12 @@ class CamPlusEmbedding:
     name: str = "camplus"
     model_id: str = "production/funasr-cam++"
 
+    def __post_init__(self) -> None:
+        configured = getattr(getattr(self.manager, "settings", None),
+                             "spk_model", None)
+        if configured:
+            self.model_id = str(configured)
+
     def embed(self, audio: np.ndarray) -> np.ndarray | None:
         vector = self.manager.embed(validated_audio(audio))
         return unit_embedding(vector)
@@ -136,9 +142,11 @@ def normalize_nemotron_turns(
         if not isinstance(item, dict):
             raise ValueError("Malformed Nemotron speaker turn")
         start, end, slot = item.get("Start"), item.get("End"), item.get("Speaker")
-        if (type(slot) is not int or not 0 <= slot < 8
-                or type(start) not in (float, int)
-                or type(end) not in (float, int)
+        if (isinstance(slot, (bool, str))
+                or not isinstance(slot, (int, np.integer)) or not 0 <= slot < 8
+                or isinstance(start, bool) or isinstance(end, bool)
+                or not isinstance(start, (float, int, np.floating, np.integer))
+                or not isinstance(end, (float, int, np.floating, np.integer))
                 or not math.isfinite(start) or not math.isfinite(end)):
             raise ValueError("Invalid Nemotron speaker turn values")
         a, b = round(start * 1000), round(end * 1000)
