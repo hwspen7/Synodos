@@ -22,11 +22,11 @@ try {
     $expectedRelative = Join-Path $root "ci_diagnostic_relative.json"
 
     $actualAbsolute = Resolve-PrivateCiReportPath -Workspace $workspace -RequestedPath $absolute
-    if ($actualAbsolute -ne $absolute) {
+    if ($actualAbsolute -ne [System.IO.Path]::GetFullPath($absolute)) {
         throw "An already rooted Windows path was corrupted"
     }
     $actualRelative = Resolve-PrivateCiReportPath -Workspace $workspace -RequestedPath $relative
-    if ($actualRelative -ne $expectedRelative) {
+    if ($actualRelative -ne [System.IO.Path]::GetFullPath($expectedRelative)) {
         throw "A relative Windows path was not normalized correctly"
     }
     Assert-Fails { Resolve-PrivateCiReportPath -Workspace $workspace -RequestedPath "..\outside.json" }
