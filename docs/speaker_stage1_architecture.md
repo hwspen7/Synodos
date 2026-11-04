@@ -316,3 +316,84 @@ sessions**, with varied microphones, languages, levels of noise and
 unknown-speaker rejection. Human-confirmed identity labels are mandatory.
 A separate development split is needed before selecting an operating
 threshold, and test speakers must not leak into threshold calibration.
+
+
+## Optional live ECAPA shadow (stage 1b, no identity promotion)
+
+The application retains **CAM++ as the only production diarization and
+identity decision maker**. Set MEETING_ECAPA_SHADOW=1 **before starting
+the backend** to run a separate ECAPA process that checks how often its
+within-session ranking agrees with the existing CAM++ speaker labels.
+No model is loaded when disabled, and ECAPA never rewrites transcript,
+speaker names, saved voiceprints or user corrections.
+
+The RTX 4070 Ti SUPER has 16 GB VRAM. Shadow defaults to **CPU** to avoid
+competing with live ASR; switch to CUDA only after profiling. The service
+admits at most one shadow meeting per backend process. It has a bounded
+6-sample queue and performs no blocking ECAPA inference on the ASR
+thread. Missing model environments or failures cause the optional
+worker to be skipped; the live CAM++ pipeline continues.
+
+On the user's E: checkout, use a PowerShell session **that will launch
+the backend**:
+
+    cd E:\Meeting-Fixed10-Test
+    $env:MEETING_ECAPA_SHADOW = "1"
+    $env:MEETING_ECAPA_SHADOW_DEVICE = "cpu"
+    $env:MEETING_ECAPA_SHADOW_PYTHON = "E:\Meeting-Fixed10-Test\.venv-speaker-ecapa\Scripts\python.exe"
+    $env:MEETING_ECAPA_SHADOW_CACHE_ROOT = "E:\Meeting-AI-Cache"
+
+If GPU contention is known to be acceptable, explicitly set
+MEETING_ECAPA_SHADOW_DEVICE=cuda. All Hugging Face, PyTorch, ModelScope,
+temporary and XDG caches for the worker are rooted at the configured
+cache directory; downloaded model artifacts also stay under the project
+checkout when SpeechBrain chooses its default savedir. Keep that drive
+private and do not check its contents into Git.
+
+To turn this off, set MEETING_ECAPA_SHADOW=0 before restarting the
+backend. It is **off by default**.
+
+### What the shadow output means
+
+The worker sees only selected, sufficiently long CAM++-labeled
+single-turn audio, and never receives transcript text or real-world
+speaker names. It stores separate ECAPA prototypes **in RAM**, anchored
+to provisional CAM++ integer speaker labels. It compares each new ECAPA
+embedding to existing ECAPA prototypes and emits only outcomes:
+
+- seeded: a CAM++ label first observed (not verified)
+- no_comparator: only one provisional identity has a prototype
+- rank_match: CAM++ label was the top-ranked ECAPA identity
+- rank_conflict: ECAPA's top-ranked identity differed from CAM++
+- low_energy, no_embedding, capacity or error: unscored input/failure
+
+These are **unverified consistency indicators, not accuracy**. They do
+not compare CAM++ and ECAPA cosine scores to each other, do not claim
+calibrated confidence, and cannot choose the "better" model without
+reference identities from independent sessions.
+
+When enabled, the backend's final WebSocket "closed" message includes
+speaker_shadow_diagnostics, a count-only report. The existing WebSocket
+replay tool copies it to speaker_shadow_diagnostics in its **private
+gitignored** JSON result. It can have pending samples at closure; no
+extra wait is imposed on the meeting save or shutdown. No audio,
+voiceprints, pairwise similarities, user names or recognized text are
+included in this diagnostic.
+
+Limitations: only clean-looking, confirmed CAM++ segments are sampled,
+not all speech. Acoustic split samples are skipped to avoid comparing
+a multiple-speaker waveform to one label. Cross-session enrollment and
+calibrated identity fusion are **not yet implemented**. Promoting an
+ECAPA result to a production decision requires separate labeled
+cross-session calibration, false-acceptance targets, lifecycle and
+consent review. The existing identity space is untouched.
+
+Run the no-model tests after updating:
+
+    python -m unittest tests.quality.test_ecapa_shadow -v
+
+If this test passes, verify operational behavior with a real local
+meeting and inspect the aggregate-only shadow diagnostics and resource
+usage. Compare CAM++ transcript stability against the same baseline
+with shadow disabled. No accuracy improvement is claimed by these
+contract tests.
