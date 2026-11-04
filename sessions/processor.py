@@ -52,6 +52,7 @@ from speech.nemotron_activity import (
     choose_caption_speaker, choose_caption_speaker_from_turns,
 )
 from speech.caption_acoustic_alignment import caption_support_summary
+from speech.content_first_projection import project_confirmed_caption
 from speech.asr_stage_trace import shifted
 from speech.contracts import Utterance
 from phase07.recovery import autosave_seconds
@@ -152,6 +153,7 @@ class SessionProcessor(threading.Thread):
         self._independent_published: dict[int, int] = {}
         self._independent_scores: dict[int, dict] = {}
         self._independent_support: dict[int, dict] = {}
+        self._content_first_projection: dict[int, dict] = {}
         self._independent_pcm_origin_samples = 0
         self._independent_id_offset = 0
         self._transcript_version = 0
@@ -517,6 +519,17 @@ class SessionProcessor(threading.Thread):
                     ).get("speaker_activity_time_source", s.get(
                         "speaker_activity_time_source",
                     )),
+                    "caption_cues": self._content_first_projection.get(
+                        int(s["id"]), {},
+                    ).get("cues", s.get("caption_cues", [])),
+                    "overlap_intervals_ms": self._content_first_projection.get(
+                        int(s["id"]), {},
+                    ).get("overlap_intervals_ms", s.get(
+                        "overlap_intervals_ms", [],
+                    )),
+                    "caption_projection_status": self._content_first_projection.get(
+                        int(s["id"]), {},
+                    ).get("status", s.get("caption_projection_status", "disabled")),
                     "speaker_uncertain": bool(s.get("speaker_uncertain", False)),
                     "emb": s["emb"],  # Preserve behavior.
                     "language": s.get("language", "und"),
@@ -579,6 +592,11 @@ class SessionProcessor(threading.Thread):
                     "speaker_activity_fraction": item.get("speaker_activity_fraction"),
                     "speaker_activity_time_source": item.get(
                         "speaker_activity_time_source",
+                    ),
+                    "caption_cues": item.get("caption_cues", []),
+                    "overlap_intervals_ms": item.get("overlap_intervals_ms", []),
+                    "caption_projection_status": item.get(
+                        "caption_projection_status", "disabled",
                     ),
                     "speaker_uncertain": bool(item.get("speaker_uncertain", False)),
                     "text": item.get("text", "") or "",
@@ -1504,6 +1522,7 @@ class SessionProcessor(threading.Thread):
         self._independent_published = {}
         self._independent_scores = {}
         self._independent_support = {}
+        self._content_first_projection = {}
         origin = getattr(self, "_independent_pcm_origin_samples", 0)
         for item, source in zip(items, ordered):
             if source.get("speaker_override"):
@@ -1549,6 +1568,53 @@ class SessionProcessor(threading.Thread):
                     )
                     if start_ms < 0:
                         continue
+                    # Safe content-first display projection is secondary to
+                    # the canonical, never-rewritten ASR segment. Words from
+                    # this inference window are relative to _audio_base_sample.
+                    # Unproven word timing or reconstructed text never triggers
+                    # speaker splitting. Repeated calls cannot add words.
+                    if (official_turns is not None
+                            and os.getenv(
+                                "MEETING_CONTENT_FIRST_FUSION", "0"
+                            ).strip().lower() in ("1", "true", "yes")):
+                        try:
+                            word_base = source.get("_audio_base_sample")
+                            word_base_ms = (
+                                round(word_base * 1000 / self.settings.sample_rate)
+                                if type(word_base) is int and word_base >= 0
+                                else None
+                            )
+                            projection = project_confirmed_caption(
+                                text=str(source["text"]),
+                                words=source.get("words"),
+                                caption_start_ms=item["start_ms"],
+                                caption_end_ms=item["end_ms"],
+                                word_base_ms=word_base_ms,
+                                official_turns=official_turns,
+                                acoustic_origin_ms=round(
+                                    origin * 1000 / self.settings.sample_rate
+                                ),
+                                speaker_id_offset=self._independent_id_offset,
+                            )
+                        except (TypeError, ValueError, OverflowError):
+                            logger.warning(
+                                "Content-first projection skipped: invalid acoustic"
+                                " or word alignment evidence",
+                                exc_info=True,
+                            )
+                        else:
+                            # Safe metadata only: untouched original text,
+                            # original timeline, source word list, and revision.
+                            item["caption_cues"] = projection["cues"]
+                            item["overlap_intervals_ms"] = (
+                                projection["overlap_intervals_ms"]
+                            )
+                            item["caption_projection_status"] = (
+                                projection["status"]
+                            )
+                            self._content_first_projection[int(item["id"])] = (
+                                projection
+                            )
                     decision = (
                         choose_caption_speaker_from_turns(
                             official_turns, start_ms, end_ms,
@@ -1633,7 +1699,17 @@ class SessionProcessor(threading.Thread):
              i.get("speaker_activity_status"),
              tuple(tuple(pair) for pair in i.get(
                  "speaker_activity_intervals_ms", [],
-             )))
+             )),
+             tuple(
+                 (cue["speaker_id"], cue["start_ms"],
+                  cue["end_ms"], cue["text"])
+                 for cue in i.get("caption_cues", [])
+             ),
+             tuple(
+                 (row["start_ms"], row["end_ms"],
+                  tuple(row["speaker_ids"]))
+                 for row in i.get("overlap_intervals_ms", [])
+             ))
             for i in items
         )
         if fingerprint == self._last_fingerprint:
