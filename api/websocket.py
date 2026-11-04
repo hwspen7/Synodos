@@ -25,6 +25,19 @@ from sessions.lifecycle import SessionPhase
 
 router = APIRouter()
 
+
+def resolve_record_audio(
+    requested: bool | None, saved_state: dict | None,
+    server_default: bool,
+) -> bool:
+    """Respect explicit consent first, then the saved meeting preference."""
+    if requested is not None:
+        return bool(requested)
+    saved = (saved_state or {}).get("ui_settings")
+    value = saved.get("record_audio") if isinstance(saved, dict) else None
+    return value if type(value) is bool else bool(server_default)
+
+
 async def _outbox_forwarder(session: Session) -> None:
     """Forward messages from the processor thread to the client in order."""
     while True:
@@ -162,12 +175,8 @@ async def ws_audio(
         # A saved meeting's recording preference must not be silently
         # overridden by the server-wide default on reconnect. Explicit
         # connection-level consent always takes precedence.
-        saved_recording = (loaded_state or {}).get("ui_settings") or {}
-        record_audio_selected = (
-            bool(record_audio) if record_audio is not None
-            else bool(saved_recording.get(
-                "record_audio", speech_config.record_audio
-            ))
+        record_audio_selected = resolve_record_audio(
+            record_audio, loaded_state, speech_config.record_audio
         )
         try:
             session.processor.speech_language = language
