@@ -16,7 +16,7 @@ import numpy as np
 
 from speech.speaker_backends import (
     CamPlusEmbedding, EcapaEmbedding, Nemotron3Diarization,
-    create_diarization_backend, create_embedding_backend,
+    SpeakerModelUnavailable, create_diarization_backend, create_embedding_backend,
     normalize_nemotron_turns, unit_embedding, validated_audio,
 )
 from tools.speaker_stage1_compare import (
@@ -128,6 +128,7 @@ class SpeakerStageOneTests(unittest.TestCase):
         self.assertFalse(result["model_weights_tested"])
         self.assertFalse(result["real_audio_inference_tested"])
         self.assertIn("transformers", result["missing"])
+        self.assertIn("librosa", result["missing"])
         with self.assertRaises(ValueError):
             check("invented")
 
@@ -161,6 +162,27 @@ class SpeakerStageOneTests(unittest.TestCase):
             self.assertEqual(result["torch_cuda_build"], "12.8")
             self.assertIn("driver", result["cuda_diagnosis"])
             self.assertFalse(result["dependencies_ready"])
+
+    def test_nemotron_reports_missing_librosa_explicitly(self):
+        from types import ModuleType, SimpleNamespace
+        from unittest.mock import patch
+
+        fake = ModuleType("transformers")
+
+        def missing_processor(_model_id):
+            raise ImportError(
+                "NemotronAsrStreamingFeatureExtractor requires librosa"
+            )
+
+        fake.AutoProcessor = SimpleNamespace(
+            from_pretrained=missing_processor,
+        )
+        fake.AutoModelForAudioFrameClassification = object()
+        with patch.dict("sys.modules", {"transformers": fake}):
+            with self.assertRaisesRegex(
+                SpeakerModelUnavailable, "requires librosa"
+            ):
+                Nemotron3Diarization()._load()
 
     def test_default_factory_does_not_load_any_optional_models(self):
         self.assertIsInstance(
