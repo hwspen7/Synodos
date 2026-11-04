@@ -74,6 +74,22 @@ def apply_review(
         "speaker_name": segment.get("speaker_name"),
         "speaker_profile_id": segment.get("speaker_profile_id"),
     }
+    prospective = {
+        "text": before["text"] if text is UNSET else text,
+        "speaker_id": before["speaker_id"],
+        "speaker_name": (
+            before["speaker_name"] if profile_id is UNSET
+            else (profile_name.strip() if profile_id is not None
+                  else "Unidentified Speaker")
+        ),
+        "speaker_profile_id": (
+            before["speaker_profile_id"] if profile_id is UNSET
+            else profile_id
+        ),
+    }
+    if prospective == before:
+        raise ReviewValidationError("Review has no observable change")
+
     if text is not UNSET:
         if not isinstance(segment.get("original_asr_text"), str):
             segment["original_asr_text"] = before["text"]
