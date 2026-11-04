@@ -38,6 +38,22 @@ export const meetingsApi = {
   get: (id: string) => request<{ meeting: MeetingDetail }>(`/meetings/${id}`),
   segments: (id: string) =>
     request<{ segments: MeetingSegment[] }>(`/meetings/${id}/segments`),
+  identityCandidate: (id: string, segmentId: number) =>
+    request<{ segment_id: number; candidate: {
+      status: string; profile_id: string | null; similarity: number | null;
+      margin: number | null; score_kind?: string; embedding_model?: string;
+    } }>(`/meetings/${encodeURIComponent(id)}/segments/${segmentId}/identity-candidate`),
+  revisions: (id: string, segmentId: number) =>
+    request<{ segment_id: number; revision: number; original_asr_text: string;
+      corrections: Array<Record<string, unknown>> }>(
+      `/meetings/${encodeURIComponent(id)}/segments/${segmentId}/revisions`),
+  reviewSegment: (id: string, segmentId: number, payload: {
+    expected_revision: number; speaker_profile_id?: string | null;
+    text?: string; reason?: string;
+  }) => request<{ segment: MeetingSegment; review: Record<string, unknown> }>(
+    `/meetings/${encodeURIComponent(id)}/segments/${segmentId}/review`,
+    { method: 'PATCH', body: JSON.stringify(payload) },
+  ),
   create: (title: string) =>
     request<{ meeting: MeetingSummary }>('/meetings', {
       method: 'POST',
