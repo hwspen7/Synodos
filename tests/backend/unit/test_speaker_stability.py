@@ -15,11 +15,58 @@ from sessions.processor import SessionProcessor
 from sessions.speaker_stability import (
     collect_mature_labels, restore_mature_labels, stabilized_cluster_ids,
     summarize_cluster_fragmentation, diagnose_cluster_merge_thresholds,
+    anonymous_speaker_timeline,
 )
 from speech.config import SpeechSettings
 
 
 class StabilityUnitContracts(unittest.TestCase):
+    def test_anonymous_speaker_timeline_is_bounded_and_text_free(self):
+        records = [
+            {
+                "id": 4, "start_sample": 16000, "end_sample": 32000,
+                "cluster": 2, "speaker_id": 7,
+                "speaker_uncertain": False,
+                "text": "Private meeting topic",
+                "speaker_name": "Private participant",
+                "emb": np.ones(192, dtype=np.float32),
+            },
+            {
+                "id": 3, "start_sample": 0, "end_sample": 8000,
+                "cluster": -3, "speaker_id": -3,
+                "speaker_uncertain": True,
+                "text": "Private first sentence",
+                "speaker_name": "Unidentified Speaker",
+                "emb": None,
+            },
+        ]
+        report = anonymous_speaker_timeline(
+            records, 16000, max_segments=1)
+        self.assertEqual(report["total_segments"], 2)
+        self.assertEqual(report["exported_segments"], 1)
+        self.assertTrue(report["truncated"])
+        self.assertEqual(report["segments"][0]["segment_id"], 3)
+        self.assertEqual(report["segments"][0]["start_ms"], 0)
+        self.assertIsNone(report["segments"][0]["raw_cluster_id"])
+        self.assertIsNone(report["segments"][0]["published_speaker_id"])
+        full = anonymous_speaker_timeline(records, 16000)
+        self.assertEqual([x["segment_id"] for x in full["segments"]],
+                         [3, 4])
+        self.assertEqual(full["segments"][1]["raw_cluster_id"], 2)
+        self.assertEqual(full["segments"][1]["published_speaker_id"], 7)
+        self.assertEqual(full["segments"][1]["start_ms"], 1000)
+        self.assertEqual(full["segments"][1]["end_ms"], 2000)
+        self.assertTrue(full["segments"][1]["embedding_available"])
+        self.assertFalse(full["truncated"])
+        serialized = str(full)
+        self.assertNotIn("Private", serialized)
+        self.assertNotIn("array(", serialized)
+        with self.assertRaises(ValueError):
+            anonymous_speaker_timeline(records, 0)
+        with self.assertRaises(ValueError):
+            anonymous_speaker_timeline(records, 16000,
+                                       max_segments=1000)
+
     def test_posthoc_merge_sensitivity_separates_similar_cluster_pairs(self):
         records = [
             {"cluster": 0, "emb": np.array([1.0, 0.0])},
