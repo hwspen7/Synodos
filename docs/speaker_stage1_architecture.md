@@ -768,11 +768,14 @@ can lower the input floor to 0.9 seconds for the same AMI benchmark:
     $env:MEETING_SPEAKER_PROBE_MIN_S = "0.9"
 
 Values outside 0.8 through 1.2 are rejected. Candidate embeddings
-below 1.2 seconds are always flagged with speaker_uncertain=true
-and speaker_evidence_status=short_probe, and they cannot seed the
-trusted ECAPA shadow speaker prototypes. This mode can increase
-the number of tentative acoustic groups and may worsen false
-identifications. Run an independent A/B against the same frozen
+below 1.2 seconds initially have speaker_uncertain=true and
+speaker_evidence_status=short_probe. A short candidate cannot create
+a positive published speaker ID unless an independent time-aligned
+acoustic window also matches it at cosine similarity >=0.82. Only
+then is it marked short_probe_corroborated. Uncorroborated probes
+remain unidentified, and cannot seed ECAPA shadow speaker references.
+This trial may increase competing acoustic evidence and must not be
+promoted without measured DER and confusion improvement. Run an independent A/B against the same frozen
 human annotation; do not enable in production until confusion
 and DER both improve. The default is still 1.2 seconds.
 
