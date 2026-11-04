@@ -255,18 +255,26 @@ def verification_metrics(rows: list[tuple[bool, float]],
 def compare_verification(pairs: list[dict], root: Path, *,
                          backends: dict | None = None,
                          thresholds: dict | None = None,
-                         ecapa_device: str = "cpu") -> dict:
+                         ecapa_device: str = "cpu",
+                         selected: str = "both") -> dict:
     if not pairs:
         raise ValueError("No verification pairs in manifest")
+    if selected not in ("camplus", "ecapa", "both"):
+        raise ValueError("Invalid selected verification backend")
     own_manager = None
     if backends is None:
-        from core.config import Settings
-        from inference.models import ModelManager
-        own_manager = ModelManager(Settings())
-        backends = {
-            "camplus": create_embedding_backend("camplus", manager=own_manager),
-            "ecapa": create_embedding_backend("ecapa", device=ecapa_device),
-        }
+        backends = {}
+        if selected in ("camplus", "both"):
+            from core.config import Settings
+            from inference.models import ModelManager
+            own_manager = ModelManager(Settings())
+            backends["camplus"] = create_embedding_backend(
+                "camplus", manager=own_manager,
+            )
+        if selected in ("ecapa", "both"):
+            backends["ecapa"] = create_embedding_backend(
+                "ecapa", device=ecapa_device,
+            )
     thresholds = thresholds or {}
     results = {}
     try:
@@ -308,6 +316,8 @@ def compare_verification(pairs: list[dict], root: Path, *,
     return {
         "models": results,
         "paired_trials_required": True,
+        "selected_backend": selected,
+        "pair_count": len(pairs),
         "note": (
             "Only same-model cosine scores are valid. Never mix CAM++ and "
             "ECAPA vectors, and never report EER as a calibrated threshold."
@@ -317,7 +327,7 @@ def compare_verification(pairs: list[dict], root: Path, *,
 
 def run(path: Path, root: Path, mode: str, *, nemotron=None,
         backends=None, thresholds=None, diar_device="cpu",
-        ecapa_device="cpu") -> dict:
+        ecapa_device="cpu", verification_backend="both") -> dict:
     doc = load_manifest(path)
     result = {
         "schema": SCHEMA,
@@ -336,6 +346,7 @@ def run(path: Path, root: Path, mode: str, *, nemotron=None,
         result["verification"] = compare_verification(
             doc.get("verification_pairs", []), root, backends=backends,
             thresholds=thresholds, ecapa_device=ecapa_device,
+            selected=verification_backend,
         )
     return result
 
@@ -362,6 +373,9 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--diar-device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--ecapa-device", choices=("cpu", "cuda"), default="cpu")
+    parser.add_argument("--verification-backend",
+                        choices=("camplus", "ecapa", "both"), default="both",
+                        help="Select one model to run in its isolated environment")
     parser.add_argument("--camplus-threshold", type=float)
     parser.add_argument("--ecapa-threshold", type=float)
     args = parser.parse_args()
@@ -380,6 +394,7 @@ def main() -> int:
         },
         diar_device=args.diar_device,
         ecapa_device=args.ecapa_device,
+        verification_backend=args.verification_backend,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x", encoding="utf-8") as stream:
