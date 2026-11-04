@@ -25,6 +25,9 @@ def meeting_connection_lock(meeting_id: str) -> asyncio.Lock:
 
 async def stop_and_join(session: Any, timeout: float = 120.0) -> bool:
     """Stop a session and join outside the event loop; report timeouts."""
+    independent = getattr(session, "independent_diarization", None)
+    if independent is not None:
+        await asyncio.to_thread(independent.finish, min(timeout, 90.0))
     session.stop()
     worker = session.processor
     if worker.ident is None:
