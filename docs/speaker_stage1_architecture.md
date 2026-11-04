@@ -901,3 +901,65 @@ captions, present as unknown with missing voiceprints, or frequently
 present during simultaneous speech. Do not force K=4, lower the
 identity-confidence threshold or promote ECAPA automatically before
 this diagnosis is compared across other AMI recordings.
+
+
+## TS3003b reference-solo CAM++ probe: third versus fourth speaker
+
+The operator ran the V6 AMI solo/overlap reference audit. The key
+distinction is **not** simply that two speakers are missing:
+
+- MTD011UID: 13.8 seconds annotated speech, 9.9 seconds overlapping,
+  just 3.9 seconds solo. The longest contiguous solo stretch is
+  63.6–66.6 s into the 240 s crop (3.0 seconds).
+- MTD0010ID: 13.6 seconds annotated speech, only 2.1 seconds
+  overlapping, 11.5 seconds solo. The longest solo stretches are
+  127.3–135.4 s (8.1 s) and 136.2–138.6 s (2.4 s).
+  During solo voice activity, existing label 1 has 5.4 seconds
+  of temporal contact. This does **not** prove the audio was
+  assigned to the right speaker or that an embedding represents
+  the annotated voice.
+
+To check whether the fourth speaker has distinguishable CAM++ raw
+voiceprints *before* changing global speaker clustering, the offline
+tool tools.ami_oracle_solo_probe:
+
+1. Calls the existing score_case input checks so the original
+   240 s WAV, SHA256 and pinned human RTTM are consistent.
+2. Builds **solo annotated** intervals by subtracting every moment
+   with two or more distinct active reference voices. It never
+   intentionally creates a mixed-speaker window.
+3. Trims 200 ms off both ends of each interval, and samples bounded
+   2.0–3.2 s audio windows. The primary 8.1 s fourth-speaker run
+   yields two nonoverlapping 3.2 s probes. The separate 2.4 s run
+   contributes another 2.0 s probe.
+4. Uses the actual production ModelManager CAM++ embedding adapter
+   in the user-local offline environment. Within-person and
+   cross-person cosine distributions are computed **within the
+   same CAM++ vector space**.
+5. Writes only sample counts, time windows and scalar similarities,
+   not the original wave, transcript words or raw speaker embeddings.
+
+Run from the old branch, using the model environment you already
+validated. This is a **new** file and does not overwrite V6 outputs:
+
+    cd E:\Meeting-Fixed10-Test
+    git pull --ff-only origin feature/multilingual-fixed10-ui-refresh
+    python -m unittest tests.quality.test_ami_oracle_solo_probe -v
+    python -m tools.ami_oracle_solo_probe --root benchmark/fixed195/ami_shadow10 --meeting TS3003b --replay benchmark/fixed195/ami_shadow10/replay_TS3003b_v6.json --output benchmark/fixed195/ami_shadow10/oracle_solo_camplus_TS3003b_v6.json
+
+Inspect:
+
+    $r = Get-Content benchmark/fixed195/ami_shadow10/oracle_solo_camplus_TS3003b_v6.json -Raw | ConvertFrom-Json
+    $r.speakers | ConvertTo-Json -Depth 6
+    $r.different_speaker_pair_cosines | ConvertTo-Json -Depth 6
+    $r.failed_windows | ConvertTo-Json -Depth 6
+
+**Important:** This is **oracle-context** analysis, with RTTM
+human speech labels selecting relatively clean intervals. It is NOT
+live speaker discovery, cannot determine whether the production
+extractor/ASR windows actually contained the annotated voice, and
+does not certify calibrated verification accuracy. The AMI
+only_words annotation can omit non-word vocalizations. One
+voice's cross-person cosine alone does not prove a classifier error;
+calibration and human-audited review are still needed. No results
+from this probe are used to promote or rewrite live speaker IDs.
