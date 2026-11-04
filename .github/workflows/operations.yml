@@ -1,6 +1,7 @@
 name: Operations safety tests
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - refactor/flatten-project-root
