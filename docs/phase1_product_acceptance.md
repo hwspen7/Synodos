@@ -6,6 +6,23 @@ publicly documented behavior (timecoded transcript sections, editable text,
 correctable speaker names, recording-linked playback) is a UX reference, not
 a claim to use or reproduce Zoom's proprietary implementations.
 
+## Supported Phase 1 languages
+
+The first product release supports exactly ten spoken-language choices:
+English, Chinese, French, Spanish, Arabic, Indonesian, Japanese,
+Russian, German, and Hindi (`en, zh, fr, es, ar, id, ja, ru, de, hi`).
+Automatic source-language detection remains available, but provider
+recognition outside these ten languages is unvalidated for Phase 1;
+recognized words are never silently discarded based on language ID.
+Translation options use the same ten targets and require a locally
+available translation provider or model.
+
+The original 12-language Fixed195 archive remains frozen for
+reproducibility. Phase 1 acceptance is computed from the 110 selected
+human-referenced singles using `tools.phase1_ten_language_gate`.
+The old 130-case 12-language report remains a historical diagnostic.
+This scope change does not indicate that Whisper accuracy improved.
+
 ## Acceptance states
 
 - Implemented: the function exists in the integrated product.
