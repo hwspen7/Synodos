@@ -104,6 +104,15 @@ uv run python example/stream_test.py --wav path/to/sample.wav
 
 See [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for protocol details, settings, storage formats, architecture, limitations, and outstanding issues.
 
+## Stage 1 optional speaker-model architecture
+
+See [Stage 1 speaker model interfaces and paired evaluation](docs/speaker_stage1_architecture.md).
+It adds opt-in CAM++ / ECAPA speaker verification comparisons and a
+Nemotron 3 offline diarization comparison. Candidates run in isolated
+environments and cannot silently replace production speaker identity or
+live-ASR handling. No real-model accuracy improvement is claimed until a
+frozen, independently annotated audio set has been evaluated.
+
 ## Phase 08 quality hardening
 
 See [Phase 08 repair status](docs/phase08_repair_status.md) for confirmed fixes, known limitations, and required real-audio acceptance tests. CI validates software contracts and does not establish Zoom-equivalent acoustic performance.
