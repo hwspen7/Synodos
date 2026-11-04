@@ -44,6 +44,14 @@ additionally needs a compatible torchaudio build. The requirements are
 candidates, not a tested lockfile for this Windows GPU. Test these
 dependencies separately rather than force-installing into the current app.
 
+Before downloading candidate weights, run the no-download environment check:
+
+    .venv-speaker-ecapa\Scripts\python.exe -m tools.speaker_stage1_doctor --model ecapa --device cuda
+    .venv-speaker-nemotron\Scripts\python.exe -m tools.speaker_stage1_doctor --model nemotron3 --device cuda
+
+The doctor checks dependency presence, basic version compatibility and CUDA
+availability, but does not load weights or establish inference performance.
+
 Models download their pretrained weights **only on explicit invocation**.
 First download needs network access and model license acceptance where
 required. Nemotron 3 is currently available from Hugging Face under
