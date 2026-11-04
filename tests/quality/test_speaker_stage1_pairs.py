@@ -115,6 +115,42 @@ class SpeakerStageOnePairTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 read_sources(root / "not_found.jsonl", root, None)
 
+    def test_comparison_reports_keep_weak_same_session_provenance(self):
+        from tools.speaker_stage1_compare import run
+        from tools.speaker_stage1_merge import merge_verification
+
+        class SameAudioEmbedding:
+            model_id = "fake/unit"
+            def embed(self, audio):
+                vector = np.zeros(192, dtype=np.float32)
+                vector[0] = 1.0
+                return vector
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source = fixture(root)
+            manifest = root / "stage1.json"
+            document = build(root, source, manifest)
+            cam = run(manifest, root, "verification", backends={
+                "camplus": SameAudioEmbedding()
+            })
+            ecapa = run(manifest, root, "verification", backends={
+                "ecapa": SameAudioEmbedding()
+            })
+            self.assertEqual(
+                cam["verification_provenance"],
+                document["verification_provenance"]
+            )
+            merged = merge_verification(cam, ecapa)
+            self.assertFalse(
+                merged["verification_provenance"]["cross_session_identity_evaluable"]
+            )
+            ecapa["verification_provenance"] = {
+                "kind": "independent_sessions"
+            }
+            with self.assertRaisesRegex(ValueError, "provenance"):
+                merge_verification(cam, ecapa)
+
     def test_inactive_channels_do_not_fabricate_trials(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
