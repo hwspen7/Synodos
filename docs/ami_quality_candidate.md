@@ -74,11 +74,41 @@ also reviewed. `non_regression_pass` by itself is insufficient.
 
 ## Speaker clustering is a separate experiment
 
-Use `MEETING_SPEAKER_CLUSTER_STRATEGY=candidate` **only in a separate run**
-to test the existing bounded spherical clustering candidate. This is
-independent of the ASR quality flag. It may increase speaker count by splitting
-one real person into several clusters. The benchmark, not the predicted
-speaker count, decides whether it helps.
+The independent `MEETING_SPEAKER_QUALITY_CANDIDATE=1` option:
+- Lowers the minimum short-voice probe duration from 1.2 s to 0.9 s by
+  default. Short probes stay untrusted unless a separate, time-aligned
+  acoustic embedding corroborates them.
+- Selects the existing bounded spherical clustering candidate for acoustic
+  groups of 4..256 embeddings, retaining the legacy fallback.
+- Performs a final speaker reassessment at session shutdown, permitting
+  historical acoustic labels to be corrected, but respecting manual overrides.
+  Live relabel protections remain active until shutdown.
+
+Use the following settings in a **separate** restarted backend session:
+
+```powershell
+$env:MEETING_DIARIZATION_DIAGNOSTICS = "1"
+$env:MEETING_ASR_QUALITY_CANDIDATE = "0"
+$env:MEETING_SPEAKER_QUALITY_CANDIDATE = "1"
+Remove-Item Env:MEETING_SPEAKER_CLUSTER_STRATEGY -ErrorAction SilentlyContinue
+& $PY -m uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+Replay and score to new result files, then confirm
+`server_ready.speaker_quality_candidate=true` and
+`server_ready.speaker_cluster_strategy="candidate"`. After evaluating
+speaker-only and ASR-only variants independently, the combined option can be
+tested, also in a new process:
+
+```powershell
+$env:MEETING_ASR_QUALITY_CANDIDATE = "1"
+$env:MEETING_SPEAKER_QUALITY_CANDIDATE = "1"
+```
+
+The experimental speaker model may overfragment a real speaker or still
+miss heavily overlapping voices. Do not force an oracle four-person count.
+The reference-backed DER, overlap recall, coverage, and latency determine
+whether to retain or abandon the change.
 
 ## Known architectural limitations
 
