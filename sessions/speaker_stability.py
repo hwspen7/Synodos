@@ -289,3 +289,46 @@ def diagnose_cluster_merge_thresholds(
             "accuracy measure."
         ),
     }
+
+
+def anonymous_speaker_timeline(
+    records: Iterable[Mapping[str, object]],
+    sample_rate: int,
+    *,
+    max_segments: int = 256,
+) -> dict[str, object]:
+    """Bounded, transcript-free speaker time intervals for offline review.
+
+    Raw cluster numbers are local to one clustering snapshot. This diagnostic
+    must never contain speaker names, spoken text or voice embeddings.
+    """
+    if sample_rate < 1000 or not 1 <= max_segments <= 512:
+        raise ValueError("Invalid anonymous speaker timeline limits")
+    items = sorted(
+        list(records),
+        key=lambda x: (int(x.get("start_sample", 0)), int(x.get("id", 0))),
+    )
+    result: list[dict[str, object]] = []
+    for item in items[:max_segments]:
+        start = int(item.get("start_sample", 0))
+        end = int(item.get("end_sample", 0))
+        if start < 0 or end < start:
+            continue
+        raw = item.get("cluster")
+        sid = item.get("speaker_id")
+        result.append({
+            "segment_id": int(item.get("id", 0)),
+            "start_ms": round(start * 1000 / sample_rate),
+            "end_ms": round(end * 1000 / sample_rate),
+            "raw_cluster_id": raw if type(raw) is int and raw >= 0 else None,
+            "published_speaker_id": sid if type(sid) is int and sid > 0 else None,
+            "embedding_available": item.get("emb") is not None,
+            "speaker_uncertain": bool(item.get("speaker_uncertain", False)),
+        })
+    return {
+        "total_segments": len(items),
+        "exported_segments": len(result),
+        "truncated": len(items) > max_segments,
+        "time_reference": "Absolute milliseconds from start of received audio",
+        "segments": result,
+    }
