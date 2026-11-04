@@ -34,6 +34,7 @@ def recognize_windows(
     unknown_threshold: float = 0.50,
     max_windows: int = 100,
     preserve_disputed_text: bool = False,
+    prefer_word_bounds: bool = False,
 ) -> Recognition:
     """Call transcribe(chunk, **kwargs) separately for each VAD speech window.
 
@@ -71,6 +72,7 @@ def recognize_windows(
         verified = verify_utterances(
             output, local_regions, round((end - start) * 1000 / sample_rate),
             language, preserve_disputed_text=preserve_disputed_text,
+            prefer_word_bounds=prefer_word_bounds,
         )
         shift_ms = round(start * 1000 / sample_rate)
         for item in verified:
