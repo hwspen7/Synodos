@@ -83,7 +83,9 @@ def speaker_evidence(segments: list[dict]) -> dict[int, dict]:
         margin = raw_score - max(alternatives) if (
             raw_score is not None and alternatives
         ) else None
-        if type(person) is not int or person <= 0:
+        if seg.get("speaker_override"):
+            status = "manual_override"
+        elif type(person) is not int or person <= 0:
             status = "unidentified"
         elif seg.get("speaker_uncertain") or vector is None:
             status = "uncertain"
