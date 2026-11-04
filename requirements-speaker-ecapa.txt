@@ -1,0 +1,5 @@
+# Optional ECAPA verification comparison environment.
+# Install a compatible torch/torchaudio pair separately for your CUDA version.
+# Never install this directly into the validated live Whisper environment.
+numpy>=1.26,<3
+speechbrain>=1.0,<2
