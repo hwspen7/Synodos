@@ -5,7 +5,8 @@ import os
 import numpy as np
 from speech.dual_vad import crosscheck_speech_regions
 from speech.contracts import Recognition
-from speech.quality_guard import verify_utterances
+from speech.quality_guard import verify_utterances, speech_intervals
+from speech.gap_recovery import recover_missing_voice
 from speech.utterance_units import split_utterances
 
 
@@ -29,23 +30,23 @@ class WhisperEngine:
     def recognize(self, audio: np.ndarray, language: str = "auto", terms: str = "") -> Recognition:
         if len(audio) == 0:
             return Recognition(engine="whisper")
-        # Use the same VAD options for inference and output verification.
-        # Reject only text with no supporting speech, never based on wording.
         from faster_whisper.vad import VadOptions, get_speech_timestamps
+
         samples = np.asarray(audio, dtype=np.float32)
-        options = VadOptions(min_speech_duration_ms=200, min_silence_duration_ms=650,
-                             speech_pad_ms=180)
+        options = VadOptions(
+            min_speech_duration_ms=200,
+            min_silence_duration_ms=650,
+            speech_pad_ms=180,
+        )
+        # We already run Silero once and verify every accepted utterance
+        # against those same regions. A second internal VAD pass may silently
+        # remove quiet / interrupted words or change time alignment.
         kwargs = {
             "language": None if language in ("auto", "und", "") else language,
             "multilingual": language in ("auto", "und", ""),
             "beam_size": 5,
             "word_timestamps": True,
-            "vad_filter": True,
-            "vad_parameters": {
-                "min_speech_duration_ms": options.min_speech_duration_ms,
-                "min_silence_duration_ms": options.min_silence_duration_ms,
-                "speech_pad_ms": options.speech_pad_ms,
-            },
+            "vad_filter": False,
             "no_speech_threshold": 0.5,
             "log_prob_threshold": -1.0,
             "compression_ratio_threshold": 2.4,
@@ -55,44 +56,83 @@ class WhisperEngine:
         }
         if terms.strip():
             kwargs["hotwords"] = terms[:1500]
-        # Controlled experiment only: preserve verified segment text when
-        # its forced word alignment fails acoustic support checks.
-        # Disabled by default until all-language and overlap regression gates.
+        # Preserve acoustically verified segment words when the model's
+        # forced word alignment is incomplete. This avoids deleting genuine
+        # meeting content merely because word timestamps disagree.
         preserve_disputed = os.environ.get(
-            "MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT", "0"
+            "MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT", "1"
+        ).strip().lower() in ("1", "true", "yes")
+        gap_recovery = os.environ.get(
+            "MEETING_WHISPER_GAP_RECOVERY", "1"
         ).strip().lower() in ("1", "true", "yes")
         with self._infer_lock:
-            speech_regions = get_speech_timestamps(samples, options, sampling_rate=16000)
-            if os.environ.get("MEETING_WHISPER_DUAL_VAD", "0").strip().lower() in ("1", "true", "yes"):
+            speech_regions = get_speech_timestamps(
+                samples, options, sampling_rate=16000
+            )
+            if os.environ.get(
+                "MEETING_WHISPER_DUAL_VAD", "0"
+            ).strip().lower() in ("1", "true", "yes"):
                 speech_regions = crosscheck_speech_regions(samples, speech_regions)
             if not speech_regions:
                 return Recognition(engine="whisper", speech_detected=False)
-            # Auto LID is per VAD speech window, never a global label
-            # copied onto every utterance. Keep an escape hatch for A/B tests.
-            if language in ("auto", "und", "") and os.getenv(
-                "MEETING_WHISPER_WINDOW_LID", "1"
-            ).strip().lower() in ("1", "true", "yes"):
+            intervals_ms = speech_intervals(
+                speech_regions, round(len(samples) * 1000 / 16000)
+            )
+
+            window_lid = (
+                language in ("auto", "und", "")
+                and os.getenv("MEETING_WHISPER_WINDOW_LID", "1").strip().lower()
+                in ("1", "true", "yes")
+            )
+            if window_lid:
                 from speech.multilingual_windows import recognize_windows
-                window_kwargs = dict(kwargs, multilingual=True)
-                from dataclasses import replace as dataclass_replace
                 recognized = recognize_windows(
                     samples, speech_regions,
                     lambda chunk, **kw: self._get_model().transcribe(chunk, **kw),
-                    window_kwargs, preserve_disputed_text=preserve_disputed,
+                    dict(kwargs, multilingual=True),
+                    preserve_disputed_text=preserve_disputed,
                 )
-                return dataclass_replace(
-                    recognized,
-                    utterances=split_utterances(recognized.utterances),
+                primary = recognized.utterances
+                detected = recognized.language
+                probability = recognized.confidence
+            else:
+                # The iterator is lazy, and must be exhausted under the lock.
+                segments, info = self._get_model().transcribe(samples, **kwargs)
+                pieces = list(segments)
+                detected = (
+                    language if language not in ("auto", "und", "")
+                    else getattr(info, "language", None) or "und"
                 )
-            segments, info = self._get_model().transcribe(samples, **kwargs)
-            # Faster Whisper infers lazily; consume under the inference lock.
-            pieces = list(segments)
-        detected = (language if language not in ("auto", "und", "")
-                    else getattr(info, "language", None) or "und")
-        utterances = verify_utterances(
-            pieces, speech_regions, round(len(samples) * 1000 / 16000), detected,
-            preserve_disputed_text=preserve_disputed,
+                probability = getattr(info, "language_probability", None)
+                primary = verify_utterances(
+                    pieces, speech_regions,
+                    round(len(samples) * 1000 / 16000), detected,
+                    preserve_disputed_text=preserve_disputed,
+                )
+
+            # Bounded actual ASR retry for a VAD-positive interval omitted
+            # from accepted speech. No text is fabricated, and the original
+            # transcription is retained if retry fails.
+            if gap_recovery:
+                primary, recovery = recover_missing_voice(
+                    samples, speech_regions, primary,
+                    lambda chunk, **kw: self._get_model().transcribe(chunk, **kw),
+                    kwargs, language=language,
+                )
+            else:
+                recovery = {
+                    "uncovered_speech_intervals": (),
+                    "recovery_attempted": 0,
+                    "recovery_confirmed": 0,
+                    "recovery_failed": 0,
+                    "disabled": True,
+                }
+        return Recognition(
+            utterances=split_utterances(primary),
+            language=detected,
+            confidence=probability,
+            engine="whisper",
+            speech_detected=True,
+            speech_intervals_ms=intervals_ms,
+            recovery_diagnostics=recovery,
         )
-        return Recognition(split_utterances(utterances), detected,
-                           getattr(info, "language_probability", None), "whisper",
-                           speech_detected=True)
