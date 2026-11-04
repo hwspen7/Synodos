@@ -24,7 +24,9 @@ def correct_segment(state: dict, segment_id: int, text: str, expected_revision: 
         if not isinstance(segment.get("original_asr_text"), str):
             segment["original_asr_text"] = old_text
         segment.setdefault("corrections", []).append({
-            "revision": previous + 1,
+            "revision": previous,
+            "applied_revision": previous + 1,
+            "text": old_text,
             "kind": "text",
             "source": "manual_review",
             "before": {"text": old_text},
@@ -74,7 +76,10 @@ def assign_segment_speaker(
             segment.get("speaker_override_name") == speaker_name):
             return segment
         segment.setdefault("corrections", []).append({
-            "revision": revision + 1,
+            "revision": revision,
+            "applied_revision": revision + 1,
+            "speaker_id": segment.get("speaker_id"),
+            "speaker_name": segment.get("speaker_name"),
             "kind": "speaker",
             "source": "manual_review",
             "before": {
