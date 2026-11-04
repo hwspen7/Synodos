@@ -67,6 +67,20 @@ class Phase1LanguagePolicyTests(unittest.TestCase):
         self.assertTrue(is_phase1_language("Chinese"))
         self.assertFalse(is_phase1_language("bn"))
 
+    def test_saved_meeting_api_rejects_unsupported_language_settings(self):
+        from pydantic import ValidationError
+        from api.meetings import MeetingSettingsPayload
+
+        valid = MeetingSettingsPayload(language="auto", translate_to="")
+        self.assertEqual(valid.language, "auto")
+        self.assertEqual(valid.translate_to, "")
+        alias = MeetingSettingsPayload(language="Chinese", translate_to="English")
+        self.assertEqual(alias.language, "zh")
+        self.assertEqual(alias.translate_to, "en")
+        for key, language in (("language", "bn"), ("translate_to", "pt")):
+            with self.subTest(key=key), self.assertRaises(ValidationError):
+                MeetingSettingsPayload(**{key: language})
+
     def test_invalid_backend_environment_fails_before_inference(self):
         SpeechSettings(language="auto", translate_to="").validate()
         for field, code in (("language", "pt"), ("translate_to", "bn")):
