@@ -22,8 +22,8 @@ def archive():
             "character_edits": edits, "character_deletions": edits // 2,
             "empty_predictions": 0, "unscored_alignment": 0,
         }
-    # This synthetic archive has 140 samples if calculated naively;
-    # match the frozen 130 case count: English 20, eleven others 10.
+    # The frozen archive has 130 single recordings: English 20,
+    # and eleven other languages with 10 recordings each.
     return {
         "schema": "meeting-phase1-fixed195-text-gate-v1",
         "reference_case_count": 130,
