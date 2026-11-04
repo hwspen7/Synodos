@@ -23,6 +23,16 @@ class MeetingSettingsPayload(BaseModel):
     hotword_ids: list[str] = Field(default_factory=list, max_length=64)
     spk_threshold: float = Field(default=0.3, ge=0, le=1)
 
+    @field_validator("language")
+    @classmethod
+    def validate_source_language(cls, value: str) -> str:
+        return spoken_language(value)
+
+    @field_validator("translate_to")
+    @classmethod
+    def validate_translation_target(cls, value: str) -> str:
+        return translation_target(value)
+
 
 @router.patch("/api/meetings/{meeting_id}/settings")
 async def update_meeting_settings(meeting_id: str, payload: MeetingSettingsPayload) -> dict:
