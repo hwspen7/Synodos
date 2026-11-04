@@ -300,7 +300,9 @@ class SessionProcessor(threading.Thread):
                     summary["fresh_cluster_sweep"] = (
                         diagnose_fresh_cluster_candidates(self.segments)
                     )
-                    summary["clustering_strategy"] = os.getenv(
+                    # This is the requested mode. The bounded candidate
+                    # may fall back to FunASR on excessive fragmentation.
+                    summary["clustering_strategy_requested"] = os.getenv(
                         "MEETING_SPEAKER_CLUSTER_STRATEGY", "bootstrap"
                     )
                     # Review speaker-turn alignment against the original
