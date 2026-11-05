@@ -59,7 +59,7 @@ const emit = defineEmits<{
 const filtered = computed(() => [...props.segments]
   .filter(s => s.speaker_id === props.speakerId && s.text.trim())
   .sort((a, b) => a.start_ms - b.start_ms || a.id - b.id))
-const byId = computed(() => new Map(filtered.value.map(s => [s.id, s])))
+const byId = computed(() => new Map<number, Segment>(filtered.value.map(s => [s.id, s] as const)))
 const identitySegmentId = ref<number | null>(props.selectedSegmentId)
 const loaded = ref(false)
 const busy = ref(false)
@@ -174,15 +174,21 @@ watch(() => [props.meetingId, props.speakerId] as const, () => {
   error.value = ''
   status.value = null
   identitySegmentId.value = props.selectedSegmentId
-  void refresh()
+  if (props.tab === 'insights' && !props.recording) void refresh()
 })
 watch(() => props.selectedSegmentId, value => { if (value !== null) identitySegmentId.value = value })
 watch(() => props.segments.map(s => `${s.id}:${s.revision ?? 0}:${s.speaker_id}:${s.text}`).join('|'), () => {
-  // Existing AI artifacts are invalidated by the backend revision check.
-  void refresh()
+  // A streaming transcript must not cause repeated AI database requests.
+  if (!props.recording && props.tab === 'insights') void refresh()
+})
+watch(() => props.recording, (active, wasActive) => {
+  if (!active && wasActive && props.tab === 'insights') void refresh()
+})
+watch(() => props.tab, tab => {
+  if (tab === 'insights' && !props.recording) void refresh()
 })
 onMounted(() => {
-  void refresh()
+  if (props.tab === 'insights' && !props.recording) void refresh()
   pollTimer = setInterval(() => { void poll() }, 3000)
 })
 onBeforeUnmount(() => {
@@ -217,7 +223,7 @@ onBeforeUnmount(() => {
           <AppIcon name="file-text" :size="16" />
           {{ analyzing ? 'Analyzing…' : currentArtifact ? 'Regenerate analysis' : 'Analyze this speaker' }}
         </button>
-        <p v-if="!loaded" class="speaker-review-message" role="status">Loading saved analysis...</p>
+        <p v-if="!loaded && !recording" class="speaker-review-message" role="status">Loading saved analysis...</p>
         <p v-if="status?.active_job" class="speaker-review-message" role="status">Analysis queued or running. It may wait until live recording stops.</p>
         <p v-if="recording" class="speaker-review-message">Stop and save recording before generating an individual analysis.</p>
         <p v-if="error" class="speaker-review-error" role="alert">{{ error }}</p>
