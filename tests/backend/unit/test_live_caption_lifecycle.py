@@ -65,6 +65,30 @@ class RealtimeSubtitleContracts(unittest.TestCase):
         processor._recluster = lambda *args: None
         return processor, models, events
 
+    def test_ghost_caption_on_digital_silence_never_reaches_speakers(self):
+        processor, models, events = self.make_processor()
+        sr = processor.settings.sample_rate
+        processor.buffer.append(np.zeros(sr * 9, dtype=np.float32))
+        models.text = "Hey, who are you?"
+        with patch("sessions.processor.submit_speaker_analysis") as speaker:
+            self.assertFalse(processor._cycle(final=False))
+        self.assertFalse(processor.segments)
+        self.assertEqual([x for x in events if x["type"] == "partial"], [])
+        speaker.assert_not_called()
+        self.assertLessEqual(processor.buffer.total_samples(), sr * 3)
+
+    def test_ghost_caption_on_steady_microphone_noise_is_suppressed(self):
+        processor, models, events = self.make_processor()
+        rng = np.random.default_rng(42)
+        noise = rng.normal(0, 0.003, 9 * processor.settings.sample_rate)
+        processor.buffer.append(noise.astype(np.float32))
+        models.text = "You."
+        with patch("sessions.processor.submit_speaker_analysis") as speaker:
+            self.assertFalse(processor._cycle(final=False))
+        self.assertEqual(processor.segments, [])
+        self.assertFalse(any(x["type"] == "partial" for x in events))
+        speaker.assert_not_called()
+
     def test_draft_before_four_seconds_not_confirmed_and_then_cleared_once(self):
         processor, models, events = self.make_processor()
         self.assertEqual(processor._process_threshold_s, 2.5)

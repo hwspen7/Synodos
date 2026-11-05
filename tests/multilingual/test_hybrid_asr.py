@@ -38,6 +38,19 @@ class HybridRoutingTests(unittest.TestCase):
                          .utterances[0].text, "bonjour")
         whisper.recognize.assert_not_called()
 
+    def test_no_qwen_retry_on_vad_negative_microphone_noise(self):
+        whisper, qwen = Mock(), Mock()
+        whisper.recognize.return_value = Recognition(
+            engine="whisper", speech_detected=False
+        )
+        engine = HybridEngine(whisper, qwen, full_language_window=True)
+        loud_fan_noise = np.full(32000, 0.01, dtype=np.float32)
+        auto = engine.recognize(loud_fan_noise, "auto")
+        self.assertFalse(auto.speech_detected)
+        forced = engine.recognize(loud_fan_noise, "en")
+        self.assertFalse(forced.speech_detected)
+        qwen.recognize.assert_not_called()
+
     def test_known_fallback_on_worker_error(self):
         whisper, qwen = Mock(), Mock()
         qwen.recognize.side_effect = RuntimeError("worker offline")

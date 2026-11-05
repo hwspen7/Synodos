@@ -104,8 +104,14 @@ class HybridEngine:
         except Exception as exc:
             audit["primary_error"] = type(exc).__name__
             primary = None
-        if primary is None or (not has_text(primary) and
-                               acoustic_activity(samples)):
+        # A real VAD-negative primary result is not a reason to ask the
+        # second model to hallucinate words from microphone noise.
+        # Keep error recovery and genuine VAD-positive empty-text retries.
+        if primary is None or (
+            not has_text(primary)
+            and primary.speech_detected is not False
+            and acoustic_activity(samples)
+        ):
             audit["fallback_attempted"] = True
             try:
                 secondary = self._call(other, samples, language, terms)
@@ -136,7 +142,8 @@ class HybridEngine:
                 audit["qwen_error"] = type(second).__name__
             raise RuntimeError("Both automatic-language ASR paths failed") from exc
         if not baseline.utterances:
-            if acoustic_activity(samples):
+            if (baseline.speech_detected is not False
+                    and acoustic_activity(samples)):
                 try:
                     qwen = self._call("qwen3", samples, "auto", terms)
                     if has_text(qwen):

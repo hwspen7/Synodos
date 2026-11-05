@@ -44,6 +44,7 @@ from observability.metrics import metrics
 from phase07.telemetry import telemetry
 from phase07.speakers import speaker_stats, find_distinct_participant
 from speech.commit_guard import is_temporal_duplicate
+from speech.acoustic_guard import uninformative_audio
 from speech.coverage_retention import choose_safe_drop
 from speech.quality_profile import (
     quality_candidate_enabled, speaker_candidate_enabled,
@@ -798,6 +799,23 @@ class SessionProcessor(threading.Thread):
             self._send_state()
             return False
         absolute_end = start_offset + len(audio)
+        if (self._speech_settings.engine != "legacy"
+                and uninformative_audio(audio, sr)):
+            # Do not feed sustained microphone noise to either decoder or
+            # the speaker extractor. Keep a short tail for the next genuine
+            # voice onset, instead of retaining an infinite silent buffer.
+            self._last_inferred_absolute_end = absolute_end
+            if not final and len(audio) > 7 * sr:
+                self.buffer.drop_before(len(audio) - 3 * sr)
+            cleared = self._preview_tracker.clear(
+                round(start_offset * 1000 / sr),
+                round(absolute_end * 1000 / sr),
+            )
+            if cleared is not None:
+                self._put({"type": "partial", **vars(cleared)})
+            metrics.increment("asr_low_information_audio_suppressed")
+            self._send_state()
+            return False
         self._schedule_acoustic(start_offset, audio)
         # A rescan with no new microphone samples cannot improve recognition.
         # Finalization is exempt so the last incomplete utterance gets one chance.
@@ -857,6 +875,7 @@ class SessionProcessor(threading.Thread):
             "held": 0,
             "invalid_timestamps": 0,
             "duplicate_skipped": 0,
+            "acoustic_rejected": 0,
             "published_new": 0,
             "published_from_recovery": 0,
         }
@@ -864,6 +883,18 @@ class SessionProcessor(threading.Thread):
             start_ms = int(sentence["start"])
             end_ms = int(sentence["end"])
             text = sentence["text"]
+            # Recheck the exact proposed segment's PCM. A VAD false
+            # positive on a quiet, stationary interval must not be promoted
+            # into a permanent caption or a new speaker cluster.
+            a_local = max(0, min(len(audio), int(start_ms * sr / 1000)))
+            b_local = max(0, min(len(audio), int(end_ms * sr / 1000)))
+            if (self._speech_settings.engine != "legacy"
+                    and b_local > a_local
+                    and uninformative_audio(audio[a_local:b_local], sr)):
+                commit_receipt["acoustic_rejected"] += 1
+                local_end = max(local_end, b_local)
+                metrics.increment("asr_unvoiced_candidate_rejected")
+                continue
             # Handle transcripts and speaker assignments.
             should_hold = not final and (
                 buffer_s - end_ms / 1000.0 < self._trusted_threshold_s
@@ -958,7 +989,7 @@ class SessionProcessor(threading.Thread):
         if current_content_trace is not None:
             if sum(commit_receipt[key] for key in (
                 "held", "invalid_timestamps", "duplicate_skipped",
-                "published_new",
+                "acoustic_rejected", "published_new",
             )) != commit_receipt["verified_candidates"]:
                 raise AssertionError("ASR candidate accounting not conserved")
             current_content_trace["commit_receipt"] = commit_receipt
