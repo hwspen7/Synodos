@@ -2116,8 +2116,12 @@ class SessionProcessor(threading.Thread):
                         else "nemotron_frame_activity_not_identity_probability"
                     )
                     if decision.speaker_id is not None:
+                        acoustic_support_ms = round(
+                            decision.analyzed_ms
+                            * max(0.0, float(decision.active_fraction or 0.0))
+                        )
                         published = self._display_nemotron_channel(
-                            decision.speaker_id, int(decision.analyzed_ms),
+                            decision.speaker_id, acoustic_support_ms,
                         )
                         if published is None:
                             # A single short cue is not sufficient evidence
