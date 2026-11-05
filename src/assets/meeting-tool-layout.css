@@ -259,3 +259,41 @@
 .meeting-route .meeting-primary .empty-state{
   margin:18px 14px;
 }
+
+
+/* Nonblocking recording alert. It is not part of transcript document flow. */
+.meeting-floating-alert{
+  position:fixed;bottom:24px;right:26px;z-index:85;
+  display:flex;align-items:flex-start;gap:12px;
+  width:min(390px,calc(100vw - 30px));padding:15px 14px;
+  background:#fff;border:1px solid #f0d5bd;border-left:3px solid #dc7423;
+  border-radius:13px;box-shadow:0 16px 44px rgba(35,30,25,.16);
+  color:#33343a;pointer-events:auto;
+}
+.meeting-floating-alert-icon{
+  display:flex;align-items:center;justify-content:center;flex:none;
+  width:32px;height:32px;border-radius:10px;background:#fff1e4;color:#aa5000
+}
+.meeting-floating-alert-body{flex:1;min-width:0}
+.meeting-floating-alert-body strong{display:block;font-size:12px;line-height:1.45;font-weight:760}
+.meeting-floating-alert-body p{font-size:11px;color:#707178;line-height:1.6;margin:4px 0 11px;overflow-wrap:anywhere}
+.meeting-floating-alert-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.meeting-floating-alert-actions button{
+  border:1px solid #e9e5df;background:#fff;border-radius:8px;padding:7px 10px;
+  font-size:11px;font-weight:690;color:#8b4a11;cursor:pointer
+}
+.meeting-floating-alert-actions button:hover{background:#fff6ec;border-color:#efceaf}
+.meeting-floating-alert-dismiss{
+  flex:none;display:flex;align-items:center;justify-content:center;
+  width:26px;height:26px;border:0;border-radius:7px;background:transparent;
+  color:#94949a;cursor:pointer
+}
+.meeting-floating-alert-dismiss:hover{background:#f5f3f0;color:#333}
+.meeting-alert-enter-active,.meeting-alert-leave-active{transition:opacity .16s ease,transform .16s ease}
+.meeting-alert-enter-from,.meeting-alert-leave-to{opacity:0;transform:translateY(10px)}
+@media(max-width:720px){
+  .meeting-floating-alert{left:15px;right:15px;bottom:15px;width:auto}
+}
+@media(prefers-reduced-motion:reduce){
+  .meeting-alert-enter-active,.meeting-alert-leave-active{transition:none}
+}
