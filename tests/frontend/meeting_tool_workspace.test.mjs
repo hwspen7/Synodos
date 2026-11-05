@@ -34,7 +34,9 @@ test('review functions render as independent selectable modules', () => {
   for (const module of ['ai', 'correction', 'speakers', 'identity']) {
     assert.ok(source.includes("activeReviewTool === '" + module + "'"))
   }
-  assert.match(source, /v-if="activeReviewTool === 'ai'"/)
+  assert.match(source, /v-else-if="activeReviewTool === 'ai'"/)
+  assert.match(source, /activeReviewTool = ref<ReviewTool>\('home'\)/)
+  assert.match(source, /v-if="activeReviewTool === 'home'"/)
   assert.match(source, /v-else-if="activeReviewTool === 'correction'"/)
   assert.match(source, /v-else-if="activeReviewTool === 'speakers'"/)
   assert.match(source, /v-else\s*\n\s*:meeting-id=/)
