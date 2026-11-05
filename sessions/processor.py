@@ -1994,7 +1994,12 @@ class SessionProcessor(threading.Thread):
             if (activity is not None and len(activity)) or official_turns is not None:
                 for item, source in zip(items, ordered):
                     if (source.get("speaker_override")
+                            or (source.get("matched_profile_id")
+                                and source.get("matched_profile_name"))
                             or int(source["end_sample"]) <= origin):
+                        # Anonymous Nemotron activity may refine unlabeled turns,
+                        # but it cannot erase a registered voice identity or a
+                        # human speaker correction during a later projection.
                         continue
                     start_ms = round(
                         (int(source["start_sample"]) - origin) * 1000
