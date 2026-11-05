@@ -47,6 +47,44 @@ class SyntheticSpeakerEmbedding:
 
 
 class ShortMixedUtteranceTests(unittest.TestCase):
+    def test_new_speaker_requires_two_independent_acoustic_turns(self):
+        from sessions.speaker_birth_guard import tentative_new_clusters
+        def row(number, a, b, quality="window_estimate"):
+            return {
+                "id": number, "cluster": 2, "speaker_id": -number,
+                "emb": np.array([1.0, 0.0], dtype=np.float32),
+                "speaker_uncertain": False, "start_sample": a,
+                "end_sample": b, "timestamp_quality": quality, "words": [],
+            }
+        first = row(1, 0, 16000)
+        self.assertEqual(tentative_new_clusters([first], set()), {2})
+        # A duplicated prediction of the same time range is not new evidence.
+        overlap = row(2, 0, 16000)
+        self.assertEqual(
+            tentative_new_clusters([first, overlap], set()), {2}
+        )
+        second = row(3, 32000, 48000)
+        self.assertEqual(
+            tentative_new_clusters([first, second], set()), set()
+        )
+        first["speaker_id"] = 5
+        self.assertEqual(tentative_new_clusters([first], {5}), set())
+
+    def test_new_speaker_single_long_precise_turn_can_be_verified(self):
+        from sessions.speaker_birth_guard import tentative_new_clusters
+        case = {
+            "id": 1, "cluster": 0, "speaker_id": -1,
+            "emb": np.array([1.0, 0.0], dtype=np.float32),
+            "speaker_uncertain": False,
+            "start_sample": 0, "end_sample": 64000,
+            "timestamp_quality": "word",
+            "words": [{"text": "this"}, {"text": "is"}, {"text": "speech"}],
+        }
+        self.assertEqual(tentative_new_clusters([case], set()), set())
+        case["timestamp_quality"] = "window_estimate"
+        self.assertEqual(tentative_new_clusters([case], set()), {0})
+
+
     @staticmethod
     def sentence(with_words: bool = True) -> dict:
         words = [

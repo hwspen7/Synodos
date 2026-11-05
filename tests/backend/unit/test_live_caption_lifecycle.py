@@ -45,12 +45,12 @@ class RealtimeSubtitleContracts(unittest.TestCase):
         later = tracker.update("Next turn", "en", 4000, 4800)
         self.assertEqual(later.revision, 4)
 
-    def make_processor(self):
+    def make_processor(self, engine="whisper"):
         settings = Settings()
         buffer = AudioBuffer(settings.sample_rate, max_seconds=60)
         models = FakeMultilingualModels()
         events = []
-        speech = SpeechSettings(engine="whisper", model="large-v3",
+        speech = SpeechSettings(engine=engine, model="large-v3",
                                 preview_interval_s=2.5,
                                 confirmation_delay_s=1.0)
         with patch("sessions.processor.load_settings", return_value=speech):
@@ -66,7 +66,7 @@ class RealtimeSubtitleContracts(unittest.TestCase):
         return processor, models, events
 
     def test_ghost_caption_on_digital_silence_never_reaches_speakers(self):
-        processor, models, events = self.make_processor()
+        processor, models, events = self.make_processor(engine="hybrid")
         sr = processor.settings.sample_rate
         processor.buffer.append(np.zeros(sr * 9, dtype=np.float32))
         models.text = "Hey, who are you?"
@@ -78,7 +78,7 @@ class RealtimeSubtitleContracts(unittest.TestCase):
         self.assertLessEqual(processor.buffer.total_samples(), sr * 3)
 
     def test_ghost_caption_on_steady_microphone_noise_is_suppressed(self):
-        processor, models, events = self.make_processor()
+        processor, models, events = self.make_processor(engine="hybrid")
         rng = np.random.default_rng(42)
         noise = rng.normal(0, 0.003, 9 * processor.settings.sample_rate)
         processor.buffer.append(noise.astype(np.float32))

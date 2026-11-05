@@ -45,6 +45,7 @@ from phase07.telemetry import telemetry
 from phase07.speakers import speaker_stats, find_distinct_participant
 from speech.commit_guard import is_temporal_duplicate
 from speech.acoustic_guard import uninformative_audio
+from sessions.speaker_birth_guard import tentative_new_clusters
 from speech.coverage_retention import choose_safe_drop
 from speech.quality_profile import (
     quality_candidate_enabled, speaker_candidate_enabled,
@@ -139,6 +140,9 @@ class SessionProcessor(threading.Thread):
 
         # Handle transcripts and speaker assignments.
         self._speaker_map: dict[int, int] = {}
+        # New anonymous speakers need repeat acoustic evidence; known IDs
+        # remain stable across incremental clustering and meeting resumes.
+        self._speaker_birth_approved: set[int] = set()
         self._speaker_seg_ids: dict[int, set[int]] = {}
         # Limit retroactive diarization relabeling in long live meetings.
         # Set to 0 to retain unlimited historical reclustering for A/B tests.
@@ -709,6 +713,10 @@ class SessionProcessor(threading.Thread):
         self._next_segment_id = max(int(state.get("next_segment_id", max_id + 1)), max_id + 1)
         self._phase07_saved_segment_id = max_id
         self._speaker_map = {int(k): int(v) for k, v in (state.get("speaker_map") or {}).items()}
+        self._speaker_birth_approved = {
+            int(s["speaker_id"]) for s in self.segments
+            if type(s.get("speaker_id")) is int and s["speaker_id"] > 0
+        }
         self.ui_settings = dict(state.get("ui_settings") or {})
         self._speaker_seg_ids = {}
         if not self._participants_explicit:
@@ -799,7 +807,7 @@ class SessionProcessor(threading.Thread):
             self._send_state()
             return False
         absolute_end = start_offset + len(audio)
-        if (self._speech_settings.engine != "legacy"
+        if (self._speech_settings.engine == "hybrid"
                 and uninformative_audio(audio, sr)):
             # Do not feed sustained microphone noise to either decoder or
             # the speaker extractor. Keep a short tail for the next genuine
@@ -888,7 +896,7 @@ class SessionProcessor(threading.Thread):
             # into a permanent caption or a new speaker cluster.
             a_local = max(0, min(len(audio), int(start_ms * sr / 1000)))
             b_local = max(0, min(len(audio), int(end_ms * sr / 1000)))
-            if (self._speech_settings.engine != "legacy"
+            if (self._speech_settings.engine == "hybrid"
                     and b_local > a_local
                     and uninformative_audio(audio[a_local:b_local], sr)):
                 commit_receipt["acoustic_rejected"] += 1
@@ -1504,8 +1512,29 @@ class SessionProcessor(threading.Thread):
             for idx, label in zip(pool, labels):
                 self.segments[idx]["cluster"] = int(label)
 
+        if self._speech_settings.engine == "hybrid":
+            # A single uncorroborated voiceprint must not produce Speaker 3,
+            # Speaker 4, etc. Preserve its words as Unidentified Speaker
+            # until independent turns or a long word-aligned turn support it.
+            tentative = tentative_new_clusters(
+                self.segments, self._speaker_birth_approved,
+                self.settings.sample_rate,
+            )
+            for seg in self.segments:
+                if seg.get("cluster") in tentative and seg["id"] not in matched:
+                    seg["cluster"] = UNIDENTIFIED_CLUSTER
+            if tentative:
+                metrics.increment("speaker_tentative_clusters_deferred",
+                                  len(tentative))
         self._remap_speakers()
         self._assign_labels(matched)
+        if self._speech_settings.engine == "hybrid":
+            self._speaker_birth_approved.update(
+                int(seg["speaker_id"]) for seg in self.segments
+                if type(seg.get("speaker_id")) is int and seg["speaker_id"] > 0
+                and type(seg.get("cluster")) is int and seg["cluster"] >= 0
+                and not seg.get("speaker_uncertain")
+            )
         # Do not rewrite a user's already displayed historical transcript
         # on every later global clustering pass. Recent and uncertain
         # segments still receive new evidence and revisions.
