@@ -70,6 +70,26 @@ class ShortMixedUtteranceTests(unittest.TestCase):
         first["speaker_id"] = 5
         self.assertEqual(tentative_new_clusters([first], {5}), set())
 
+    def test_contiguous_tail_fragments_cannot_birth_a_new_speaker(self):
+        from sessions.speaker_birth_guard import tentative_new_clusters
+        rows = [
+            {"id": 1, "cluster": 4, "speaker_id": -1,
+             "emb": np.array([1.0, 0.0], dtype=np.float32),
+             "speaker_uncertain": False,
+             "start_sample": 0, "end_sample": RATE * 2,
+             "timestamp_quality": "window_estimate", "words": []},
+            {"id": 2, "cluster": 4, "speaker_id": -2,
+             "emb": np.array([1.0, 0.0], dtype=np.float32),
+             "speaker_uncertain": False,
+             "start_sample": RATE * 2 + 1200,
+             "end_sample": RATE * 3,
+             "timestamp_quality": "window_estimate", "words": []},
+        ]
+        self.assertEqual(tentative_new_clusters(rows, set()), {4})
+        rows.append(dict(rows[1], id=3, start_sample=RATE * 5,
+                         end_sample=RATE * 6))
+        self.assertEqual(tentative_new_clusters(rows, set()), set())
+
     def test_new_speaker_single_long_precise_turn_can_be_verified(self):
         from sessions.speaker_birth_guard import tentative_new_clusters
         case = {

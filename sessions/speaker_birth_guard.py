@@ -43,8 +43,15 @@ def tentative_new_clusters(
         independent = 0
         prior_end = -1
         for start, end in spans:
-            if start >= prior_end:
+            # Adjacent ASR fragments from one continuous utterance are
+            # not independent voice observations. They must be separated
+            # by an audible turn boundary before counting as corroboration.
+            if prior_end < 0 or start - prior_end >= round(0.65 * sample_rate):
                 independent += 1
+                prior_end = end
+            elif end > prior_end:
+                # Extend the occupied acoustic interval. A later candidate
+                # still needs a genuine pause after the whole phrase.
                 prior_end = end
         corroborated = independent >= 2
         # A long, precisely word-aligned interval offers stronger evidence

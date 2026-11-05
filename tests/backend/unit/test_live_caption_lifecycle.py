@@ -128,6 +128,18 @@ class RealtimeSubtitleContracts(unittest.TestCase):
         processor._cycle(final=False)
         self.assertEqual(len([x for x in events if x["type"] == "partial"]), 3)
 
+    def test_stale_preview_clears_even_when_vad_stays_positive(self):
+        processor, models, events = self.make_processor(engine="whisper")
+        sr = processor.settings.sample_rate
+        processor.buffer.append(np.full(int(sr * 2.6), .03, dtype=np.float32))
+        self.assertFalse(processor._cycle(final=False))
+        self.assertEqual(len([e for e in events if e["type"] == "partial"]), 1)
+        models.text = ""
+        processor.buffer.append(np.full(int(sr * 0.8), .03, dtype=np.float32))
+        self.assertFalse(processor._cycle(final=False))
+        texts = [e["text"] for e in events if e["type"] == "partial"]
+        self.assertEqual(texts, ["The meeting is underway.", ""])
+
     def test_finalization_clears_pending_draft_without_dropping_words(self):
         processor, models, events = self.make_processor()
         sr = processor.settings.sample_rate

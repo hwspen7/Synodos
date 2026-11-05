@@ -1,7 +1,7 @@
 """Regression tests for transcript joining and conservative temporal deduplication."""
 import unittest
 from speech.text_format import join_transcript_text
-from speech.commit_guard import is_temporal_duplicate
+from speech.commit_guard import is_temporal_duplicate, is_adjacent_tail_echo
 
 
 class TranscriptCompositionTests(unittest.TestCase):
@@ -30,3 +30,45 @@ class CommitGuardTests(unittest.TestCase):
     def test_simultaneous_different_speech_is_preserved(self):
         previous = [{"start_sample": 0, "end_sample": 32000, "text": "One speaker."}]
         self.assertFalse(is_temporal_duplicate(0, 32000, "Another speaker.", previous))
+
+    def test_adjacent_unaligned_tail_word_is_not_committed_twice(self):
+        prior = [{
+            "start_sample": 40000, "end_sample": 56000,
+            "text": "Who are you?",
+        }]
+        self.assertTrue(is_adjacent_tail_echo(
+            56000, 60500, "You.", prior
+        ))
+        self.assertFalse(is_adjacent_tail_echo(
+            56000, 60500, "You.", prior, timestamp_quality="word"
+        ))
+
+    def test_genuine_repetition_and_code_switch_are_preserved(self):
+        prior = [{
+            "start_sample": 40000, "end_sample": 56000,
+            "text": "Who are you?",
+        }]
+        self.assertFalse(is_adjacent_tail_echo(
+            62000, 69000, "You.", prior
+        ))
+        self.assertFalse(is_adjacent_tail_echo(
+            55000, 61000, "Yes.", prior
+        ))
+        self.assertFalse(is_adjacent_tail_echo(
+            56000, 60200, "\u94b1\u3002", [{
+                "start_sample": 35000, "end_sample": 56000,
+                "text": "I'm Spencer Chen.",
+            }]
+        ))
+
+    def test_full_sentence_echo_and_overlap_other_speaker_preserved(self):
+        prior = [{
+            "start_sample": 40000, "end_sample": 56000,
+            "text": "Who are you?",
+        }]
+        self.assertFalse(is_adjacent_tail_echo(
+            56000, 61000, "Who are you?", prior
+        ))
+        self.assertFalse(is_adjacent_tail_echo(
+            40000, 45000, "You.", prior
+        ))

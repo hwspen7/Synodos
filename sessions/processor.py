@@ -43,7 +43,7 @@ from sessions.save_queue import SaveQueue
 from observability.metrics import metrics
 from phase07.telemetry import telemetry
 from phase07.speakers import speaker_stats, find_distinct_participant
-from speech.commit_guard import is_temporal_duplicate
+from speech.commit_guard import is_temporal_duplicate, is_adjacent_tail_echo
 from speech.acoustic_guard import uninformative_audio
 from sessions.speaker_birth_guard import tentative_new_clusters
 from speech.coverage_retention import choose_safe_drop
@@ -883,6 +883,7 @@ class SessionProcessor(threading.Thread):
             "held": 0,
             "invalid_timestamps": 0,
             "duplicate_skipped": 0,
+            "tail_echo_skipped": 0,
             "acoustic_rejected": 0,
             "published_new": 0,
             "published_from_recovery": 0,
@@ -924,6 +925,20 @@ class SessionProcessor(threading.Thread):
             if is_temporal_duplicate(s_g, e_g, text, self.segments):
                 commit_receipt["duplicate_skipped"] += 1
                 metrics.increment("asr_temporal_duplicate_skipped")
+                local_end = max(local_end, e_g - start_offset)
+                continue
+            if (self._speech_settings.engine == "hybrid"
+                    and is_adjacent_tail_echo(
+                        s_g, e_g, text, self.segments, sample_rate=sr,
+                        timestamp_quality=sentence.get(
+                            "timestamp_quality", "segment"
+                        ),
+                    )):
+                # The preceding confirmed sentence already contains the
+                # entire last word. Do not create another transcript or
+                # speaker evidence from its unaligned boundary echo.
+                commit_receipt["tail_echo_skipped"] += 1
+                metrics.increment("asr_adjacent_tail_echo_skipped")
                 local_end = max(local_end, e_g - start_offset)
                 continue
 
@@ -997,7 +1012,7 @@ class SessionProcessor(threading.Thread):
         if current_content_trace is not None:
             if sum(commit_receipt[key] for key in (
                 "held", "invalid_timestamps", "duplicate_skipped",
-                "acoustic_rejected", "published_new",
+                "tail_echo_skipped", "acoustic_rejected", "published_new",
             )) != commit_receipt["verified_candidates"]:
                 raise AssertionError("ASR candidate accounting not conserved")
             current_content_trace["commit_receipt"] = commit_receipt
@@ -1022,9 +1037,11 @@ class SessionProcessor(threading.Thread):
                     )
                     if event is not None:
                         self._put({"type": "partial", **vars(event)})
-                elif local_end > 0 or recognition.speech_detected is False:
-                    # Clear only when there is no pending draft, never merely
-                    # because a speaker re-label sent another transcript snapshot.
+                else:
+                    # A new ASR cycle with no held words invalidates the
+                    # previous draft even when VAD stays positive. Otherwise
+                    # "You." can remain on screen after the decoder retracts it.
+                    # Speaker-only refreshes never enter this branch.
                     cleared = self._preview_tracker.clear(
                         start_offset * 1000 // sr, absolute_end * 1000 // sr)
                     if cleared is not None:
