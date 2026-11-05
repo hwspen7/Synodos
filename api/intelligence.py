@@ -205,7 +205,7 @@ async def overview(meeting_id:str):
 async def individual_speaker_insights(meeting_id: str, speaker_id: int):
     _enabled()
     mid = _meeting_id(meeting_id)
-    from intelligence.speaker_insights import choose_speaker_turns
+    from intelligence.speaker_insights import choose_speaker_turns, speaker_source_hash
     try:
         revision, turns = await asyncio.to_thread(store.meeting_segments, mid)
         speaker_name, selected = choose_speaker_turns(turns, speaker_id)
@@ -216,7 +216,8 @@ async def individual_speaker_insights(meeting_id: str, speaker_id: int):
         raise HTTPException(422, str(exc)) from exc
     if artifact is not None:
         artifact['stale'] = artifact['source_revision'] != revision
-        if set(artifact['content'].get('segment_ids', [])) != {s['id'] for s in selected}:
+        if (set(artifact['content'].get('segment_ids', [])) != {s['id'] for s in selected}
+                or artifact['content'].get('source_fingerprint') != speaker_source_hash(selected)):
             artifact['stale'] = True
     return {
         'speaker_id': speaker_id, 'speaker_name': speaker_name,
