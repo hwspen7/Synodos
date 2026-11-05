@@ -6,6 +6,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
@@ -86,6 +87,45 @@ class SpeakerSessionIntegrationTests(unittest.TestCase):
                 "embedding_model": "ecapa",
             })
             self.assertEqual(processor._match_participant(embedding())[0], self.person_id)
+
+    def test_registered_name_survives_live_nemotron_projection(self):
+        proc = self.make_processor()
+        proc.settings = SimpleNamespace(sample_rate=16000)
+        proc.segments = [{
+            "id": 1, "start_sample": 0, "end_sample": 16000,
+            "text": "test", "speaker_id": 2,
+            "speaker_name": "Registered Person",
+            "matched_profile_id": self.person_id,
+            "matched_profile_name": "Registered Person",
+            "speaker_match_similarity": 0.98,
+            "cluster": -1, "translation": "", "language": "en",
+        }]
+        proc._speaker_map = {}
+        proc._last_fingerprint = None
+        proc._transcript_version = 0
+        proc._independent_id_offset = 0
+        proc._independent_pcm_origin_samples = 0
+        proc._submit_shadow_samples = lambda: None
+        sent = []
+        proc._put = sent.append
+
+        class AnonymousTrack:
+            def activity_snapshot(self):
+                return np.ones((16, 2), dtype=np.float32)
+            def is_complete(self):
+                return False
+
+        proc.independent_diarization = AnonymousTrack()
+        with patch("sessions.processor.speaker_evidence", return_value={1: {}}), \\
+             patch("sessions.processor.speaker_stats",
+                   return_value={"speaker_switches": 0, "unidentified_segments": 0}):
+            self.assertTrue(proc._rebuild_and_push())
+
+        self.assertEqual(len(sent), 1)
+        item = sent[0]["segments"][0]
+        self.assertEqual(item["speaker_name"], "Registered Person")
+        self.assertEqual(item["speaker_id"], 2)
+        self.assertEqual(item["speaker_diarization_source"], "registered_voiceprint")
 
     def test_all_touched_python_modules_are_syntax_valid(self):
         root = Path(__file__).resolve().parents[2]
