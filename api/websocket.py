@@ -250,6 +250,12 @@ async def ws_audio(
             "resumed": bool(loaded_state and loaded_state.get("segments")),
             "title": session.processor.meeting_title,
             "participant_ids": session.processor.participant_ids,
+            "auto_match_saved": session.processor.auto_match_saved,
+            "auto_match_active": session.processor._auto_profile_mode,
+            "auto_match_profile_count": (
+                len(session.processor._participants)
+                if session.processor._auto_profile_mode else 0
+            ),
             "participant_enrollments": [
                 {"id": item["id"], "name": item["name"], "voiceprint_count": len(item["vectors"])}
                 for item in session.processor._participants
