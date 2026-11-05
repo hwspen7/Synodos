@@ -765,7 +765,7 @@ onBeforeUnmount(() => stopInternal())
           </div>
           <div class="meeting-header-context" aria-label="Meeting details">
             <span><strong>Language</strong> {{ language === 'auto' ? 'Auto' : language.toUpperCase() }}</span>
-            <span class="identity-mode-label"><strong>Voice identities</strong> {{ selectedParticipantIds.length ? selectedParticipantIds.length + ' selected' : !autoMatchSaved ? 'Off' : serverInfo && !serverInfo.auto_match_active ? 'No eligible matches' : 'Auto library match' }}</span>
+            <span class="identity-mode-label"><strong>Voice identities</strong> {{ selectedParticipantIds.length ? selectedParticipantIds.length + ' selected' : !autoMatchSaved ? 'Off' : serverInfo && (!serverInfo.auto_match_active || serverInfo.auto_match_profile_count === 0) ? 'No eligible voices' : 'Auto library match' }}</span>
             <span><strong>Translation</strong> {{ translationTarget || 'Off' }}</span>
             <span v-if="durableSeconds !== null"><strong>Audio</strong> {{ durableSeconds.toFixed(1) }}s saved</span>
           </div>
