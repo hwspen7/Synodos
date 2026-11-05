@@ -8,7 +8,9 @@ on:
       - 'tools/prepare_real_meeting_evaluation.py'
       - 'tests/release/test_real_meeting_evaluation.py'
       - 'tools/evaluate_meeting_audio_quality.py'
+      - 'tools/prepare_audio_review_queue.py'
       - 'tests/release/test_meeting_audio_quality.py'
+      - 'tests/release/test_audio_review_queue.py'
       - '.github/workflows/real-meeting-audio-evaluation.yml'
   pull_request:
   workflow_dispatch:
@@ -25,5 +27,5 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install "numpy>=1.26" 
-      - run: python -m unittest tests.release.test_real_meeting_evaluation tests.release.test_meeting_audio_quality -v
-      - run: python -m compileall -q tools/prepare_real_meeting_evaluation.py tools/evaluate_meeting_audio_quality.py
+      - run: python -m unittest tests.release.test_real_meeting_evaluation tests.release.test_meeting_audio_quality tests.release.test_audio_review_queue -v
+      - run: python -m compileall -q tools/prepare_real_meeting_evaluation.py tools/evaluate_meeting_audio_quality.py tools/prepare_audio_review_queue.py
