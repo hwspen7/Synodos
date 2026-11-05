@@ -97,6 +97,7 @@ const view = ref<View>('overview')
 const language = ref('en')
 const question = ref('')
 const searchText = ref('')
+const searchAllMeetings = ref(false)
 const notice = ref('')
 const error = ref('')
 const translationEnabled = ref(false)
@@ -245,7 +246,10 @@ async function ask(): Promise<void> {
   busyKind.value = 'ask'
   clearMessages()
   try {
-    const result = await request<{ job_id: string }>('/ask/evidence', jsonPost({ question: question.value.trim() }))
+    const result = await request<{ job_id: string }>('/ask/evidence', jsonPost({
+      question: question.value.trim(),
+      ...(searchAllMeetings.value ? {} : { meeting_ids: [props.meetingId] }),
+    }))
     askJobId.value = result.job_id
     askJob.value = { id: result.job_id, kind: 'ask_evidence', status: 'queued' }
     notice.value = 'Evidence query queued. Only exact excerpts from saved source records will be shown.'
@@ -258,7 +262,10 @@ async function search(): Promise<void> {
   searching.value = true
   clearMessages()
   try {
-    const data = await request<{ results: SearchResult[] }>('/search', jsonPost({ query: searchText.value.trim(), limit: 12 }))
+    const data = await request<{ results: SearchResult[] }>('/search', jsonPost({
+      query: searchText.value.trim(), limit: 12,
+      ...(searchAllMeetings.value ? {} : { meeting_ids: [props.meetingId] }),
+    }))
     searchResults.value = data.results ?? []
   } catch (e) { error.value = messageFromError(e) }
   finally { searching.value = false }
@@ -545,7 +552,8 @@ onBeforeUnmount(() => { if (pollId) clearInterval(pollId) })
       </div>
 
       <div v-else-if="view === 'knowledge'" class="workspace-body">
-        <div class="section-heading"><div><h3>Knowledge center</h3><p>Find evidence across saved meetings and indexed media.</p></div></div>
+        <div class="section-heading"><div><h3>Knowledge center</h3><p>Search the current meeting, or explicitly include your other saved sources.</p></div></div>
+        <label class="switch-label"><input v-model="searchAllMeetings" type="checkbox" /> <span>Search all meetings and indexed media</span></label>
         <div class="knowledge-grid">
           <div class="content-card knowledge-card"><div class="card-header"><h3>Search your library</h3></div>
             <div class="input-row"><input v-model="searchText" class="ui-input" type="search" placeholder="Search meetings, topics, or files" aria-label="Knowledge search" @keyup.enter="search" />
