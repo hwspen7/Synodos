@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
@@ -59,6 +60,9 @@ class LiveFusionTests(unittest.TestCase):
     def test_backpressure_defers_voiceprint_and_retries_after_slot_frees(self):
         from concurrent.futures import Future
         processor = processor_for_test()
+        processor.models = SimpleNamespace(
+            embed=lambda audio: np.array([1., 0.], dtype=np.float32),
+        )
         sentence = {"start": 0, "end": 1000, "text": "Some valid speech",
                     "words": []}
         clip = np.full(16000, 0.1, dtype=np.float32)

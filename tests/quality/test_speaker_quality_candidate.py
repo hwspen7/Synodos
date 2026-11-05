@@ -147,6 +147,7 @@ class SpeakerCandidateTests(unittest.TestCase):
         processor._next_segment_id = 3
         processor._speaker_tasks = {}
         processor._acoustic_tasks = {}
+        processor._speaker_deferred = {}
         processor._translation_tasks = {}
         processor._final_save_ok = False
         processor.meeting_store = None

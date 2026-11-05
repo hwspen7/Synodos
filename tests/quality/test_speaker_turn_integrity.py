@@ -97,6 +97,7 @@ class SessionProcessorTurnIntegrityTests(unittest.TestCase):
         future = Future()
         future.set_result(pieces)
         processor._speaker_tasks = {1: future}
+        processor._speaker_deferred = {}
         return processor
 
     def test_rejected_async_worker_preserves_committed_text_and_bounds(self):
