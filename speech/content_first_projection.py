@@ -82,6 +82,7 @@ def project_confirmed_caption(
     *, text: str, words: object, caption_start_ms: int, caption_end_ms: int,
     word_base_ms: int | None, official_turns: Sequence[Mapping],
     acoustic_origin_ms: int = 0, speaker_id_offset: int = 0,
+    speaker_id_map: Mapping[int, int] | None = None,
     min_word_fraction: float = 0.55, min_margin: float = 0.20,
     max_words: int = 256, max_cues: int = 32,
 ) -> dict:
@@ -101,6 +102,7 @@ def project_confirmed_caption(
             or caption_end_ms <= caption_start_ms
             or not _valid_clock(acoustic_origin_ms)
             or type(speaker_id_offset) is not int
+            or (speaker_id_map is not None and not isinstance(speaker_id_map, Mapping))
             or not 0 <= min_word_fraction <= 1
             or not 0 <= min_margin <= 1):
         raise ValueError("Invalid caption projection arguments")
@@ -123,6 +125,15 @@ def project_confirmed_caption(
             raise ValueError("Invalid finalized Nemotron speaker turn")
         if b > acoustic_start and a < acoustic_end:
             nearby_turns.append(turn)
+    # A raw Nemotron channel is never a stable person identifier. A
+    # publication mapping can omit as-yet-unconfirmed channels; suppress
+    # their display-level speaker cues rather than inventing a label.
+    def display_id(channel: int) -> int:
+        if speaker_id_map is None:
+            return channel + speaker_id_offset
+        label = speaker_id_map.get(channel)
+        return label if type(label) is int and label > 0 else -1
+
     overlap = _overlap_intervals(
         nearby_turns, acoustic_start, max(acoustic_start + 1, acoustic_end),
     )
@@ -130,7 +141,8 @@ def project_confirmed_caption(
         interval["start_ms"] += acoustic_origin_ms
         interval["end_ms"] += acoustic_origin_ms
         interval["speaker_ids"] = [
-            sid + speaker_id_offset for sid in interval["speaker_ids"]
+            label for sid in interval["speaker_ids"]
+            if (label := display_id(sid)) > 0
         ]
 
     baseline = {
@@ -177,7 +189,7 @@ def project_confirmed_caption(
         top = scores[0][1] / width if scores else 0.0
         next_score = scores[1][1] / width if len(scores) > 1 else 0.0
         sid = (
-            scores[0][0] + speaker_id_offset
+            display_id(scores[0][0])
             if top >= min_word_fraction and top - next_score >= min_margin
             else -1
         )
