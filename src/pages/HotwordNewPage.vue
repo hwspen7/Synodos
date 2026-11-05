@@ -56,10 +56,7 @@ async function createLibrary(): Promise<void> {
   <div class="hotword-new page-shell">
     <div class="speaker-head">
       <div class="speaker-head-left">
-        <button class="btn btn-ghost btn-sm" @click="router.push('/hotwords')">
-          <AppIcon name="arrow-left" :size="16" />
-          Back to Hotwords
-        </button>
+        <RouterLink class="page-inline-back" to="/hotwords"><AppIcon name="arrow-left" :size="15" /> Terminology</RouterLink>
         <div>
           <h1 class="page-title">Create Hotword Library</h1>
           <p class="page-sub">Collect frequently used names and terminology for meetings.</p>
