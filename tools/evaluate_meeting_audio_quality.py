@@ -123,7 +123,9 @@ def evaluate_windows(mid, duration, reference, prediction, seconds):
             whisper_prediction_text=text_pred,
             review_status="UNREVIEWED", review_notes=""))
     return dict(
-        window_count=count, low_overlap_reference_words=clean_words,
+        window_count=count, reference_token_count=sum(
+            len(tokenize(w["text"])) for w in reference),
+        low_overlap_reference_words=clean_words,
         low_overlap_word_edits=clean_edits,
         low_overlap_window_count=clean_windows,
         low_overlap_screening_wer=round(clean_edits / clean_words, 5)
@@ -150,6 +152,19 @@ def evaluate(root, seconds):
         words = verify_reference(json.loads(ref_path.read_text(encoding="utf-8")),
                                  mid, audio_sha, archive_sha, duration)
         summary, rows = evaluate_windows(mid, duration, words, segments, seconds)
+        alternative_seconds = 30 if seconds != 30 else 10
+        alternative, _ = evaluate_windows(
+            mid, duration, words, segments, alternative_seconds)
+        ref_tokens = summary["reference_token_count"]
+        summary["low_overlap_reference_coverage"] = (
+            round(summary["low_overlap_reference_words"] / ref_tokens, 5)
+            if ref_tokens else 0.0)
+        summary["alternative_window_seconds"] = alternative_seconds
+        summary["alternative_window_screening_wer"] = (
+            alternative["low_overlap_screening_wer"])
+        summary["alternative_window_reference_coverage"] = (
+            round(alternative["low_overlap_reference_words"] / ref_tokens, 5)
+            if ref_tokens else 0.0)
         stats[mid] = dict(
             asr_segment_count=len(segments), official_word_count=len(words),
             source_audio_sha256=audio_sha,
@@ -161,18 +176,34 @@ def evaluate(root, seconds):
         reviews.extend(rows)
     total_words = sum(s["low_overlap_reference_words"] for s in stats.values())
     total_edits = sum(s["low_overlap_word_edits"] for s in stats.values())
+    all_ref_tokens = sum(s["reference_token_count"] for s in stats.values())
+    alt_seconds = 30 if seconds != 30 else 10
+    alt_words = sum(
+        round(s["alternative_window_reference_coverage"] *
+              s["reference_token_count"])
+        for s in stats.values())
+    # A percentage of evaluated material is not a random or representative
+    # sample of the recorded meeting. Report coverage, never infer pass/fail.
     report = dict(
         schema=SCHEMA, meeting_count=len(stats),
         asr_segment_count=sum(s["asr_segment_count"] for s in stats.values()),
         window_count=len(reviews), window_seconds=seconds,
         low_overlap_screening_wer=round(total_edits / total_words, 5)
             if total_words else None,
+        total_reference_tokens=all_ref_tokens,
+        low_overlap_reference_tokens=total_words,
+        low_overlap_reference_coverage=round(total_words / all_ref_tokens, 5)
+            if all_ref_tokens else 0.0,
+        alternative_window_seconds=alt_seconds,
+        alternative_reference_token_coverage=round(alt_words / all_ref_tokens, 5)
+            if all_ref_tokens else 0.0,
         per_meeting=stats, qa_gold_ready=False, product_release_pass=False,
         independent_audio_review_performed=False,
         limitations=[
             "Manual reference contains overlapping speakers not always audible in the mono mix.",
             "Time buckets use utterance midpoints; boundary mismatch can inflate error rates.",
             "Low-overlap WER is a screening signal, not final WER or a release gate.",
+            "Coverage is a non-random subset; a higher coverage fraction alone does not prove representativeness.",
         ],
     )
     return report, reviews
@@ -198,7 +229,7 @@ def save_report(folder, report, rows):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--root", type=Path, default=DEFAULT_ROOT)
-    p.add_argument("--window-seconds", type=int, default=30)
+    p.add_argument("--window-seconds", type=int, default=10)
     args = p.parse_args(argv)
     try:
         root = check_root(args.root)
@@ -210,6 +241,12 @@ def main(argv=None):
                   "low_overlap_screening_wer", item["low_overlap_screening_wer"],
                   "review_windows", item["windows_to_review"])
         print("TOTAL ASR SEGMENTS", report["asr_segment_count"])
+        print("SCREENING WORD COVERAGE", report["low_overlap_reference_tokens"],
+              "of", report["total_reference_tokens"],
+              "fraction", report["low_overlap_reference_coverage"])
+        print("COMPARISON", report["window_seconds"], "seconds vs",
+              report["alternative_window_seconds"], "seconds",
+              "alternative coverage", report["alternative_reference_token_coverage"])
         print("SUMMARY", summary)
         print("REVIEW CSV", csv_file)
         print("QA GOLD NOT_READY; RELEASE BLOCKED")

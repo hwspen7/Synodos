@@ -67,6 +67,27 @@ class AudioQualityScreeningTests(unittest.TestCase):
         self.assertEqual(report["low_overlap_screening_wer"], 1.0)
         self.assertEqual(rows[0]["priority"], "MISSING_ASR")
 
+    def test_short_windows_rescue_unoverlapped_speech(self):
+        # One short cross-talking event should not discard 20 clean seconds.
+        ref = [
+            dict(text="first", speaker="A", start_ms=100, end_ms=550),
+            dict(text="second", speaker="B", start_ms=250, end_ms=650),
+        ]
+        for block in (10, 20):
+            ref.extend(
+                dict(text="word", speaker="A",
+                     start_ms=block * 1000 + i * 900,
+                     end_ms=block * 1000 + i * 900 + 200)
+                for i in range(6)
+            )
+        small, _ = evaluate_windows("EN2002a", 30, ref, [], 10)
+        large, _ = evaluate_windows("EN2002a", 30, ref, [], 30)
+        self.assertEqual(small["reference_token_count"], 14)
+        self.assertEqual(small["low_overlap_reference_words"], 12)
+        self.assertEqual(small["low_overlap_window_count"], 2)
+        self.assertEqual(large["low_overlap_reference_words"], 0)
+        self.assertIsNone(large["low_overlap_screening_wer"])
+
     def test_review_outputs_unverified(self):
         with TemporaryDirectory() as td:
             summary, sheet = save_report(Path(td),

@@ -31,3 +31,17 @@ verified questions and cannot unlock the release gate. Independently
 listen to original audio and verify at least 20 answerable and six
 negative cases, including contradiction and cross-meeting isolation.
 Keep all transcripts, review sheets and WAV data private on the E drive.
+
+
+The default is now a 10-second window, and each meeting also reports a
+30-second alternative-window coverage diagnostic. Read
+low_overlap_reference_coverage along with low_overlap_screening_wer.
+A score based on a tiny fraction of annotated words is not a meaningful
+whole-meeting accuracy figure, even if the numeric WER appears low.
+
+You can explicitly reproduce the original 30-second screen using:
+python -m tools.evaluate_meeting_audio_quality --window-seconds 30
+
+The old 30-second report is immutable and must not be overwritten.
+The tool never changes the archived prediction, official annotation,
+test database, speaker identity, or release approval state.
