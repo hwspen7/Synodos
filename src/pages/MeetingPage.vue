@@ -63,6 +63,18 @@ const showDiagnostics = ref(false)
 const showRecordings = ref(false)
 const showAllRecordings = ref(false)
 const showReviewPanel = ref(false)
+type MeetingTool = 'transcript' | 'review' | 'recordings' | 'settings'
+type ReviewTool = 'ai' | 'correction' | 'speakers' | 'identity'
+const activeMeetingTool = ref<MeetingTool>('transcript')
+const activeReviewTool = ref<ReviewTool>('ai')
+function selectMeetingTool(tool: MeetingTool): void {
+  activeMeetingTool.value = tool
+  showReviewPanel.value = tool === 'review'
+  showRecordings.value = tool === 'recordings'
+  showAdvancedControls.value = tool === 'settings'
+  if (tool === 'recordings') void loadRecordings()
+}
+
 const selectedParticipantIds = ref<string[]>([])
 const showHotwords = ref(false)
 const selectedHotwordIds = ref<string[]>([])
@@ -656,7 +668,8 @@ function recordingUrl(name: string): string {
 function openIdentityEvidence(id: number): void {
   if (recording.value || status.value === 'stopping') return
   identityReviewSegmentId.value = id
-  showReviewPanel.value = true
+  activeReviewTool.value = 'identity'
+  selectMeetingTool('review')
 }
 
 function editSpeakerById(id: number): void {
@@ -745,15 +758,6 @@ onBeforeUnmount(() => stopInternal())
       </div>
       <div class="compact-meeting-toolbar" aria-label="Meeting actions">
         <div class="toolbar-secondary-actions">
-          <button class="btn btn-ghost" :class="{ active: showRecordings }" :aria-pressed="showRecordings" @click="showRecordings = !showRecordings; if (showRecordings) loadRecordings()">
-            <AppIcon name="list" :size="16" /> Recordings
-          </button>
-          <button class="btn btn-ghost" :class="{ active: showReviewPanel }" :aria-pressed="showReviewPanel" @click="showReviewPanel = !showReviewPanel">
-            <AppIcon name="file-text" :size="16" /> Review
-          </button>
-          <button class="btn btn-ghost" :class="{ active: showAdvancedControls }" :aria-pressed="showAdvancedControls" @click="showAdvancedControls = !showAdvancedControls">
-            <AppIcon name="settings" :size="16" /> Settings
-          </button>
           <button class="btn btn-ghost toolbar-save" :disabled="saving" @click="saveMeeting()">
             <AppIcon name="save" :size="16" /> {{ saving ? 'Saving...' : 'Save' }}
           </button>
@@ -780,67 +784,6 @@ onBeforeUnmount(() => stopInternal())
         </div>
       </details>
     </section>
-    <section v-if="showAdvancedControls" class="meeting-config-panel" aria-label="Meeting configuration">
-      <div class="config-panel-heading">
-        <div>
-          <span class="transcript-eyebrow">PREFERENCES</span>
-          <h2>Meeting settings</h2>
-          <p>Configure how speech is captured and presented. Changes take effect when applied.</p>
-        </div>
-        <button type="button" class="meeting-back" aria-label="Close settings" @click="showAdvancedControls = false"><AppIcon name="x" :size="16" /></button>
-      </div>
-      <div class="meeting-config-grid">
-        <section class="config-group" aria-label="Speech settings">
-          <div class="config-group-title"><span class="config-step">01</span><div><h3>Language & output</h3><p>Choose how conversations are recognized.</p></div></div>
-          <label class="field">Spoken language
-            <select v-model="language" :disabled="recording || status === 'connecting' || status === 'stopping'">
-              <option v-for="entry in supportedLanguages" :key="entry[0]" :value="entry[0]">{{ entry[1] }}</option>
-            </select>
-          </label>
-          <label class="field">Display translation
-            <select v-model="translationTarget" :disabled="recording || status === 'connecting' || status === 'stopping'">
-              <option value="">No translation</option>
-              <option v-for="entry in supportedLanguages.filter((item) => item[0] !== 'auto')" :key="entry[0]" :value="entry[0]">{{ entry[1] }}</option>
-            </select>
-          </label>
-          <label class="config-checkbox"><input v-model="recordAudio" type="checkbox" :disabled="recording" /><span><strong>Save audio recording</strong><small>Keep a WAV copy for playback and review.</small></span></label>
-        </section>
-        <section class="config-group" aria-label="Recognition timing">
-          <div class="config-group-title"><span class="config-step">02</span><div><h3>Recognition timing</h3><p>Advanced controls for transcription latency.</p></div></div>
-          <label class="field" title="Trigger recognition when this audio duration is buffered.">Processing window (seconds)
-            <input v-model.number="vadThreshold" type="number" min="0.5" max="30" step="0.5" :disabled="recording" />
-          </label>
-          <label class="field" title="Confirm a sentence after this trailing audio delay.">Confirmation delay (seconds)
-            <input v-model.number="recThreshold" type="number" min="0.2" max="30" step="0.5" :disabled="recording" />
-          </label>
-          <p class="config-help">Default values work for most meetings. Smaller windows can increase processing load.</p>
-        </section>
-        <section class="config-group" aria-label="Recognition resources">
-          <div class="config-group-title"><span class="config-step">03</span><div><h3>People & vocabulary</h3><p>Improve attribution and specialized words.</p></div></div>
-          <button type="button" class="config-resource" @click="showParticipants = true">
-            <span class="config-resource-icon"><AppIcon name="users" :size="18" /></span>
-            <span><strong>Participants</strong><small>{{ selectedParticipantIds.length }} selected · Match people to voiceprints</small></span><span class="resource-chevron">›</span>
-          </button>
-          <button type="button" class="config-resource" @click="showHotwords = true">
-            <span class="config-resource-icon"><AppIcon name="flame" :size="18" /></span>
-            <span><strong>Hotwords</strong><small>{{ selectedHotwordIds.length }} libraries · Recognize domain terms</small></span><span class="resource-chevron">›</span>
-          </button>
-        </section>
-      </div>
-      <div class="config-panel-footer">
-        <div class="config-footer-meta"><span v-if="settingsPending">Unsaved speech preferences</span><span v-else>Speech preferences are up to date</span></div>
-        <button class="btn btn-primary" :disabled="recording || status === 'connecting' || status === 'stopping' || settingsSaving" @click="applySpeechSettings()">{{ settingsSaving ? 'Applying...' : 'Apply speech settings' }}</button>
-      </div>
-      <div class="config-utilities">
-        <button type="button" class="config-disclosure" :aria-expanded="showDiagnostics" @click="showDiagnostics = !showDiagnostics"><AppIcon name="settings" :size="15" /> Technical diagnostics <span>{{ showDiagnostics ? '−' : '+' }}</span></button>
-        <div v-if="showDiagnostics" class="diagnostics-content">
-          <Phase07Status :segments="segments" :buffered-ms="bufferedMs" :recording="recording" :asr-engine="serverInfo?.asr_engine ?? 'unknown'" :asr-model="serverInfo?.asr_model" :diarization-mode="serverInfo?.diarization_mode" />
-          <p v-if="serverInfo" class="hint-text">ASR {{ serverInfo.asr_model }} · Window {{ serverInfo.processing_window_s }}s · Confirmation {{ serverInfo.confirmation_delay_s }}s · Hotwords {{ serverInfo.active_hotword_count ?? 0 }}</p>
-          <p v-if="audioAnalysis" class="hint-text">Audio analysis: {{ audioAnalysis }}</p>
-        </div>
-      </div>
-    </section>
-
     <p v-if="settingsPending && !recording" class="hint-text warn-text" role="status">Settings changed. Apply to save them, or start recording to use these values.</p>
     <p v-if="selectedWithoutVoiceprints.length" class="hint-text warn-text" role="status">
       {{ selectedWithoutVoiceprints.length }} selected participant(s) have no voiceprints. Automatic identification is not available for these people.
@@ -850,39 +793,36 @@ onBeforeUnmount(() => stopInternal())
       <div class="notice-symbol"><AppIcon name="alert" :size="19" /></div>
       <div class="notice-copy"><strong>Recording needs attention</strong><p>{{ error }}</p></div>
       <div class="notice-actions">
-        <button type="button" @click="showAdvancedControls = true">Review settings</button>
-        <button type="button" @click="showRecordings = true; loadRecordings()">Open recordings</button>
+        <button type="button" @click="selectMeetingTool('settings')">Review settings</button>
+        <button type="button" @click="selectMeetingTool('recordings')">Open recordings</button>
         <button type="button" class="notice-dismiss" aria-label="Dismiss alert" @click="error = ''"><AppIcon name="x" :size="15" /></button>
       </div>
     </section>
     <p v-if="untranslatedCount > 0" class="hint-text warn-text" role="status">
       {{ untranslatedCount }} segment(s) have no available translation; original text is shown.
     </p>
-    <section v-if="showRecordings" class="meeting-recordings-panel" aria-label="Saved recordings">
-      <div class="config-panel-heading">
-        <div><span class="transcript-eyebrow">AUDIO LIBRARY</span><h2>Saved recordings</h2><p>Listen to a recording or download the original WAV file.</p></div>
-        <button type="button" class="meeting-back" aria-label="Close recordings" @click="showRecordings = false"><AppIcon name="x" :size="16" /></button>
-      </div>
-      <div class="recordings-toolbar">
-        <span>{{ recordingList.length }} recording{{ recordingList.length === 1 ? '' : 's' }}</span>
-        <button type="button" class="btn btn-ghost btn-sm" @click="loadRecordings()">Refresh list</button>
-      </div>
-      <div v-if="recordingList.length === 0" class="recording-empty">
-        <AppIcon name="mic" :size="22" />
-        <h3>No saved recordings</h3>
-        <p>Enable Save audio recording in Settings before starting a new session.</p>
-      </div>
-      <div v-else class="recording-card-grid">
-        <article v-for="(item, index) in (showAllRecordings ? recordingList : recordingList.slice(0, 4))" :key="item.name" class="recording-media-card">
-          <div class="recording-media-top"><span class="recording-media-icon"><AppIcon name="mic" :size="17" /></span><div><h3>Recording {{ index + 1 }}</h3><p>{{ item.duration_s === null ? 'Duration unavailable' : formatTime(item.duration_s * 1000) }} · {{ (item.bytes / 1048576).toFixed(1) }} MB</p></div></div>
-          <audio controls preload="metadata" :src="recordingUrl(item.name)" :aria-label="`Play recording ${index + 1}`"></audio>
-          <a :href="recordingUrl(item.name)" :download="item.name" class="recording-download"><AppIcon name="download" :size="15" /> Download WAV</a>
-        </article>
-      </div>
-      <button v-if="recordingList.length > 4" type="button" class="recordings-show-all" @click="showAllRecordings = !showAllRecordings">{{ showAllRecordings ? 'Show fewer recordings' : `Show all ${recordingList.length} recordings` }}</button>
-    </section>
-
-    <div class="meeting-workspace">
+    <div class="meeting-workspace" :class="{ 'tool-panel-open': activeMeetingTool !== 'transcript' }">
+      <nav class="meeting-tool-sidebar" aria-label="Meeting tools">
+        <div class="meeting-tool-nav-title">MEETING</div>
+        <button type="button" class="meeting-tool-link" :class="{ active: activeMeetingTool === 'transcript' }" :aria-current="activeMeetingTool === 'transcript' ? 'page' : undefined" @click="selectMeetingTool('transcript')">
+          <AppIcon name="file-text" :size="18" /><span>Transcript</span>
+        </button>
+        <div class="meeting-tool-nav-title meeting-tool-section-title">TOOLS</div>
+        <button type="button" class="meeting-tool-link" :class="{ active: activeMeetingTool === 'review' }" :aria-pressed="activeMeetingTool === 'review'" @click="selectMeetingTool('review')">
+          <AppIcon name="edit" :size="18" /><span>Review & AI</span>
+        </button>
+        <button type="button" class="meeting-tool-link" :class="{ active: activeMeetingTool === 'recordings' }" :aria-pressed="activeMeetingTool === 'recordings'" @click="selectMeetingTool('recordings')">
+          <AppIcon name="list" :size="18" /><span>Recordings</span>
+        </button>
+        <button type="button" class="meeting-tool-link" :class="{ active: activeMeetingTool === 'settings' }" :aria-pressed="activeMeetingTool === 'settings'" @click="selectMeetingTool('settings')">
+          <AppIcon name="settings" :size="18" /><span>Settings</span>
+          <span v-if="settingsPending" class="meeting-tool-unsaved" title="Unsaved changes"></span>
+        </button>
+        <div class="meeting-tool-nav-bottom">
+          <span class="meeting-tool-status-dot" :class="{ recording }"></span>
+          <span>{{ recording ? 'Recording now' : 'Local session' }}</span>
+        </div>
+      </nav>
       <div class="meeting-primary">
         <div class="transcript-panel-heading">
           <div><span class="transcript-eyebrow">MEETING RECORD</span><h2>Transcript</h2><span>Speaker-attributed conversation · timestamps preserved</span></div>
@@ -956,25 +896,124 @@ onBeforeUnmount(() => stopInternal())
       </article>
     </main>
       </div>
-      <aside v-if="showReviewPanel" class="meeting-review-panel" aria-label="Review and analysis">
-        <div class="review-panel-head">
-          <div><span class="transcript-eyebrow">TOOLS</span><h2>Review & refine</h2><p>Analysis, corrections and speaker refinement</p></div>
-          <button class="meeting-back" aria-label="Close review" @click="showReviewPanel = false"><AppIcon name="x" :size="17" /></button>
-        </div>
-    <IntelligencePanel :meeting-id="props.id" :segments="segments" />
-    <ContextCorrectionPanel :meeting-id="props.id" :segments="segments"
-      :recording="recording || status === 'connecting' || status === 'stopping'"
-      @applied="loadSavedTranscript" />
-    <OfflineSpeakerPanel :meeting-id="props.id"
-      :recording="recording || status === 'connecting' || status === 'stopping'" />
-    <Phase2IdentityReviewPanel
-      :meeting-id="props.id"
-      :segment-id="identityReviewSegmentId"
-      :revision="segments.find(segment => segment.id === identityReviewSegmentId)?.revision ?? null"
-      :recording="recording || status === 'connecting' || status === 'stopping'"
-      @reviewed="loadSavedTranscript"
-    />
 
+      <aside v-if="activeMeetingTool !== 'transcript'" class="meeting-detail-panel" :aria-label="activeMeetingTool === 'review' ? 'Review tools' : activeMeetingTool === 'settings' ? 'Meeting settings' : 'Recording library'">
+        <header class="meeting-detail-header">
+          <div>
+            <span class="transcript-eyebrow">{{ activeMeetingTool === 'review' ? 'REVIEW WORKSPACE' : activeMeetingTool === 'settings' ? 'PREFERENCES' : 'AUDIO LIBRARY' }}</span>
+            <h2>{{ activeMeetingTool === 'review' ? 'Review & refine' : activeMeetingTool === 'settings' ? 'Meeting settings' : 'Recordings' }}</h2>
+          </div>
+          <button type="button" class="meeting-back" aria-label="Close tool panel" @click="selectMeetingTool('transcript')"><AppIcon name="x" :size="17" /></button>
+        </header>
+        <div class="meeting-detail-scroll">
+          <template v-if="activeMeetingTool === 'review'">
+            <nav class="meeting-review-tools" aria-label="Review categories">
+              <button type="button" :class="{ active: activeReviewTool === 'ai' }" :aria-pressed="activeReviewTool === 'ai'" @click="activeReviewTool = 'ai'"><AppIcon name="file-text" :size="16"/> AI workspace</button>
+              <button type="button" :class="{ active: activeReviewTool === 'correction' }" :aria-pressed="activeReviewTool === 'correction'" @click="activeReviewTool = 'correction'"><AppIcon name="edit" :size="16"/> Corrections</button>
+              <button type="button" :class="{ active: activeReviewTool === 'speakers' }" :aria-pressed="activeReviewTool === 'speakers'" @click="activeReviewTool = 'speakers'"><AppIcon name="users" :size="16"/> Speaker review</button>
+              <button type="button" :class="{ active: activeReviewTool === 'identity' }" :aria-pressed="activeReviewTool === 'identity'" @click="activeReviewTool = 'identity'"><AppIcon name="check" :size="16"/> Identity evidence</button>
+            </nav>
+            <div class="meeting-selected-tool">
+              <IntelligencePanel v-if="activeReviewTool === 'ai'" :meeting-id="props.id" :segments="segments" />
+              <ContextCorrectionPanel v-else-if="activeReviewTool === 'correction'" :meeting-id="props.id" :segments="segments"
+                :recording="recording || status === 'connecting' || status === 'stopping'" @applied="loadSavedTranscript" />
+              <OfflineSpeakerPanel v-else-if="activeReviewTool === 'speakers'" :meeting-id="props.id"
+                :recording="recording || status === 'connecting' || status === 'stopping'" />
+              <Phase2IdentityReviewPanel v-else
+                :meeting-id="props.id" :segment-id="identityReviewSegmentId"
+                :revision="segments.find(segment => segment.id === identityReviewSegmentId)?.revision ?? null"
+                :recording="recording || status === 'connecting' || status === 'stopping'"
+                @reviewed="loadSavedTranscript" />
+            </div>
+          </template>
+          <template v-else-if="activeMeetingTool === 'settings'">
+            <section v-if="showAdvancedControls" class="meeting-config-panel" aria-label="Meeting configuration">
+                  <div class="config-panel-heading">
+                    <div>
+                      <span class="transcript-eyebrow">PREFERENCES</span>
+                      <h2>Meeting settings</h2>
+                      <p>Configure how speech is captured and presented. Changes take effect when applied.</p>
+                    </div>
+                    <button type="button" class="meeting-back" aria-label="Close settings" @click="showAdvancedControls = false"><AppIcon name="x" :size="16" /></button>
+                  </div>
+                  <div class="meeting-config-grid">
+                    <section class="config-group" aria-label="Speech settings">
+                      <div class="config-group-title"><span class="config-step">01</span><div><h3>Language & output</h3><p>Choose how conversations are recognized.</p></div></div>
+                      <label class="field">Spoken language
+                        <select v-model="language" :disabled="recording || status === 'connecting' || status === 'stopping'">
+                          <option v-for="entry in supportedLanguages" :key="entry[0]" :value="entry[0]">{{ entry[1] }}</option>
+                        </select>
+                      </label>
+                      <label class="field">Display translation
+                        <select v-model="translationTarget" :disabled="recording || status === 'connecting' || status === 'stopping'">
+                          <option value="">No translation</option>
+                          <option v-for="entry in supportedLanguages.filter((item) => item[0] !== 'auto')" :key="entry[0]" :value="entry[0]">{{ entry[1] }}</option>
+                        </select>
+                      </label>
+                      <label class="config-checkbox"><input v-model="recordAudio" type="checkbox" :disabled="recording" /><span><strong>Save audio recording</strong><small>Keep a WAV copy for playback and review.</small></span></label>
+                    </section>
+                    <section class="config-group" aria-label="Recognition timing">
+                      <div class="config-group-title"><span class="config-step">02</span><div><h3>Recognition timing</h3><p>Advanced controls for transcription latency.</p></div></div>
+                      <label class="field" title="Trigger recognition when this audio duration is buffered.">Processing window (seconds)
+                        <input v-model.number="vadThreshold" type="number" min="0.5" max="30" step="0.5" :disabled="recording" />
+                      </label>
+                      <label class="field" title="Confirm a sentence after this trailing audio delay.">Confirmation delay (seconds)
+                        <input v-model.number="recThreshold" type="number" min="0.2" max="30" step="0.5" :disabled="recording" />
+                      </label>
+                      <p class="config-help">Default values work for most meetings. Smaller windows can increase processing load.</p>
+                    </section>
+                    <section class="config-group" aria-label="Recognition resources">
+                      <div class="config-group-title"><span class="config-step">03</span><div><h3>People & vocabulary</h3><p>Improve attribution and specialized words.</p></div></div>
+                      <button type="button" class="config-resource" @click="showParticipants = true">
+                        <span class="config-resource-icon"><AppIcon name="users" :size="18" /></span>
+                        <span><strong>Participants</strong><small>{{ selectedParticipantIds.length }} selected · Match people to voiceprints</small></span><span class="resource-chevron">›</span>
+                      </button>
+                      <button type="button" class="config-resource" @click="showHotwords = true">
+                        <span class="config-resource-icon"><AppIcon name="flame" :size="18" /></span>
+                        <span><strong>Hotwords</strong><small>{{ selectedHotwordIds.length }} libraries · Recognize domain terms</small></span><span class="resource-chevron">›</span>
+                      </button>
+                    </section>
+                  </div>
+                  <div class="config-panel-footer">
+                    <div class="config-footer-meta"><span v-if="settingsPending">Unsaved speech preferences</span><span v-else>Speech preferences are up to date</span></div>
+                    <button class="btn btn-primary" :disabled="recording || status === 'connecting' || status === 'stopping' || settingsSaving" @click="applySpeechSettings()">{{ settingsSaving ? 'Applying...' : 'Apply speech settings' }}</button>
+                  </div>
+                  <div class="config-utilities">
+                    <button type="button" class="config-disclosure" :aria-expanded="showDiagnostics" @click="showDiagnostics = !showDiagnostics"><AppIcon name="settings" :size="15" /> Technical diagnostics <span>{{ showDiagnostics ? '−' : '+' }}</span></button>
+                    <div v-if="showDiagnostics" class="diagnostics-content">
+                      <Phase07Status :segments="segments" :buffered-ms="bufferedMs" :recording="recording" :asr-engine="serverInfo?.asr_engine ?? 'unknown'" :asr-model="serverInfo?.asr_model" :diarization-mode="serverInfo?.diarization_mode" />
+                      <p v-if="serverInfo" class="hint-text">ASR {{ serverInfo.asr_model }} · Window {{ serverInfo.processing_window_s }}s · Confirmation {{ serverInfo.confirmation_delay_s }}s · Hotwords {{ serverInfo.active_hotword_count ?? 0 }}</p>
+                      <p v-if="audioAnalysis" class="hint-text">Audio analysis: {{ audioAnalysis }}</p>
+                    </div>
+                  </div>
+                </section>
+          </template>
+          <template v-else-if="activeMeetingTool === 'recordings'">
+            <section v-if="showRecordings" class="meeting-recordings-panel" aria-label="Saved recordings">
+                  <div class="config-panel-heading">
+                    <div><span class="transcript-eyebrow">AUDIO LIBRARY</span><h2>Saved recordings</h2><p>Listen to a recording or download the original WAV file.</p></div>
+                    <button type="button" class="meeting-back" aria-label="Close recordings" @click="showRecordings = false"><AppIcon name="x" :size="16" /></button>
+                  </div>
+                  <div class="recordings-toolbar">
+                    <span>{{ recordingList.length }} recording{{ recordingList.length === 1 ? '' : 's' }}</span>
+                    <button type="button" class="btn btn-ghost btn-sm" @click="loadRecordings()">Refresh list</button>
+                  </div>
+                  <div v-if="recordingList.length === 0" class="recording-empty">
+                    <AppIcon name="mic" :size="22" />
+                    <h3>No saved recordings</h3>
+                    <p>Enable Save audio recording in Settings before starting a new session.</p>
+                  </div>
+                  <div v-else class="recording-card-grid">
+                    <article v-for="(item, index) in (showAllRecordings ? recordingList : recordingList.slice(0, 4))" :key="item.name" class="recording-media-card">
+                      <div class="recording-media-top"><span class="recording-media-icon"><AppIcon name="mic" :size="17" /></span><div><h3>Recording {{ index + 1 }}</h3><p>{{ item.duration_s === null ? 'Duration unavailable' : formatTime(item.duration_s * 1000) }} · {{ (item.bytes / 1048576).toFixed(1) }} MB</p></div></div>
+                      <audio controls preload="metadata" :src="recordingUrl(item.name)" :aria-label="`Play recording ${index + 1}`"></audio>
+                      <a :href="recordingUrl(item.name)" :download="item.name" class="recording-download"><AppIcon name="download" :size="15" /> Download WAV</a>
+                    </article>
+                  </div>
+                  <button v-if="recordingList.length > 4" type="button" class="recordings-show-all" @click="showAllRecordings = !showAllRecordings">{{ showAllRecordings ? 'Show fewer recordings' : `Show all ${recordingList.length} recordings` }}</button>
+                </section>
+          </template>
+        </div>
       </aside>
     </div>
 
