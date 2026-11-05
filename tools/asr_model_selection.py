@@ -31,6 +31,9 @@ MODELS = {
     "whisper-large-v3": ("whisper", "large-v3"),
     "qwen3-asr-1.7b": ("qwen3", "Qwen/Qwen3-ASR-1.7B"),
     "qwen3-asr-0.6b": ("qwen3", "Qwen/Qwen3-ASR-0.6B"),
+    "hybrid-whisper-qwen17": (
+        "hybrid", "Whisper-large-v3+Qwen3-ASR-1.7B/fleurs-validation-200-v1"
+    ),
 }
 CJK_CER = {"zh", "ja"}
 HEX64 = re.compile(r"[0-9a-f]{64}")
@@ -118,6 +121,17 @@ def engine_for(model: str):
     if backend == "whisper":
         from speech.whisper import WhisperEngine
         return WhisperEngine(identifier, device="cuda", compute_type="float16")
+    if backend == "hybrid":
+        from speech.hybrid import HybridEngine
+        from speech.qwen_bridge import QwenWorkerClient
+        from speech.whisper import WhisperEngine
+        python = os.environ.get("MEETING_HYBRID_QWEN_PYTHON", "")
+        if not python:
+            raise ValueError("Set MEETING_HYBRID_QWEN_PYTHON for a paired hybrid trial")
+        return HybridEngine(
+            WhisperEngine("large-v3", device="cuda", compute_type="float16"),
+            QwenWorkerClient(python, "Qwen/Qwen3-ASR-1.7B"),
+        )
     from speech.qwen import QwenEngine
     return QwenEngine(identifier, device="cuda:0", aligner=False)
 

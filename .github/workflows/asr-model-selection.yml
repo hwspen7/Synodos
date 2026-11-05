@@ -6,6 +6,8 @@ on:
       - feature/meeting-knowledge-quality
     paths:
       - 'tools/asr_model_selection.py'
+      - 'speech/hybrid.py'
+      - 'speech/qwen_bridge.py'
       - 'tests/release/test_asr_model_selection.py'
       - '.github/workflows/asr-model-selection.yml'
   pull_request:

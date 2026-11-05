@@ -169,3 +169,28 @@ revision pinned in the failed sf_v3 test plan. Selection remains
 independent of all model outputs. Technical-invalid 0.8-30s audio
 samples and empty official references are audited and replaced
 by the next pre-ranked source row without dropping a language quota.
+
+
+## Fourth candidate: actual dual-engine inference
+
+The model selector also supports \`hybrid-whisper-qwen17\`. Unlike an
+"oracle" assembled from gold language labels, this candidate calls the
+real \`HybridEngine\` and its isolated Qwen CUDA worker at inference
+time. An \`auto\` trial first detects languages from Whisper acoustic
+windows, and a \`known\` trial explicitly passes the user's chosen
+language. These are different trial conditions and cannot be merged
+in one compare report.
+
+To run the fourth candidate against the existing 200-case validation:
+
+    $env:MEETING_HYBRID_QWEN_PYTHON = "E:\AI-Cache\Environments\meeting-qwen-asr\Scripts\python.exe"
+    $manifest = "E:\AI-Cache\MeetingReference\ASRSelection\fleurs_validation_20_sf_v3\manifest.json"
+    $results = "E:\AI-Cache\MeetingReference\ASRSelection\trials\hybrid_development_v1"
+    New-Item -ItemType Directory -Force $results | Out-Null
+    & .\.venv\Scripts\python.exe -m tools.asr_model_selection run --manifest $manifest --model hybrid-whisper-qwen17 --language-mode auto --output "$results\hybrid.json"
+    & .\.venv\Scripts\python.exe -m tools.asr_model_selection score --manifest $manifest --predictions "$results\hybrid.json" --output "$results\hybrid.score.json"
+
+Once the sealed corpus passes integrity validation, compare all four
+models on identical audio and the same language-mode setting. Never
+auto-promote based on development or sealed FLEURS alone. Validate
+the hybrid on real meetings, failure recovery and streaming p95.

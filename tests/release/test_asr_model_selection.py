@@ -12,6 +12,13 @@ from tools.asr_model_selection import (
 
 
 class ASRModelSelectionTests(unittest.TestCase):
+    def test_hybrid_model_is_an_explicit_candidate(self):
+        from tools.asr_model_selection import MODELS, engine_for
+        self.assertEqual(MODELS["hybrid-whisper-qwen17"][0], "hybrid")
+        with patch.dict("os.environ", {"MEETING_HYBRID_QWEN_PYTHON": ""}):
+            with self.assertRaises(ValueError):
+                engine_for("hybrid-whisper-qwen17")
+
     def test_text_normalization_and_distance(self):
         self.assertEqual(normalize("Hello, WORLD!")[0], ["hello", "world"])
         self.assertEqual(normalize("\u4f60\u597d\uff01")[1], list("\u4f60\u597d"))
