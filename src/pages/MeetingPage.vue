@@ -1080,6 +1080,10 @@ onBeforeUnmount(() => stopInternal())
                     <div v-if="showDiagnostics" class="diagnostics-content">
                       <Phase07Status :segments="segments" :buffered-ms="bufferedMs" :recording="recording" :asr-engine="serverInfo?.asr_engine ?? 'unknown'" :asr-model="serverInfo?.asr_model" :diarization-mode="serverInfo?.diarization_mode" />
                       <p v-if="serverInfo" class="hint-text">ASR {{ serverInfo.asr_model }} · Window {{ serverInfo.processing_window_s }}s · Confirmation {{ serverInfo.confirmation_delay_s }}s · Hotwords {{ serverInfo.active_hotword_count ?? 0 }}</p>
+                      <p v-if="serverInfo?.resumed && serverInfo.speaker_label_offset" class="hint-text">
+                        Speaker numbering continues from the saved meeting (previous maximum {{ serverInfo.speaker_label_offset }}).
+                        A first voice labeled Speaker {{ serverInfo.speaker_label_offset + 1 }} after reconnect does not mean that many people spoke in this recording.
+                      </p>
                       <p v-if="audioAnalysis" class="hint-text">Audio analysis: {{ audioAnalysis }}</p>
                     </div>
                   </div>
