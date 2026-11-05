@@ -210,8 +210,14 @@ def run(args):
         for label, question, expected in checks:
             mid = ids[label]
             query_started = time.monotonic()
+            retrieval_expected_in_top8 = False
+            response_quote_count = 0
             try:
                 hits = retrieval.search(question, gateway, meeting_ids=[mid])
+                retrieval_expected_in_top8 = any(
+                    expected.casefold() in hit.get("text", "").casefold()
+                    for hit in hits
+                )
                 out = process({
                     "id": str(uuid.uuid4()), "kind": "ask_evidence",
                     "payload": {
@@ -221,6 +227,7 @@ def run(args):
                 answer = out.get("answer", "")
                 sources = out.get("sources") or []
                 quotes = out.get("quotes") or []
+                response_quote_count = len(quotes)
                 source_ok = bool(sources) and all(
                     src.get("source_kind") == "meeting" and
                     src.get("source_id") == mid for src in sources
@@ -234,6 +241,8 @@ def run(args):
                 passed = bool(cited and expected_hit and source_ok and exact)
                 note = "" if passed else (
                     f"status={out.get('status')} expected_found={expected_hit} "
+                    f"retrieval_recall_at_8={retrieval_expected_in_top8} "
+                    f"quote_count={response_quote_count} "
                     f"source_current={source_ok} exact={exact}"
                 )
             except Exception as exc:
@@ -245,6 +254,8 @@ def run(args):
                 "kind": "answerable", "meeting": label,
                 "question": question, "expected": expected,
                 "passed": passed, "seconds": elapsed, "note": note,
+                "retrieval_expected_in_top8": retrieval_expected_in_top8,
+                "response_quote_count": response_quote_count,
             })
             print(f"ANSWER {label:6} {'PASS' if passed else 'FAIL'} {elapsed:7.3f}s {question}")
 
@@ -286,6 +297,9 @@ def run(args):
     counts = {
         "answerable_pass": sum(r["passed"] for r in answerable),
         "answerable_total": len(answerable),
+        "retrieval_recall_at_8": sum(
+            r.get("retrieval_expected_in_top8", False) for r in answerable
+        ),
         "abstention_pass": sum(r["passed"] for r in negatives),
         "abstention_total": len(negatives),
     }
