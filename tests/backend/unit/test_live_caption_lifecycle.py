@@ -204,6 +204,57 @@ class RealtimeSubtitleContracts(unittest.TestCase):
         self.assertEqual(processor.segments[0]["end_sample"], 2 * sr)
         self.assertEqual(processor.buffer.start_offset(), int(2.33 * sr))
 
+    def test_two_inference_windows_do_not_decode_same_leftover_syllable(self):
+        processor, models, events = self.make_processor(engine="hybrid")
+        sr = processor.settings.sample_rate
+        processor.buffer.append(np.full(sr * 8, .03, dtype=np.float32))
+        calls = []
+
+        def transcribe(audio, **kwargs):
+            calls.append(processor.buffer.start_offset())
+            if processor.buffer.start_offset() < int(sr * 2.70):
+                return Recognition(
+                    utterances=(Utterance(
+                        "Hey, how are you, man?", 1000, 2000, "en"
+                    ),),
+                    language="en", speech_detected=True,
+                    speech_intervals_ms=((900, 2750),),
+                )
+            return Recognition(engine="hybrid", speech_detected=False)
+
+        models.recognize_multilingual = transcribe
+        with patch("sessions.processor.submit_speaker_analysis",
+                   return_value=None):
+            processor._cycle(final=False)
+            self.assertEqual(len(processor.segments), 1)
+            self.assertGreaterEqual(
+                processor.buffer.start_offset(), int(sr * 2.80)
+            )
+            processor.buffer.append(np.full(sr * 2, .03, dtype=np.float32))
+            processor._cycle(final=False)
+        self.assertEqual(len(processor.segments), 1)
+        self.assertEqual(len(calls), 2)
+        self.assertGreater(calls[-1], int(sr * 2.70))
+
+    def test_speech_island_with_pending_reply_not_trimmed(self):
+        processor, models, events = self.make_processor(engine="hybrid")
+        sr = processor.settings.sample_rate
+        processor.buffer.append(np.full(sr * 8, .03, dtype=np.float32))
+        models.recognize_multilingual = lambda *args, **kwargs: Recognition(
+            utterances=(
+                Utterance("I am here.", 1000, 2000, "en"),
+                Utterance("Yes.", 2600, 7400, "en"),
+            ), language="en", speech_detected=True,
+            speech_intervals_ms=((900, 2750), (7000, 7700)),
+        )
+        with patch("sessions.processor.submit_speaker_analysis",
+                   return_value=None):
+            processor._cycle(final=False)
+        self.assertEqual(len(processor.segments), 1)
+        # Its own short, unfinished reply protects any overlapped audio
+        # from the newest published cursor.
+        self.assertLessEqual(processor.buffer.start_offset(), 2 * sr)
+
     def test_stale_preview_clears_even_when_vad_stays_positive(self):
         processor, models, events = self.make_processor(engine="whisper")
         sr = processor.settings.sample_rate

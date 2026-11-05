@@ -44,7 +44,7 @@ from observability.metrics import metrics
 from phase07.telemetry import telemetry
 from phase07.speakers import speaker_stats, find_distinct_participant
 from speech.commit_guard import is_temporal_duplicate, is_adjacent_tail_echo
-from speech.commit_boundary import completed_voice_drop
+from speech.commit_boundary import completed_island_drop, unclosed_voice_turn
 from speech.acoustic_guard import uninformative_audio
 from sessions.speaker_birth_guard import tentative_new_clusters
 from speech.coverage_retention import choose_safe_drop
@@ -876,6 +876,7 @@ class SessionProcessor(threading.Thread):
                     current_content_trace = stage
         telemetry.observe_asr_cycle(buffer_s, time.monotonic() - phase07_asr_started)
         unconfirmed = []
+        published_intervals_ms = []
         local_end = 0
         # Per-inference-cycle provenance for content conservation. Repeated
         # retries are counted per cycle and never called "unique words".
@@ -936,6 +937,13 @@ class SessionProcessor(threading.Thread):
                     self._speech_settings.engine != "legacy"
                     and buffer_s < self._min_commit_context_s
                 )
+                or (
+                    self._speech_settings.engine == "hybrid"
+                    and unclosed_voice_turn(
+                        start_ms, end_ms, len(audio) * 1000 // sr,
+                        recognition.speech_intervals_ms,
+                    )
+                )
             )
             if should_hold:
                 unconfirmed.append(sentence)
@@ -982,6 +990,7 @@ class SessionProcessor(threading.Thread):
                 ),
             }
             self.segments.append(record)
+            published_intervals_ms.append((start_ms, end_ms))
             commit_receipt["published_new"] += 1
             if record["recognition_origin"] == "gap_recovery":
                 commit_receipt["published_from_recovery"] += 1
@@ -1068,6 +1077,7 @@ class SessionProcessor(threading.Thread):
         # bounded number of complete inference opportunities. An ASR failure
         # cannot silently authorize dropping earlier speech just because
         # later speech was decoded successfully.
+        coverage_limited = False
         if (self._speech_settings.engine != "legacy"
                 and (quality_candidate_enabled()
                      or os.getenv("MEETING_ASR_COVERAGE_RETENTION", "0")
@@ -1096,6 +1106,7 @@ class SessionProcessor(threading.Thread):
                         in self._coverage_hold_attempts.items()
                         if key >= floor
                     }
+                proposed_drop = local_end
                 local_end, exhausted = choose_safe_drop(
                     proposed_drop_samples=local_end,
                     audio_samples=len(audio),
@@ -1106,23 +1117,49 @@ class SessionProcessor(threading.Thread):
                     attempts=self._coverage_hold_attempts,
                     final=final,
                 )
+                coverage_limited = local_end < proposed_drop
                 for gap in exhausted:
                     self._record_untranscribed_voice(gap)
-        # Only the validated end of a completed acoustic turn can retire
-        # leftover trailing phonemes. Never advance through a distinct voice
-        # region or a pending unconfirmed utterance.
+        # A committed word timestamp is not proof that the acoustic turn has
+        # ended. After the VAD speech-off event settles, retire the complete
+        # acoustic island only when the same cycle committed enough aligned
+        # content, no pending words lie in it, and no other voice is nearby.
+        # The retention guard takes precedence over this optimization.
         if (self._speech_settings.engine == "hybrid"
                 and local_end > 0
                 and commit_receipt["published_new"] > 0
-                and not final):
-            verified_end = completed_voice_drop(
+                and not final and not coverage_limited):
+            verified_end = completed_island_drop(
                 local_end, len(audio), recognition.speech_intervals_ms,
+                published_intervals_ms=published_intervals_ms,
+                held_intervals_ms=(
+                    (int(s["start"]), int(s["end"])) for s in unconfirmed
+                ),
                 sample_rate=sr,
             )
             if verified_end > local_end:
-                metrics.increment("asr_confirmed_acoustic_tail_consumed")
+                metrics.increment("asr_completed_voice_islands_consumed")
                 local_end = verified_end
         # Handle transcripts and speaker assignments.
+        if current_content_trace is not None:
+            current_content_trace["candidate_intervals_ms"] = [
+                [start_offset * 1000 // sr + int(item["start"]),
+                 start_offset * 1000 // sr + int(item["end"])]
+                for item in sentences
+            ]
+            current_content_trace["published_intervals_ms"] = [
+                [start_offset * 1000 // sr + a,
+                 start_offset * 1000 // sr + b]
+                for a, b in published_intervals_ms
+            ]
+            current_content_trace["pending_intervals_ms"] = [
+                [start_offset * 1000 // sr + int(item["start"]),
+                 start_offset * 1000 // sr + int(item["end"])]
+                for item in unconfirmed
+            ]
+            current_content_trace["buffer_release_until_ms"] = (
+                start_offset * 1000 // sr + local_end * 1000 // sr
+            )
         if local_end > 0:
             # Preserve any earlier unfinished utterance before advancing audio.
             if unconfirmed:
