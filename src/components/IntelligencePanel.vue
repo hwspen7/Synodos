@@ -345,6 +345,11 @@ watch(() => props.meetingId, () => {
   translated.value = {}; queuedTranslation.clear()
   void refresh()
 })
+watch(searchAllMeetings, () => {
+  searchResults.value = []
+  askJobId.value = null
+  askJob.value = null
+})
 watch(language, () => { translated.value = {}; queuedTranslation.clear(); if (translationEnabled.value) { void fetchTranslations().catch(e => { error.value = messageFromError(e) }); void queueTranslations() } })
 watch(() => props.segments.map(s => `${s.id}:${s.text}`).join('|'), () => {
   if (translationEnabled.value) void queueTranslations()
