@@ -78,3 +78,8 @@ test('declines fast alternating identity projections', () => {
     cue(1, 3200, 4800), cue(2, 4800, 6400),
   ]), false)
 })
+
+test('registered voice identities are never replaced by anonymous word cues', () => {
+  assert.match(source, /speaker_diarization_source === 'registered_voiceprint'/)
+  assert.match(source, /Boolean\(segment\.matched_profile_id && segment\.matched_profile_name\)/)
+})
