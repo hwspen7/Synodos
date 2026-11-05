@@ -281,6 +281,35 @@ def iter_knowledge_candidates(*, meeting_ids=None, include_embeddings=False,
                     }
 
 
+
+def evidence_revisions_current(sources):
+    """Check that every referenced meeting still has the cited revision.
+
+    Media records are immutable in the current local storage model. For
+    meetings, a missing record or edited transcript invalidates the answer.
+    """
+    by_id = {}
+    for source in sources:
+        if source.get("source_kind") != "meeting":
+            continue
+        mid = str(source.get("source_id") or "")
+        rev = source.get("revision")
+        if not mid or type(rev) is not int:
+            return False
+        if mid in by_id and by_id[mid] != rev:
+            return False
+        by_id[mid] = rev
+    if not by_id:
+        return True
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT id, revision FROM meeting_records WHERE id=ANY(%s::text[])",
+            (list(by_id),),
+        ).fetchall()
+    current = {str(mid): int(rev) for mid, rev in rows}
+    return all(current.get(mid) == rev for mid, rev in by_id.items())
+
+
 def media_record(file_id, file_name, content_type, path, digest, size):
     with connection() as conn:
         conn.execute('INSERT INTO ai_media(id,file_name,content_type,local_path,sha256,size_bytes) VALUES (%s,%s,%s,%s,%s,%s)',
