@@ -90,6 +90,25 @@ class EvidenceQATests(unittest.TestCase):
         self.assertNotIn("Fictitious", result["answer"])
         self.assertEqual(result["sources"][0]["revision"], 2)
 
+    def test_worker_requests_bounded_evidence_generation(self):
+        class FakeGateway:
+            def model_for(self, _task):
+                return "saluki-test"
+            def structured(self, *_args, **kwargs):
+                self.kwargs = kwargs
+                return {"quotes": [{
+                    "source_number": 1,
+                    "quote": "We approved the revised camera calibration on Monday.",
+                }]}
+        model = FakeGateway()
+        with patch("intelligence.worker.retrieval.search", return_value=HITS):
+            result = process({
+                "id": "job", "kind": "ask_evidence",
+                "payload": {"question": "What was approved?"},
+            }, model)
+        self.assertTrue(model.kwargs["evidence_only"])
+        self.assertEqual(result["status"], "verbatim_citations_verified")
+
     def test_evidence_endpoint_queues_distinct_opt_in_job(self):
         import asyncio
         from api.intelligence import AnswerRequest, ask_evidence
