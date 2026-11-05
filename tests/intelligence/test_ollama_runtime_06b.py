@@ -78,7 +78,7 @@ class OllamaRuntimeTests(unittest.TestCase):
         def fake_urlopen(req, timeout):
             calls.append(json.loads(req.data.decode('utf-8')))
             return FakeResponse({
-                'message': {'content': '{"quotes":[{"source_number":1,"quote":"Exact copied source quote"}]}'},
+                'message': {'content': '{"source_numbers":[1]}'},
                 'done_reason': 'stop',
             })
         with patch.dict(os.environ, self.base_env | {
@@ -88,12 +88,12 @@ class OllamaRuntimeTests(unittest.TestCase):
             result = self.gateway.structured(
                 'system', 'select quote', evidence_only=True,
             )
-        self.assertEqual(result['quotes'][0]['source_number'], 1)
+        self.assertEqual(result['source_numbers'], [1])
         body = calls[0]
         self.assertIs(body['think'], False)
         self.assertEqual(body['options']['num_predict'], 1024)
-        self.assertEqual(body['format']['properties']['quotes']['maxItems'], 5)
-        self.assertEqual(body['format']['required'], ['quotes'])
+        self.assertEqual(body['format']['properties']['source_numbers']['maxItems'], 5)
+        self.assertEqual(body['format']['required'], ['source_numbers'])
         self.assertTrue(body['stream'] is False)
 
     def test_evidence_qa_respects_tighter_user_token_budget(self):
@@ -101,7 +101,7 @@ class OllamaRuntimeTests(unittest.TestCase):
         def fake_urlopen(req, timeout):
             calls.append(json.loads(req.data.decode('utf-8')))
             return FakeResponse({
-                'message': {'content': '{"quotes":[]}'},
+                'message': {'content': '{"source_numbers":[]}'},
                 'done_reason': 'stop',
             })
         with patch.dict(os.environ, self.base_env | {
@@ -112,7 +112,7 @@ class OllamaRuntimeTests(unittest.TestCase):
 
     def test_evidence_qa_still_refuses_truncated_model_response(self):
         response = {
-            'message': {'content': '{"quotes":[{"source_number":1,"quote":"Incomplete'},
+            'message': {'content': '{"source_numbers":[1'},
             'done_reason': 'length',
         }
         with patch.dict(os.environ, self.base_env), patch(
