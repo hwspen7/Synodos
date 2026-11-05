@@ -9,6 +9,9 @@ export interface ServerReady {
   resumed?: boolean
   title?: string
   participant_ids?: string[]
+  auto_match_saved?: boolean
+  auto_match_active?: boolean
+  auto_match_profile_count?: number
   participants?: Array<{ id: string; name: string }>
   hotword_ids?: string[]
   hotwords?: Array<{ id: string; name: string; word_count: number }>
