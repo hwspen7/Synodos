@@ -70,8 +70,8 @@ def build_chunks(segments, max_chars=1300):
                                remaining.rfind('\\n', 0, max_chars + 1))
                 if boundary < max_chars // 2:
                     boundary = max_chars
-                piece = remaining[:boundary].rstrip()
-                remaining = remaining[boundary:].lstrip()
+                piece = remaining[:boundary]
+                remaining = remaining[boundary:]
             if not piece:
                 continue
             if current and length + len(piece) > max_chars:
