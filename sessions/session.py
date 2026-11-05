@@ -9,7 +9,8 @@ from audio.buffer import AudioBuffer
 from core.config import Settings
 from core.runtime import models, settings
 from sessions.processor import SessionProcessor
-from sessions.stable_speaker_channels import StableSpeakerChannels
+from sessions.corroborated_speaker_channels import CorroboratedSpeakerChannels
+from speech.diarization import resolve_diarization_mode
 from sessions.lifecycle import SessionLifecycle, SessionPhase
 from storage.meetings import MeetingStore
 from storage.speakers import SpeakerStore
@@ -78,7 +79,9 @@ class Session:
         if backend not in ("off", "nemotron3"):
             raise ValueError("MEETING_INDEPENDENT_DIARIZATION must be off or nemotron3")
         self.independent_diarization = None
-        if backend == "nemotron3":
+        if backend == "nemotron3" and resolve_diarization_mode(
+            os.getenv("MEETING_DIARIZATION_MODE")
+        ) != "single":
             from speech.nemotron_stream import NemotronRealtimeWorker
 
             def notify_acoustic_updates():
@@ -112,7 +115,7 @@ class Session:
                          and item["speaker_id"] > 0),
                         default=0,
                     )
-                    self.processor._nemotron_channels = StableSpeakerChannels(
+                    self.processor._nemotron_channels = CorroboratedSpeakerChannels(
                         offset=self.processor._independent_id_offset
                     )
             self.processor.load_participants()
