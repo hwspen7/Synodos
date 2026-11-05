@@ -606,7 +606,8 @@ class SessionProcessor(threading.Thread):
                         if (int(s["id"]) in self._independent_published
                             and not s.get("speaker_override")
                             and not s.get("matched_profile_id"))
-                        else ("registered_voiceprint" if s.get("matched_profile_id")
+                        else ("manual_override" if s.get("speaker_override")
+                              else "registered_voiceprint" if s.get("matched_profile_id")
                               else s.get("speaker_diarization_source", "camplus"))
                     ),
                     "speaker_activity_score": self._independent_scores.get(
@@ -1911,6 +1912,7 @@ class SessionProcessor(threading.Thread):
                 "matched_profile_id": s.get("matched_profile_id"),
                 "matched_profile_name": s.get("matched_profile_name"),
                 "speaker_match_similarity": s.get("speaker_match_similarity"),
+                "speaker_evidence_status": s.get("speaker_evidence_status"),
                 "start_ms": round(s["start_sample"] * 1000 / self.settings.sample_rate),
                 "end_ms": round(s["end_sample"] * 1000 / self.settings.sample_rate),
                 "text": s["text"],
@@ -2112,7 +2114,8 @@ class SessionProcessor(threading.Thread):
              i.get("recognition_origin"), i.get("text_confidence"),
              i.get("speaker_status"), i.get("speaker_similarity"),
              i.get("speaker_margin"), i.get("speaker_evidence_count"),
-             i.get("speaker_diarization_source"), i.get("speaker_activity_score"),
+             i.get("speaker_diarization_source"), i.get("matched_profile_id"),
+             i.get("speaker_match_similarity"), i.get("speaker_activity_score"),
              i.get("speaker_activity_status"),
              tuple(tuple(pair) for pair in i.get(
                  "speaker_activity_intervals_ms", [],
