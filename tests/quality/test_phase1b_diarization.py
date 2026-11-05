@@ -5,10 +5,14 @@ from dataclasses import dataclass
 from pathlib import Path
 import tempfile
 import unittest
+import wave
+
+import numpy as np
 from types import SimpleNamespace
 
 from speech.phase1b_diarization_models import (
-    _normalize_turns, _validate_model_path, ModelSetupError, run_model,
+    _frozen_pcm16_wave, _normalize_turns, _validate_model_path,
+    ModelSetupError, run_model,
 )
 from tools.phase1b_compare import compare_reports
 from tools.phase1b_diarization_benchmark import report_from_turns
@@ -64,6 +68,34 @@ class Phase1BModelTests(unittest.TestCase):
                     yield span, None, "A"
             with self.subTest(span=span), self.assertRaises(ValueError):
                 _normalize_turns(Bad(), 2000)
+
+    def test_frozen_pcm16_memory_decode_preserves_waveform_without_ffmpeg(self):
+        with tempfile.TemporaryDirectory() as root:
+            wav = Path(root) / "pinned.wav"
+            samples = np.array([0, 1000, -1000, 32767], dtype="<i2")
+            with wave.open(str(wav), "wb") as output:
+                output.setnchannels(1)
+                output.setsampwidth(2)
+                output.setframerate(16000)
+                output.writeframes(samples.tobytes())
+            pcm, rate = _frozen_pcm16_wave(wav, duration_ms=0)
+            self.assertEqual(rate, 16000)
+            np.testing.assert_allclose(
+                pcm, samples.astype(np.float32) / 32768, atol=1e-8
+            )
+            with self.assertRaisesRegex(ValueError, "duration mismatch"):
+                _frozen_pcm16_wave(wav, duration_ms=2000)
+
+    def test_frozen_decoder_rejects_wrong_channels_or_sample_rate(self):
+        with tempfile.TemporaryDirectory() as root:
+            wav = Path(root) / "not-pinned.wav"
+            with wave.open(str(wav), "wb") as output:
+                output.setnchannels(2)
+                output.setsampwidth(2)
+                output.setframerate(48000)
+                output.writeframes(b"\\0" * 4000)
+            with self.assertRaisesRegex(ValueError, "mono PCM16"):
+                _frozen_pcm16_wave(wav, duration_ms=1000)
 
     def test_no_implicit_model_download(self):
         with self.assertRaises(ModelSetupError):
