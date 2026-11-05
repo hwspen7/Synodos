@@ -23,6 +23,11 @@ class PCMProcessor extends AudioWorkletProcessor {
     this.pos = 0
     this._dbgCount = 0
     this.flushed = false
+    // A 128-sample AudioWorklet quantum lasts only ~2.7ms at 48kHz.
+    // Batch 16kHz PCM into 100ms transport frames to avoid hundreds of
+    // WebSocket and diarization queue operations per second.
+    this.packetSamples = Math.max(1, Math.round(targetRate / 10))
+    this.pendingPcm = []
     this.port.onmessage = event => {
       if (event.data?.type === 'flush') {
         // Emit any final output sample that can be formed with a held
@@ -36,6 +41,9 @@ class PCMProcessor extends AudioWorkletProcessor {
           this.pos += this.ratio
         }
         this._emitPcm(tail)
+        // The stop acknowledgment must follow the final partial PCM frame.
+        this._postPcm(this.pendingPcm)
+        this.pendingPcm = []
         this.pending = new Float32Array(0)
         this.flushed = true
         this.port.postMessage({ type: 'flushed' })
@@ -43,7 +51,7 @@ class PCMProcessor extends AudioWorkletProcessor {
     }
   }
 
-  _emitPcm(out) {
+  _postPcm(out) {
     if (!out.length) return
     const pcm = new Int16Array(out.length)
     for (let i = 0; i < out.length; i++) {
@@ -51,6 +59,16 @@ class PCMProcessor extends AudioWorkletProcessor {
       pcm[i] = sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7fff)
     }
     this.port.postMessage(pcm, [pcm.buffer])
+  }
+
+  _emitPcm(out) {
+    for (const sample of out) {
+      this.pendingPcm.push(sample)
+      if (this.pendingPcm.length === this.packetSamples) {
+        this._postPcm(this.pendingPcm)
+        this.pendingPcm = []
+      }
+    }
   }
 
   process(inputs) {

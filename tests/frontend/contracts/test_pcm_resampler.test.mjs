@@ -37,8 +37,15 @@ test("48 kHz to 16 kHz keeps correct sample count across 128-sample worklet bloc
   }
   const outputSamples = chunks.reduce((sum, frame) => sum + frame.length, 0)
   assert.equal(outputSamples, 16000)
+  assert.equal(chunks.length, 10)
+  assert.ok(chunks.every((frame) => frame.length === 1600))
+  // One extra worklet quantum has insufficient audio for a full packet.
+  instance.process([[new Float32Array(128)]])
+  assert.equal(chunks.length, 10)
   instance.port.onmessage({ data: { type: 'flush' } })
   assert.deepEqual(acknowledgements, ['flushed'])
+  assert.equal(chunks.at(-1).length, 43)
+  assert.equal(chunks.reduce((sum, frame) => sum + frame.length, 0), 16043)
   instance.process([[new Float32Array(128)]])
-  assert.equal(chunks.reduce((sum, frame) => sum + frame.length, 0), 16000)
+  assert.equal(chunks.reduce((sum, frame) => sum + frame.length, 0), 16043)
 })

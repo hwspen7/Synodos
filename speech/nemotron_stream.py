@@ -182,6 +182,13 @@ class NemotronRealtimeWorker:
         if not 1 <= queue_frames <= 1200:
             raise ValueError("Invalid Nemotron PCM queue budget")
         self._queue: Queue = Queue(maxsize=queue_frames)
+        # Count acoustically meaningful PCM blocks, not browser worklet
+        # quanta. Small frames are packed into 200ms blocks in FIFO order.
+        # This is a bounded staging buffer; it never drops a valid tail.
+        self._pcm_block_samples = SAMPLE_RATE // 5
+        self._pending_pcm = np.empty(0, dtype=np.float32)
+        self._accepted_audio_samples = 0
+        self._max_queued_pcm_frames = 0
         self._on_update = on_update
         self._factory = runner_factory
         self._thread = threading.Thread(
@@ -200,6 +207,19 @@ class NemotronRealtimeWorker:
     def start(self):
         self._thread.start()
 
+    def _queue_pcm_locked(self, samples: np.ndarray) -> bool:
+        """Enqueue a PCM block while holding the admission lock."""
+        try:
+            self._queue.put_nowait(samples.copy())
+        except Full:
+            self._error = "Nemotron PCM queue full; independent track incomplete"
+            self._state = "failed"
+            return False
+        self._max_queued_pcm_frames = max(
+            self._max_queued_pcm_frames, self._queue.qsize(),
+        )
+        return True
+
     def feed(self, pcm: np.ndarray) -> bool:
         arr = np.asarray(pcm, dtype=np.float32)
         if arr.ndim != 1 or not len(arr) or not np.isfinite(arr).all():
@@ -207,14 +227,15 @@ class NemotronRealtimeWorker:
         with self._lock:
             if self._state in ("failed", "completed") or self._stop_sent:
                 return False
-        try:
-            self._queue.put_nowait(arr.copy())
+            self._pending_pcm = np.concatenate((self._pending_pcm, arr))
+            while len(self._pending_pcm) >= self._pcm_block_samples:
+                chunk = self._pending_pcm[:self._pcm_block_samples]
+                if not self._queue_pcm_locked(chunk):
+                    self._pending_pcm = np.empty(0, dtype=np.float32)
+                    return False
+                self._pending_pcm = self._pending_pcm[self._pcm_block_samples:].copy()
+            self._accepted_audio_samples += len(arr)
             return True
-        except Full:
-            with self._lock:
-                self._error = "Nemotron PCM queue full; independent track incomplete"
-                self._state = "failed"
-            return False
 
     def _default_runner(self):
         import torch
@@ -305,9 +326,16 @@ class NemotronRealtimeWorker:
                 self._state = "failed"
 
     def request_finish(self) -> None:
-        """Nonblocking shutdown signal, including when the PCM queue is full."""
+        """Enqueue the last partial PCM block before signaling completion.
+
+        An exhausted queue fails closed rather than silently truncating audio.
+        """
         with self._lock:
-            self._stop_sent = True
+            if not self._stop_sent:
+                if len(self._pending_pcm) and self._state not in ("failed", "completed"):
+                    self._queue_pcm_locked(self._pending_pcm)
+                self._pending_pcm = np.empty(0, dtype=np.float32)
+                self._stop_sent = True
         self._finish_requested.set()
 
     def finish(self, timeout: float = 90.0) -> bool:
@@ -356,6 +384,9 @@ class NemotronRealtimeWorker:
                 "state": self._state,
                 "error": self._error,
                 "processed_audio_samples": self._audio_samples,
+                "input_audio_samples": self._accepted_audio_samples,
+                "max_queued_pcm_frames": self._max_queued_pcm_frames,
+                "pending_pcm_samples": len(self._pending_pcm),
                 "scored_frames": int(len(self._activity)),
                 "frame_step_ms": FRAME_MS,
                 "cross_chunk_identity_cache": True,

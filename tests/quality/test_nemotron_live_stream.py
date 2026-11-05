@@ -111,6 +111,47 @@ class NemotronActivityTests(unittest.TestCase):
         self.assertGreater(report["scored_frames"], 0)
         self.assertTrue(observed)
 
+    def test_micro_frames_are_batched_without_dropping_the_stop_tail(self):
+        stream, extractor, _ = fake_runner()
+        worker = NemotronRealtimeWorker(
+            runner_factory=lambda: (stream, extractor), queue_frames=10,
+        )
+        # 128 microphone packets are now only five 200ms queue entries,
+        # not 128 waiting items. Preserve all 16kHz samples.
+        for _ in range(125):
+            self.assertTrue(worker.feed(np.full(128, 0.2, dtype=np.float32)))
+        self.assertEqual(worker.report()["max_queued_pcm_frames"], 5)
+        self.assertEqual(worker.report()["pending_pcm_samples"], 0)
+        worker.start()
+        self.assertTrue(worker.finish(timeout=5))
+        self.assertEqual(worker.report()["processed_audio_samples"], 16000)
+        self.assertEqual(worker.report()["input_audio_samples"], 16000)
+        self.assertFalse(worker.feed(np.zeros(1600, dtype=np.float32)))
+
+        # A nonintegral number of blocks must flush its exact remaining PCM.
+        tail_stream, tail_extractor, _ = fake_runner()
+        tail_worker = NemotronRealtimeWorker(
+            runner_factory=lambda: (tail_stream, tail_extractor),
+            queue_frames=10,
+        )
+        for _ in range(27):
+            self.assertTrue(tail_worker.feed(np.full(128, 0.1, dtype=np.float32)))
+        self.assertEqual(tail_worker.report()["pending_pcm_samples"], 256)
+        tail_worker.start()
+        self.assertTrue(tail_worker.finish(timeout=5))
+        self.assertEqual(tail_worker.report()["processed_audio_samples"], 3456)
+        self.assertEqual(tail_worker.report()["input_audio_samples"], 3456)
+
+    def test_queue_exhaustion_fails_without_claiming_complete_audio(self):
+        stream, extractor, _ = fake_runner()
+        worker = NemotronRealtimeWorker(
+            runner_factory=lambda: (stream, extractor), queue_frames=1,
+        )
+        self.assertTrue(worker.feed(np.zeros(3200, dtype=np.float32)))
+        self.assertFalse(worker.feed(np.zeros(3200, dtype=np.float32)))
+        self.assertEqual(worker.report()["state"], "failed")
+        self.assertFalse(worker.report()["complete"])
+
     def test_no_partial_result_is_labeled_complete_on_worker_failure(self):
         def broken():
             raise RuntimeError("Injected failure")
