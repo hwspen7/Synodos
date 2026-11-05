@@ -218,7 +218,7 @@ class SpeakerStore:
             profiles = []
             for speaker in self._speakers.values():
                 vectors = [
-                    dict(vector)
+                    {**vector, "emb": np.array(vector["emb"], dtype=np.float32, copy=True)}
                     for vector in speaker["vectors"]
                     if vector.get("embedding_model", "camplus") == "camplus"
                     and not vector.get("short", False)
