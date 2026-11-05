@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import io
 import wave
-from tools.freeze_fleurs_asr_corpus import choose_indices, choose_streaming_examples, freeze_plan, case_identity, encode_pcm16, decode_audio_without_torchcodec, LANGUAGES, SCHEMA
+from tools.freeze_fleurs_asr_corpus import choose_indices, choose_streaming_examples, freeze_plan, case_identity, encode_pcm16, decode_audio_without_torchcodec, validate_official_clip, LANGUAGES, SCHEMA
 
 
 class FleursCorpusTests(unittest.TestCase):
@@ -86,6 +86,30 @@ class FleursCorpusTests(unittest.TestCase):
             (root / "manifest.json").write_text("{}", encoding="utf-8")
             with self.assertRaises(FileExistsError):
                 freeze_plan(root, "validation", 20, "frozen", None)
+
+    def test_duration_policy_excludes_ineligible_audio_without_model_scores(self):
+        invalid_short = {
+            "array": np.zeros(1599 * 8, dtype=np.float32),
+            "sampling_rate": 16000,
+        }
+        reason, clip = validate_official_clip("official reference", invalid_short)
+        self.assertEqual(reason, "duration_outside_0.8_30.0s")
+        self.assertIsNone(clip)
+        long = {
+            "array": np.zeros(31 * 16000, dtype=np.float32),
+            "sampling_rate": 16000,
+        }
+        self.assertEqual(
+            validate_official_clip("official reference", long)[0],
+            "duration_outside_0.8_30.0s",
+        )
+        self.assertEqual(validate_official_clip("", long)[0],
+                         "empty_official_reference")
+        valid = {"array": np.zeros(16000, dtype=np.float32),
+                 "sampling_rate": 16000}
+        reason, clip = validate_official_clip("official reference", valid)
+        self.assertIsNone(reason)
+        self.assertEqual(clip[1], 1.0)
 
     def test_fleurs_accepts_actual_hub_commit_shas(self):
         from tools.freeze_fleurs_asr_corpus import SHA

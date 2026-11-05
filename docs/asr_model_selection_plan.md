@@ -158,3 +158,14 @@ but case IDs and WAV filenames are now based on both original ID and
 stable row index. This avoids collisions and retains all selected data,
 including duplicated official IDs. The sf_v3 folder is separate from
 the earlier incomplete sf_v2 export, with no deletion or overwrite.
+
+
+## Sealed-test objective exclusion correction (sf_v4)
+
+The 200-case development set remains frozen at
+fleurs_validation_20_sf_v3. A newly frozen 1,000-case test set
+uses fleurs_test_100_sf_v4, carrying forward the official dataset
+revision pinned in the failed sf_v3 test plan. Selection remains
+independent of all model outputs. Technical-invalid 0.8-30s audio
+samples and empty official references are audited and replaced
+by the next pre-ranked source row without dropping a language quota.

@@ -28,8 +28,8 @@ DATASET = "google/fleurs"
 ALLOWED_SPLITS = {"validation": "development", "test": "sealed_test"}
 SHA = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 MIN_SECONDS, MAX_SECONDS = 0.8, 30.0
-FREEZE_VERSION = "sf_v3"
-PLAN_SCHEMA = "meeting-fleurs-freeze-plan-v3"
+FREEZE_VERSION = "sf_v4"
+PLAN_SCHEMA = "meeting-fleurs-freeze-plan-v4"
 
 
 def require_e_drive(path: Path) -> Path:
@@ -176,6 +176,8 @@ def freeze_plan(destination: Path, split: str, count: int,
         "selection_seed": seed,
         "decoder_version": FREEZE_VERSION,
         "language_codes": list(LANGUAGES),
+        "selection_policy": "predeclared-duration-and-reference-validity-v1",
+        "candidate_reserve": max(100, count // 2),
     }
     if dest_plan.exists():
         saved = json.loads(dest_plan.read_text(encoding="utf-8"))
@@ -231,6 +233,25 @@ def encode_pcm16(decoded) -> tuple[bytes, float]:
     return stream.getvalue(), duration
 
 
+
+
+def validate_official_clip(reference: str, decoded: dict):
+    """Apply objective clip eligibility before freezing a blind test.
+
+    The unchanged published reference must exist. Duration eligibility is
+    predeclared (0.8 to 30 seconds). Neither ASR predictions nor
+    transcription quality may influence selection.
+    """
+    if not isinstance(reference, str) or not reference.strip():
+        return "empty_official_reference", None
+    duration = len(decoded["array"]) / decoded["sampling_rate"]
+    if not math.isfinite(duration):
+        raise ValueError("Nonfinite source audio duration")
+    if not MIN_SECONDS <= duration <= MAX_SECONDS:
+        return "duration_outside_0.8_30.0s", None
+    return None, encode_pcm16(decoded)
+
+
 def freeze_fleurs(root: Path, split: str, per_language: int, seed: str,
                   revision: str | None = None) -> tuple[dict, Path]:
     if split not in ALLOWED_SPLITS:
@@ -240,8 +261,21 @@ def freeze_fleurs(root: Path, split: str, per_language: int, seed: str,
     root = require_e_drive(root)
     configure_cache(root)
     from datasets import Audio, load_dataset
-    # Separate output namespace avoids contaminating a partial freeze made
-    # with an earlier TorchCodec or source revision. Never delete old WAVs.
+    # A previous incomplete freeze pins the source revision. Retain it
+    # across eligibility-policy revisions to prevent changing the test pool.
+    older = root / (
+        "fleurs_" + split + "_" + str(per_language) + "_sf_v3"
+    ) / "freeze_plan.json"
+    if older.is_file():
+        previous = json.loads(older.read_text(encoding="utf-8"))
+        old_revision = previous.get("dataset_revision")
+        if previous.get("dataset") != DATASET or not isinstance(
+            old_revision, str
+        ) or not SHA.fullmatch(old_revision):
+            raise ValueError("Existing sf_v3 source revision is invalid")
+        if revision is not None and revision != old_revision:
+            raise ValueError("Cannot change pinned source revision from sf_v3")
+        revision = old_revision
     destination = root / (
         "fleurs_" + split + "_" + str(per_language) + "_" + FREEZE_VERSION
     )
@@ -250,6 +284,8 @@ def freeze_fleurs(root: Path, split: str, per_language: int, seed: str,
     )
     manifest = destination / "manifest.json"
     cases = []
+    excluded = []
+    candidate_reserve = max(100, per_language // 2)
     for lang, config in LANGUAGES.items():
         # Streaming only the requested split prevents eager downloads of
         # the entire train and test parquet sets for every language.
@@ -259,17 +295,34 @@ def freeze_fleurs(root: Path, split: str, per_language: int, seed: str,
         )
         # Keep compressed audio undecoded until selected. No TorchCodec.
         dataset = dataset.cast_column("audio", Audio(decode=False))
+        # Select a fixed reservoir ranked on IDs alone, then apply the
+        # predeclared technical clip policy in that same frozen order.
+        # Invalid clips are audited and replaced by the next ranked case,
+        # never by selecting whichever ASR model transcribed it best.
         chosen = choose_streaming_examples(
-            dataset, language=lang, count=per_language, seed=seed
+            dataset, language=lang,
+            count=per_language + candidate_reserve, seed=seed
         )
         lang_cases = []
+        lang_excluded = []
         for example in chosen:
+            if len(lang_cases) == per_language:
+                break
             reference = str(example.get("transcription") or "").strip()
-            if not reference:
-                raise ValueError("Selected official reference is empty")
-            pcm, duration = encode_pcm16(decode_audio_without_torchcodec(example["audio"]))
             source_row_index = example["_fleurs_source_row_index"]
             official_id = example["id"]
+            if not reference:
+                reason, clip = "empty_official_reference", None
+            else:
+                decoded = decode_audio_without_torchcodec(example["audio"])
+                reason, clip = validate_official_clip(reference, decoded)
+            if reason is not None:
+                lang_excluded.append({
+                    "language": lang, "source_row_index": source_row_index,
+                    "official_id": official_id, "reason": reason,
+                })
+                continue
+            pcm, duration = clip
             case_id, filename = case_identity(
                 lang, split, source_row_index, official_id
             )
@@ -305,8 +358,15 @@ def freeze_fleurs(root: Path, split: str, per_language: int, seed: str,
                 "independently_audio_reviewed": False,
                 "selected_independently_of_asr": True,
             })
+        if len(lang_cases) != per_language:
+            raise ValueError(
+                "Not enough objectively eligible official samples for "
+                + lang + ": " + str(len(lang_cases))
+            )
         cases.extend(lang_cases)
-        print("FROZEN", lang, len(lang_cases), "official cases", flush=True)
+        excluded.extend(lang_excluded)
+        print("FROZEN", lang, len(lang_cases), "official cases;",
+              len(lang_excluded), "ineligible source clips", flush=True)
     document = {
         "schema": SCHEMA, "dataset": DATASET,
         "decoder_version": FREEZE_VERSION,
@@ -315,6 +375,15 @@ def freeze_fleurs(root: Path, split: str, per_language: int, seed: str,
         "selected_split_streaming": True,
         "row_index_identity": True,
         "official_id_uniqueness_assumed": False,
+        "objective_eligibility_policy": {
+            "min_seconds": MIN_SECONDS,
+            "max_seconds": MAX_SECONDS,
+            "require_nonempty_official_transcript": True,
+            "prediction_independent": True,
+            "candidate_reserve": candidate_reserve,
+        },
+        "excluded_source_clips": excluded,
+        "excluded_case_count": len(excluded),
         "dataset_revision": commit, "license": "CC BY 4.0",
         "attribution": "Google FLEURS",
         "data_split": split, "benchmark_role": ALLOWED_SPLITS[split],

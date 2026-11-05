@@ -132,3 +132,36 @@ Then set:
 Do not try to validate the old sf_v2 manifest: it was never created.
 The warning about an unauthenticated HF Hub request is informational,
 not the cause of this error.
+
+
+## sf_v4: objective duration exclusion during sealed corpus freeze
+
+An sf_v3 test freeze can stop after several languages if a deterministically
+ranked official sample is shorter than 0.8 seconds or longer than 30
+seconds. That should not cause an entire official corpus to be discarded.
+
+The sf_v4 freezer maintains the original per-language seeded SHA256 rank
+of source ID + row-order tie breaks. Before publishing the manifest,
+it applies the predeclared technical eligibility policy: nonempty
+published reference and 0.8-30.0 seconds of actual decoded audio.
+Invalid clips are recorded with official ID, original row index,
+language and objective reason in excluded_source_clips; the next
+deterministically ranked source sample is used. No ASR predictions,
+model scores or subjective intelligibility decisions determine the
+replacement. The language quotas remain exactly 100 each.
+
+A fixed 100-case reserve per language is pre-ranked to prevent
+open-ended sample selection. If the reserve is insufficient, freeze
+fails rather than silently changing policy. The new sf_v4 directory
+keeps the previous sf_v3 and sf_v2 outputs untouched. If a prior sf_v3
+freeze_plan.json exists, its official dataset revision is reused.
+
+Run:
+    python -m tools.freeze_fleurs_asr_corpus --split test --per-language 100 --apply
+
+Expected manifest:
+    E:\AI-Cache\MeetingReference\ASRSelection\fleurs_test_100_sf_v4\manifest.json
+
+The earlier 200-case development validation remains the existing
+fleurs_validation_20_sf_v3 cohort. Do not regenerate it or mix
+revisions merely because sealed-test eligibility was repaired.
