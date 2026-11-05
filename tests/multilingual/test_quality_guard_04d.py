@@ -83,6 +83,35 @@ class SpeechEvidenceTests(unittest.TestCase):
                                   [region(0, 2)], 3000, "en")
         self.assertEqual([x.text for x in result], ["Valid"])
 
+    def test_opt_in_short_reply_requires_strong_acoustic_support(self):
+        reply = segment(.20, .32, "yeah")
+        evidence = [region(.20, .32)]
+        self.assertEqual(
+            verify_utterances([reply], evidence, 1000, "en"), ()
+        )
+        retained = verify_utterances(
+            [reply], evidence, 1000, "en",
+            allow_short_vad_supported=True,
+        )
+        self.assertEqual([item.text for item in retained], ["yeah"])
+        self.assertEqual(retained[0].timestamp_quality, "segment")
+
+        weak = verify_utterances(
+            [reply], [region(.20, .25)], 1000, "en",
+            allow_short_vad_supported=True,
+        )
+        self.assertEqual(weak, ())
+        suspicious = segment(
+            .20, .32, "imagined reply",
+            no_speech_prob=.98, avg_logprob=-1.6,
+        )
+        self.assertEqual(
+            verify_utterances(
+                [suspicious], evidence, 1000, "en",
+                allow_short_vad_supported=True,
+            ), (),
+        )
+
     def test_short_valid_utterance_remains(self):
         result = verify_utterances([segment(.15, .6, "Hi")],
                                    [region(.10, .7)], 1000, "en")
