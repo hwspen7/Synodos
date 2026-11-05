@@ -68,6 +68,7 @@ def recover_missing_voice(
     language: str,
     sample_rate: int = 16000,
     max_windows: int = MAX_RECOVERY_WINDOWS,
+    min_uncovered_ms: int = MIN_UNCOVERED_MS,
 ) -> tuple[tuple[Utterance, ...], dict]:
     """Retry only acoustically supported uncovered windows using the ASR.
 
@@ -82,7 +83,13 @@ def recover_missing_voice(
         raise ValueError("Require finite mono audio")
     duration_ms = round(len(audio) * 1000 / sample_rate)
     regions = tuple(dict(item) for item in speech_regions)
-    missing = uncovered_voice_intervals(regions, primary, duration_ms)
+    # The research candidate can inspect shorter VAD-positive gaps.
+    # It remains strictly capped by decode-count and full audio bounds.
+    missing = uncovered_voice_intervals(
+        regions, primary, duration_ms,
+        min_uncovered_ms=min_uncovered_ms,
+        coverage_pad_ms=80 if min_uncovered_ms < MIN_UNCOVERED_MS else 160,
+    )
     if max_windows == 0 or not missing:
         return primary, {
             "uncovered_speech_intervals": missing,
@@ -102,7 +109,7 @@ def recover_missing_voice(
             if budget == 0:
                 break
             b = min(end, a + MAX_GAP_MS)
-            if b - a < MIN_UNCOVERED_MS:
+            if b - a < min_uncovered_ms:
                 continue
             clip_a = max(0, a - EDGE_PAD_MS)
             clip_b = min(duration_ms, b + EDGE_PAD_MS)
@@ -133,6 +140,9 @@ def recover_missing_voice(
                 candidates = verify_utterances(
                     list(chunks), local, clip_b - clip_a, detected,
                     preserve_disputed_text=True,
+                    allow_short_vad_supported=(
+                        min_uncovered_ms < MIN_UNCOVERED_MS
+                    ),
                 )
             except Exception:
                 failed += 1
