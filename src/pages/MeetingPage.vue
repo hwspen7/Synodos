@@ -740,46 +740,49 @@ onBeforeUnmount(() => stopInternal())
           </div>
         </div>
       </div>
-      <div class="compact-meeting-toolbar">
-        <button class="btn btn-ghost" :class="{ active: showAdvancedControls }" :aria-pressed="showAdvancedControls" @click="showAdvancedControls = !showAdvancedControls">
-          <AppIcon name="settings" :size="16" /> Settings
-        </button>
-        <button class="btn btn-ghost" :class="{ active: showReviewPanel }" :aria-pressed="showReviewPanel" @click="showReviewPanel = !showReviewPanel">
-          <AppIcon name="file-text" :size="16" /> Review
-        </button>
-        <button class="btn btn-ghost" :disabled="paragraphs.length === 0" @click="copyTranscript">
-          <AppIcon name="copy" :size="16" /> Copy
-        </button>
-        <button class="btn btn-ghost" :disabled="saving" @click="saveMeeting()">
-          <AppIcon name="save" :size="16" /> {{ saving ? 'Saving...' : 'Save' }}
-        </button>
+      <div class="compact-meeting-toolbar" aria-label="Meeting actions">
+        <div class="toolbar-secondary-actions">
+          <button class="btn btn-ghost" :class="{ active: showReviewPanel }" :aria-pressed="showReviewPanel" @click="showReviewPanel = !showReviewPanel">
+            <AppIcon name="file-text" :size="16" /> Review
+          </button>
+          <button class="btn btn-ghost" :class="{ active: showAdvancedControls }" :aria-pressed="showAdvancedControls" @click="showAdvancedControls = !showAdvancedControls">
+            <AppIcon name="settings" :size="16" /> Settings
+          </button>
+          <button class="btn btn-ghost toolbar-save" :disabled="saving" @click="saveMeeting()">
+            <AppIcon name="save" :size="16" /> {{ saving ? 'Saving...' : 'Save' }}
+          </button>
+        </div>
         <button class="btn btn-primary compact-record-action" :class="{ danger: recording }" :disabled="status === 'connecting' || status === 'stopping'" @click="recording ? stop() : start()">
-          <AppIcon :name="recording ? 'stop' : 'mic'" :size="16" />
+          <AppIcon :name="recording ? 'stop' : 'mic'" :size="17" />
           {{ recording ? 'Stop recording' : 'Start recording' }}
         </button>
       </div>
     </header>
-    <section class="meeting-workspace-summary">
-      <div class="workspace-summary-label"><span class="summary-live-dot" :class="{ active: recording }"></span> Live transcription</div>
+    <section class="meeting-workspace-summary" aria-label="Meeting overview">
+      <div class="workspace-summary-label"><span class="summary-live-dot" :class="{ active: recording }"></span> {{ recording ? 'Transcribing live' : 'Transcript workspace' }}</div>
       <div class="workspace-summary-detail">
-        <span>Language {{ language === 'auto' ? 'Auto' : language.toUpperCase() }}</span>
-        <span>Translation {{ translationTarget || 'Off' }}</span>
-        <span v-if="serverInfo">ASR {{ serverInfo.asr_engine }}</span>
-        <span v-if="serverInfo?.diarization_mode === 'single'">Speaker mode: Single</span>
-        <span v-else-if="serverInfo?.independent_diarization === 'nemotron3'">Speaker model requested: Nemotron3</span>
-        <span v-else-if="serverInfo">Speaker model: CAM++</span>
-        <span v-if="durableSeconds !== null">Saved audio {{ durableSeconds.toFixed(1) }}s</span>
+        <span><strong>Language</strong> {{ language === 'auto' ? 'Auto detect' : language.toUpperCase() }}</span>
+        <span><strong>Translation</strong> {{ translationTarget || 'Off' }}</span>
+        <span v-if="durableSeconds !== null"><strong>Audio</strong> {{ durableSeconds.toFixed(1) }}s stored</span>
       </div>
-      <div class="workspace-export-tools">
-        <button class="btn btn-ghost btn-sm" @click="exportMeeting('md')">Export text</button>
-        <button class="btn btn-ghost btn-sm" @click="exportMeeting('json')">Export data</button>
-      </div>
+      <details class="workspace-export-menu">
+        <summary><AppIcon name="download" :size="15" /> Export <span aria-hidden="true">⌄</span></summary>
+        <div class="workspace-export-options">
+          <button type="button" @click="exportMeeting('md')">Download transcript (.md)</button>
+          <button type="button" @click="exportMeeting('json')">Download structured data (.json)</button>
+          <button type="button" :disabled="paragraphs.length === 0" @click="copyTranscript">Copy transcript</button>
+        </div>
+      </details>
     </section>
     <Phase07Status v-show="showAdvancedControls" :segments="segments" :buffered-ms="bufferedMs"
       :recording="recording" :asr-engine="serverInfo?.asr_engine ?? 'unknown'"
       :asr-model="serverInfo?.asr_model" :diarization-mode="serverInfo?.diarization_mode" />
 
-    <div v-show="showAdvancedControls" class="meeting-controls meeting-advanced-controls">
+    <div v-show="showAdvancedControls" class="meeting-controls meeting-advanced-controls" aria-label="Advanced speech settings">
+      <div class="advanced-settings-intro">
+        <strong>Speech & recognition settings</strong>
+        <span>Changes to recording and recognition parameters apply to the next session.</span>
+      </div>
       <label class="field">Spoken language
         <select v-model="language" :disabled="recording || status === 'connecting' || status === 'stopping'">
           <option v-for="entry in supportedLanguages" :key="entry[0]" :value="entry[0]">{{ entry[1] }}</option>
@@ -866,7 +869,7 @@ onBeforeUnmount(() => stopInternal())
     <div class="meeting-workspace">
       <div class="meeting-primary">
         <div class="transcript-panel-heading">
-          <div><h2>Transcript</h2><span>Speech is shown as separate time-linked turns</span></div>
+          <div><span class="transcript-eyebrow">MEETING RECORD</span><h2>Transcript</h2><span>Speaker-attributed conversation · timestamps preserved</span></div>
           <span class="transcript-count">{{ paragraphs.length }} turns</span>
         </div>
     <main ref="transcriptEl" class="transcript" @scroll="onTranscriptScroll">
@@ -886,7 +889,7 @@ onBeforeUnmount(() => stopInternal())
           The system may not have transcribed every simultaneous speaker.
           Untranscribed words are never fabricated.
         </p>
-        <article v-for="para in paragraphs" :key="para.id" class="paragraph">
+        <article v-for="para in paragraphs" :key="para.id" class="paragraph" :class="{ 'paragraph-unidentified': para.speaker_id <= 0 }">
           <div class="para-head">
             <span class="speaker-dot" :style="{ background: para.color }"></span>
             <span class="speaker-name">{{ para.speaker_name || `Speaker ${para.speaker_id}` }}</span>
@@ -939,7 +942,7 @@ onBeforeUnmount(() => stopInternal())
       </div>
       <aside v-if="showReviewPanel" class="meeting-review-panel" aria-label="Review and analysis">
         <div class="review-panel-head">
-          <div><h2>Review</h2><p>Analysis, corrections and speaker refinement</p></div>
+          <div><span class="transcript-eyebrow">TOOLS</span><h2>Review & refine</h2><p>Analysis, corrections and speaker refinement</p></div>
           <button class="meeting-back" aria-label="Close review" @click="showReviewPanel = false"><AppIcon name="x" :size="17" /></button>
         </div>
     <IntelligencePanel :meeting-id="props.id" :segments="segments" />
