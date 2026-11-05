@@ -1627,6 +1627,9 @@ class SessionProcessor(threading.Thread):
                 if isinstance(stable, int) and stable > 0 and record.get("emb") is not None:
                     tracker.seed(stable, record["emb"])
             for record in self.segments:
+                record["matched_profile_id"] = None
+                record["matched_profile_name"] = None
+                record["speaker_match_similarity"] = None
                 emb = record.get("emb")
                 if emb is None:
                     record.setdefault("speaker_id", -1)
@@ -1642,6 +1645,7 @@ class SessionProcessor(threading.Thread):
                     record["matched_profile_name"] = next(
                         (p["name"] for p in self._participants if p["id"] == pid), "Participant"
                     )
+                    record["speaker_match_similarity"] = float(similarity)
                     if pid not in self._participant_label_map:
                         self._participant_label_map[pid] = self._next_free_speaker_id()
                     record["cluster"] = -1
