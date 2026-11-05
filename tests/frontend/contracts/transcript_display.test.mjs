@@ -15,24 +15,24 @@ test('multiple completed English thoughts render on distinct caption lines', () 
   ])
 })
 
-test('long unpunctuated recognized speech is readable without losing or inventing words', () => {
+test('long unpunctuated speech remains one semantic display block', () => {
   const text = Array.from({ length: 35 },
     (_, index) => 'spoken' + index).join(' ')
-  const parts = splitDisplaySentences(text)
-  assert.ok(parts.length >= 3)
-  assert.ok(parts.every((part) => part.length <= 100))
-  assert.equal(parts.join(' '), text)
+  assert.deepEqual(splitDisplaySentences(text), [text])
   assert.deepEqual(splitDisplaySentences('This is a short caption'), [
     'This is a short caption',
   ])
 })
 
-test('CJK captions get readable boundaries without losing original characters', () => {
+test('long meeting sentence is not falsely split before successful people', () => {
+  const text = "I've seen others who really didn't have that talent or that ability and they're among the most successful people today in the world because they never quit and they never gave up."
+  assert.ok(text.length > 100)
+  assert.deepEqual(splitDisplaySentences(text), [text])
+})
+
+test('CJK without punctuation stays intact while real punctuation splits sentences', () => {
   const original = '这是没有标点符号的长句'.repeat(12)
-  const parts = splitDisplaySentences(original)
-  assert.ok(parts.length > 1)
-  assert.ok(parts.every((part) => Array.from(part).length <= 100))
-  assert.equal(parts.join(''), original)
+  assert.deepEqual(splitDisplaySentences(original), [original])
   assert.deepEqual(splitDisplaySentences('您好。你好吗？我很好！'), [
     '您好。', '你好吗？', '我很好！',
   ])
