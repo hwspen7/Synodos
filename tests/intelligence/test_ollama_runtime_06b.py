@@ -73,6 +73,54 @@ class OllamaRuntimeTests(unittest.TestCase):
         self.assertIs(calls[0]['think'], False)
         self.assertNotIn('format', calls[0])
 
+    def test_evidence_qa_disables_thinking_and_uses_bounded_schema(self):
+        calls = []
+        def fake_urlopen(req, timeout):
+            calls.append(json.loads(req.data.decode('utf-8')))
+            return FakeResponse({
+                'message': {'content': '{"quotes":[{"source_number":1,"quote":"Exact copied source quote"}]}'},
+                'done_reason': 'stop',
+            })
+        with patch.dict(os.environ, self.base_env | {
+            'MEETING_AI_OLLAMA_NUM_PREDICT': '4096',
+            'MEETING_AI_OLLAMA_THINK': '1',
+        }), patch('intelligence.model_gateway.urlopen', fake_urlopen):
+            result = self.gateway.structured(
+                'system', 'select quote', evidence_only=True,
+            )
+        self.assertEqual(result['quotes'][0]['source_number'], 1)
+        body = calls[0]
+        self.assertIs(body['think'], False)
+        self.assertEqual(body['options']['num_predict'], 1024)
+        self.assertEqual(body['format']['properties']['quotes']['maxItems'], 5)
+        self.assertEqual(body['format']['required'], ['quotes'])
+        self.assertTrue(body['stream'] is False)
+
+    def test_evidence_qa_respects_tighter_user_token_budget(self):
+        calls = []
+        def fake_urlopen(req, timeout):
+            calls.append(json.loads(req.data.decode('utf-8')))
+            return FakeResponse({
+                'message': {'content': '{"quotes":[]}'},
+                'done_reason': 'stop',
+            })
+        with patch.dict(os.environ, self.base_env | {
+            'MEETING_AI_OLLAMA_NUM_PREDICT': '512',
+        }), patch('intelligence.model_gateway.urlopen', fake_urlopen):
+            self.gateway.structured('system', 'question', evidence_only=True)
+        self.assertEqual(calls[0]['options']['num_predict'], 512)
+
+    def test_evidence_qa_still_refuses_truncated_model_response(self):
+        response = {
+            'message': {'content': '{"quotes":[{"source_number":1,"quote":"Incomplete'},
+            'done_reason': 'length',
+        }
+        with patch.dict(os.environ, self.base_env), patch(
+            'intelligence.model_gateway.urlopen', return_value=FakeResponse(response),
+        ):
+            with self.assertRaisesRegex(AIModelError, 'output token limit'):
+                self.gateway.structured('system', 'prompt', evidence_only=True)
+
     def test_bad_configuration_fails_before_request(self):
         for field, value in [('MEETING_AI_OLLAMA_NUM_CTX', '1'),
                              ('MEETING_AI_OLLAMA_NUM_PREDICT', 'abc'),
