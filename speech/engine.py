@@ -35,6 +35,7 @@ def recognize(audio: np.ndarray, *, language: str = "auto", terms: str = "",
                     WhisperEngine(config.model, config.device, config.compute_type),
                     QwenWorkerClient(config.hybrid_qwen_python,
                                      config.hybrid_qwen_model),
+                    full_language_window=True,
                 )
             else:
                 from speech.qwen import QwenEngine
@@ -70,6 +71,7 @@ def prewarm_multilingual(config: SpeechSettings | None = None) -> None:
                     WhisperEngine(config.model, config.device, config.compute_type),
                     QwenWorkerClient(config.hybrid_qwen_python,
                                      config.hybrid_qwen_model),
+                    full_language_window=True,
                 )
             else:
                 from speech.qwen import QwenEngine

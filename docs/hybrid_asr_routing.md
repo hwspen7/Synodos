@@ -136,3 +136,20 @@ Run from the main Meeting .venv with a new immutable output path:
 Full-window rerouting still depends on Whisper's language ID and adds
 Whisper + Qwen compute. A higher score than Qwen alone or unacceptable
 latency rejects this candidate. Do not tune on the sealed test cohort.
+
+
+## Selected live Meeting mode: V2 (no V3 experiment)
+
+The current benchmark-best V2 is selected for live Meeting operation.
+The speech engine uses full_language_window=True when hybrid is chosen
+and the Windows launcher uses MEETING_ASR_ENGINE=hybrid by default
+unless explicitly overridden. It configures independent Qwen Python
+on E: and automatic source-language recognition.
+
+Run Start-Meeting.cmd in the updated checkout. A backend process already
+running should be restarted with MEETING_FORCE_BACKEND_RESTART=1.
+For rollback start with MEETING_ASR_ENGINE=whisper set.
+
+This does not claim a real-meeting production release gate. It makes
+the tested V2 available as the selected Meeting implementation without
+changing its routing policy or starting V3 research.

@@ -8,6 +8,7 @@ import numpy as np
 from speech.whisper import WhisperEngine
 from speech.engine import recognize
 from speech.config import SpeechSettings
+from speech.contracts import Recognition
 from speech.translation import translate, TranslationUnavailable
 from speech.overlap import OverlapDetector, OverlapUnavailable
 
@@ -53,6 +54,31 @@ class AdapterTests(unittest.TestCase):
         with mock_voiced_audio():
             engine.recognize(np.zeros(1600, np.float32), language="fr")
         self.assertEqual(fake.transcribe.call_args.kwargs["language"], "fr")
+
+    def test_live_hybrid_registry_uses_full_context_v2(self):
+        from speech.engine import _ENGINES
+        whisper = Mock()
+        whisper.recognize.return_value = Recognition(
+            engine="whisper", speech_detected=False
+        )
+        qwen = Mock()
+        with patch.dict(_ENGINES, {}, clear=True), patch(
+            "speech.whisper.WhisperEngine", return_value=whisper
+        ), patch(
+            "speech.qwen_bridge.QwenWorkerClient", return_value=qwen
+        ):
+            settings = SpeechSettings(
+                engine="hybrid", hybrid_qwen_python=r"E:\AI-Cache\qwen\python.exe"
+            )
+            answer = recognize(
+                np.zeros(16000, dtype=np.float32),
+                config=settings, language="auto"
+            )
+            self.assertEqual(answer.engine, "hybrid")
+            self.assertEqual(len(_ENGINES), 1)
+            backend = next(iter(_ENGINES.values()))
+            self.assertTrue(backend.full_language_window)
+            self.assertIs(backend.qwen, qwen)
 
     def test_legacy_fallback(self):
         res = recognize(np.zeros(1000, np.float32), config=SpeechSettings(engine="legacy"),

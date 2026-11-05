@@ -27,11 +27,24 @@ function Set-AiEnvironment {
 
 function Set-BackendEnvironment {
     Set-AiEnvironment
-    $env:MEETING_ASR_ENGINE = 'whisper'
+    # Select tested ASR hybrid V2, but allow explicit Whisper rollback.
+    if ([string]::IsNullOrWhiteSpace($env:MEETING_ASR_ENGINE)) {
+        $env:MEETING_ASR_ENGINE = 'hybrid'
+    }
+    if ($env:MEETING_ASR_ENGINE -notin @('hybrid', 'whisper')) {
+        throw "Launcher supports MEETING_ASR_ENGINE=hybrid or whisper"
+    }
+    if ($env:MEETING_ASR_ENGINE -eq 'hybrid') {
+        $env:MEETING_HYBRID_QWEN_PYTHON = 'E:\AI-Cache\Environments\meeting-qwen-asr\Scripts\python.exe'
+        if (-not (Test-Path -LiteralPath $env:MEETING_HYBRID_QWEN_PYTHON -PathType Leaf)) {
+            throw "Hybrid ASR requires the E-drive Qwen Python environment: $env:MEETING_HYBRID_QWEN_PYTHON"
+        }
+    }
+    $env:HF_HOME = 'E:\AI-Cache\MeetingReference\ASRSelection\cache\huggingface'
     $env:MEETING_ASR_MODEL = 'large-v3'
     $env:MEETING_ASR_DEVICE = 'cuda'
     $env:MEETING_ASR_COMPUTE = 'float16'
-    $env:MEETING_ASR_LANGUAGE = 'en'
+    $env:MEETING_ASR_LANGUAGE = 'auto'
     $env:MEETING_TRANSLATE_TO = 'en'
     $env:MEETING_PREWARM_ASR = '1'
     # Prefer CUDA DLLs bundled with the installed PyTorch wheel.
@@ -178,6 +191,9 @@ function Test-BackendSourceUpdated([int]$ProcessId) {
     foreach ($relativePath in @('main.py', 'api\websocket.py', 'api\intelligence.py',
                                   'intelligence\store.py', 'intelligence\contracts.py',
                                   'sessions\processor.py', 'speech\whisper.py',
+                                  'speech\engine.py', 'speech\hybrid.py',
+                                  'speech\qwen_bridge.py',
+                                  'tools\windows\Start-Meeting.ps1',
                                   'core\runtime.py')) {
         $path = Join-Path $RepoRoot $relativePath
         if ((Test-Path -LiteralPath $path) -and
@@ -216,7 +232,7 @@ function Initialize-Credential {
 function Start-Launcher {
     Write-Host ''
     Write-Host 'Meeting of Pioneers - one-click startup' -ForegroundColor Cyan
-    Write-Host 'AI: Saluki 27B  |  ASR: Whisper large-v3  |  DB: PostgreSQL'
+    Write-Host 'AI: Saluki 27B  |  ASR: Hybrid V2 (Whisper + Qwen 1.7B)  |  DB: PostgreSQL'
     if (-not (Test-Path -LiteralPath $Python)) {
         throw "Python environment is missing: $Python"
     }
