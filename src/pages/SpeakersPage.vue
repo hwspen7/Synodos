@@ -108,10 +108,7 @@ onMounted(load)
   <div class="speakers page-shell">
     <div class="speaker-head">
       <div class="speaker-head-left">
-        <button class="btn btn-ghost btn-sm" @click="router.push('/')">
-          <AppIcon name="arrow-left" :size="16" />
-          Back to Home
-        </button>
+        <span class="page-section-kicker">PEOPLE / VOICE IDENTITIES</span>
         <div>
           <h1 class="page-title">Speaker Voiceprint Library</h1>
           <p class="page-sub">Store multiple voiceprints for each speaker to improve meeting identification.</p>
