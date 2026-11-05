@@ -5,7 +5,7 @@ import os
 
 from speech.supported_languages import spoken_language, translation_target
 
-SUPPORTED_ENGINES = {"legacy", "whisper", "qwen3"}
+SUPPORTED_ENGINES = {"legacy", "whisper", "qwen3", "hybrid"}
 
 
 def _flag(name: str, default: bool = False) -> bool:
@@ -21,6 +21,8 @@ class SpeechSettings:
     model: str = "large-v3"
     device: str = "auto"
     compute_type: str = "default"
+    hybrid_qwen_python: str = ""
+    hybrid_qwen_model: str = "Qwen/Qwen3-ASR-1.7B"
     preview_interval_s: float = 2.5
     confirmation_delay_s: float = 1.0
     language: str = "en"
@@ -35,7 +37,12 @@ class SpeechSettings:
 
     def validate(self) -> "SpeechSettings":
         if self.engine not in SUPPORTED_ENGINES:
-            raise ValueError("MEETING_ASR_ENGINE must be legacy, whisper, or qwen3")
+            raise ValueError("MEETING_ASR_ENGINE must be legacy, whisper, qwen3, or hybrid")
+        if self.engine == "hybrid":
+            if not self.hybrid_qwen_python.strip():
+                raise ValueError("Hybrid ASR requires MEETING_HYBRID_QWEN_PYTHON")
+            if self.hybrid_qwen_model != "Qwen/Qwen3-ASR-1.7B":
+                raise ValueError("Hybrid ASR currently supports Qwen3-ASR-1.7B only")
         spoken_language(self.language)
         translation_target(self.translate_to)
         if not 0.5 <= self.preview_interval_s <= 30:
@@ -55,6 +62,8 @@ def load_settings() -> SpeechSettings:
         model=os.getenv("MEETING_ASR_MODEL", "large-v3"),
         device=os.getenv("MEETING_ASR_DEVICE", "auto"),
         compute_type=os.getenv("MEETING_ASR_COMPUTE", "default"),
+        hybrid_qwen_python=os.getenv("MEETING_HYBRID_QWEN_PYTHON", ""),
+        hybrid_qwen_model=os.getenv("MEETING_HYBRID_QWEN_MODEL", "Qwen/Qwen3-ASR-1.7B"),
         preview_interval_s=float(os.getenv("MEETING_PREVIEW_INTERVAL_S", "2.5")),
         confirmation_delay_s=float(os.getenv("MEETING_CONFIRMATION_DELAY_S", "1")),
         language=os.getenv("MEETING_ASR_LANGUAGE", "en"),
