@@ -5,6 +5,8 @@ on:
   push:
     paths:
       - 'Start-Meeting.cmd'
+      - 'tools/Invoke-Meeting-Quality-Checks.ps1'
+      - 'tools/Invoke-Meeting-Knowledge-Acceptance.ps1'
       - 'tools/windows/Start-Meeting.ps1'
       - 'tools/run_nemotron_ami.ps1'
       - 'tools/run_phase1_engineering.ps1'
@@ -22,6 +24,8 @@ on:
   pull_request:
     paths:
       - 'Start-Meeting.cmd'
+      - 'tools/Invoke-Meeting-Quality-Checks.ps1'
+      - 'tools/Invoke-Meeting-Knowledge-Acceptance.ps1'
       - 'tools/windows/Start-Meeting.ps1'
       - 'tools/run_nemotron_ami.ps1'
       - 'tools/run_phase1_engineering.ps1'
@@ -48,6 +52,8 @@ jobs:
           $parseErrors = $null
           $scripts = @(
             'tools/windows/Start-Meeting.ps1',
+            'tools/Invoke-Meeting-Quality-Checks.ps1',
+            'tools/Invoke-Meeting-Knowledge-Acceptance.ps1',
             'tools/run_nemotron_ami.ps1',
             'tools/run_phase1_engineering.ps1',
             'tools/diagnose_github_actions.ps1',

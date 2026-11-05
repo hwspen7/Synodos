@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - refactor/flatten-project-root
+      - feature/meeting-knowledge-quality
   pull_request:
 
 jobs:
