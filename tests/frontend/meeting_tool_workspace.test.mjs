@@ -30,17 +30,22 @@ test('meeting tool controls live inside the local sidebar', () => {
   assert.doesNotMatch(source, /showAdvancedControls = !showAdvancedControls/)
 })
 
-test('review functions render as independent selectable modules', () => {
-  for (const module of ['ai', 'correction', 'speakers', 'identity']) {
-    assert.ok(source.includes("activeReviewTool === '" + module + "'"))
+test('review has three tabs and opens overview by default', () => {
+  assert.match(source, /type ReviewTool = 'overview' \| 'correction' \| 'speakers'/)
+  assert.match(source, /activeReviewTool = ref<ReviewTool>\('overview'\)/)
+  assert.match(source, /if \(tool === 'review'\) activeReviewTool\.value = 'overview'/)
+  const from = source.indexOf('<nav class="meeting-review-tools"')
+  const nav = source.slice(from, source.indexOf('</nav>', from))
+  assert.equal((nav.match(/<button\b/g) ?? []).length, 3)
+  for (const label of ['Overview', 'Corrections', 'Speakers']) {
+    assert.ok(nav.includes('>' + label + '</button>'), 'Review tab missing: ' + label)
   }
-  assert.match(source, /v-else-if="activeReviewTool === 'ai'"/)
-  assert.match(source, /activeReviewTool = ref<ReviewTool>\('home'\)/)
-  assert.match(source, /v-if="activeReviewTool === 'home'"/)
+  assert.doesNotMatch(nav, /Identity evidence|AI workspace|Speaker review|Choose a review tool/)
+  assert.match(source, /<IntelligencePanel v-if="activeReviewTool === 'overview'" compact/)
   assert.match(source, /v-else-if="activeReviewTool === 'correction'"/)
-  assert.match(source, /v-else-if="activeReviewTool === 'speakers'"/)
-  assert.match(source, /v-else\s*\n\s*:meeting-id=/)
-  assert.match(source, /activeReviewTool\.value = 'identity'/)
+  assert.match(source, /openIdentityEvidence[\s\S]*?activeReviewTool\.value = 'speakers'/)
+  assert.match(source, /<Phase2IdentityReviewPanel v-if="identityReviewSegmentId !== null"/)
+  assert.match(source, /<OfflineSpeakerPanel v-if="showIndependentSpeakerAnalysis"/)
 })
 
 test('existing transcription and recording workflows are retained', () => {
