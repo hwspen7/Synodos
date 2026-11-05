@@ -133,5 +133,88 @@ class RealMeetingEvaluationTests(unittest.TestCase):
             self.assertFalse(prediction["reference_used_for_inference"])
 
 
+    def test_import_calls_psycopg3_cursor_executemany(self):
+        # Regresses the real-world Connection.executemany AttributeError.
+        # A fake Connection intentionally has no executemany method.
+        import contextlib
+        import tools.prepare_real_meeting_evaluation as module
+        from tools.prepare_meeting_reference_corpus import MEETINGS
+
+        class Cursor:
+            def __init__(self):
+                self.batches = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def executemany(self, sql, params):
+                self.batches.append((sql, list(params)))
+
+        class Connection:
+            def __init__(self):
+                self.info = types.SimpleNamespace(dbname="meeting_test")
+                self.writes = []
+                self.cur = Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def execute(self, sql, params=None):
+                self.writes.append((sql, params))
+                if sql.startswith("SELECT id FROM meeting_records"):
+                    return types.SimpleNamespace(fetchall=lambda: [])
+                return types.SimpleNamespace()
+
+            def transaction(self):
+                return contextlib.nullcontext()
+
+            def cursor(self):
+                return self.cur
+
+        conn = Connection()
+        fake_psycopg = types.ModuleType("psycopg")
+        fake_psycopg.connect = lambda *args, **kwargs: conn
+        fake_types = types.ModuleType("psycopg.types")
+        fake_json = types.ModuleType("psycopg.types.json")
+        fake_json.Jsonb = lambda value: value
+        doc = self.sample_prediction()
+        reports = [(mid, Path("irrelevant.wav"), 20.0,
+                    doc["segments"], doc) for mid in MEETINGS]
+        with (
+            mock.patch.dict(sys.modules, {
+                "psycopg": fake_psycopg,
+                "psycopg.types": fake_types,
+                "psycopg.types.json": fake_json,
+            }),
+            mock.patch.object(module, "load_predictions", return_value=reports),
+            mock.patch.object(module, "inspect_db_name"),
+            mock.patch.dict(os.environ, {
+                "DATABASE_URL": "postgresql://unused/meeting_test",
+            }),
+        ):
+            module.import_predictions(Path("unused"), apply=True)
+
+        self.assertEqual(len(conn.cur.batches), 3)
+        self.assertEqual(sum(len(batch) for _, batch in conn.cur.batches), 33)
+        self.assertEqual(
+            [batch[0][0] for _, batch in conn.cur.batches],
+            ["ami_eval_en2002a", "ami_eval_es2004a", "ami_eval_is1009a"],
+        )
+        self.assertTrue(all(
+            "INSERT INTO meeting_segments" in sql
+            for sql, batch in conn.cur.batches
+        ))
+        self.assertEqual(sum(
+            sql.startswith("INSERT INTO meeting_records")
+            for sql, _ in conn.writes
+        ), 3)
+
+
 if __name__ == "__main__":
     unittest.main()

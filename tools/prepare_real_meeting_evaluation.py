@@ -306,11 +306,14 @@ def import_predictions(root: Path, apply: bool) -> None:
                 mid = state["id"]
                 conn.execute("INSERT INTO meeting_records(id,meta,state,revision) VALUES (%s,%s,%s,1)",
                              (mid, Jsonb(meta), Jsonb(state)))
-                conn.executemany(
-                    "INSERT INTO meeting_segments(meeting_id,segment_id,start_sample,end_sample,speaker_id,content) "
-                    "VALUES (%s,%s,%s,%s,%s,%s)",
-                    [(mid, s["id"], s["start_sample"], s["end_sample"], -1, s["text"])
-                     for s in state["segments"]])
+                # Psycopg 3 provides executemany on Cursor, not Connection.
+                # Both writes remain in the surrounding transaction.
+                with conn.cursor() as cursor:
+                    cursor.executemany(
+                        "INSERT INTO meeting_segments(meeting_id,segment_id,start_sample,end_sample,speaker_id,content) "
+                        "VALUES (%s,%s,%s,%s,%s,%s)",
+                        [(mid, s["id"], s["start_sample"], s["end_sample"], -1, s["text"])
+                         for s in state["segments"]])
     print("IMPORTED REAL ASR: 3 meetings into meeting_test (never human-reviewed gold)")
 
 
