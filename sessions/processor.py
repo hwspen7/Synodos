@@ -64,6 +64,7 @@ from sessions.translation_tasks import submit_translation
 from sessions.speaker_tasks import submit_speaker_analysis, submit_acoustic_window
 from sessions.speaker_evidence import speaker_evidence
 from sessions.registered_identity import match_saved_voice
+from sessions.stable_speaker_channels import StableSpeakerChannels
 from speech.acoustic_timeline import AcousticTimeline
 from speech.diarization import resolve_diarization_mode
 from speech.turn_integrity import valid_turn_partition
@@ -164,6 +165,7 @@ class SessionProcessor(threading.Thread):
         self._content_first_projection: dict[int, dict] = {}
         self._independent_pcm_origin_samples = 0
         self._independent_id_offset = 0
+        self._nemotron_channels = StableSpeakerChannels()
         self._transcript_version = 0
         self._last_state_sent = 0.0
         self._last_inferred_absolute_end = -1
@@ -380,6 +382,9 @@ class SessionProcessor(threading.Thread):
                             official, caption_activity,
                             acoustic_origin_ms=origin_ms,
                             speaker_id_offset=self._independent_id_offset,
+                            speaker_id_map=getattr(
+                                self, "_nemotron_channels", StableSpeakerChannels()
+                            ).labels,
                         )
                         # Derive the actual display-level voice hypothesis
                         # independently, without counting a split caption's
@@ -406,6 +411,9 @@ class SessionProcessor(threading.Thread):
                                 official, projection,
                                 acoustic_origin_ms=origin_ms,
                                 speaker_id_offset=self._independent_id_offset,
+                                speaker_id_map=getattr(
+                                    self, "_nemotron_channels", StableSpeakerChannels()
+                                ).labels,
                             )
                         )
                         original_audit["projection_note"] = (
@@ -1518,7 +1526,7 @@ class SessionProcessor(threading.Thread):
             # the independent Nemotron caption-cue projection can annotate
             # speaker changes without replacing canonical speech content.
             if (len(pieces) > 1 and os.getenv(
-                    "MEETING_CONTENT_FIRST_FUSION", "0"
+                    "MEETING_CONTENT_FIRST_FUSION", "1"
             ).strip().lower() in ("1", "true", "yes")):
                 self._ecapa_shadow_audio.pop(sid, None)
                 original["speaker_turn_candidate_intervals_ms"] = [
@@ -1911,6 +1919,19 @@ class SessionProcessor(threading.Thread):
             except Exception:
                 logger.warning("Optional ECAPA shadow enqueue failed; CAM++ unchanged")
 
+    def _display_nemotron_channel(self, channel: int, evidence_ms: int) -> int | None:
+        """Allocate stable meeting speaker IDs only for sustained channels.
+
+        A new model session may begin on Nemotron's channel 5. That must
+        become Speaker 1 in an empty meeting, not Speaker 5. The mapping
+        is connection-local and never merges identities across resumes.
+        """
+        mapper = getattr(self, "_nemotron_channels", None)
+        if mapper is None or mapper.offset != self._independent_id_offset:
+            mapper = StableSpeakerChannels(offset=self._independent_id_offset)
+            self._nemotron_channels = mapper
+        return mapper.resolve(channel, evidence_ms)
+
     def _rebuild_and_push(self) -> bool:
         """Audio transcription and speaker data handling."""
         for record in self.segments:
@@ -2018,7 +2039,7 @@ class SessionProcessor(threading.Thread):
                     # speaker splitting. Repeated calls cannot add words.
                     if (official_turns is not None
                             and os.getenv(
-                                "MEETING_CONTENT_FIRST_FUSION", "0"
+                                "MEETING_CONTENT_FIRST_FUSION", "1"
                             ).strip().lower() in ("1", "true", "yes")):
                         try:
                             word_base = source.get("_audio_base_sample")
@@ -2038,6 +2059,9 @@ class SessionProcessor(threading.Thread):
                                     origin * 1000 / self.settings.sample_rate
                                 ),
                                 speaker_id_offset=self._independent_id_offset,
+                                speaker_id_map=getattr(
+                                    self, "_nemotron_channels", StableSpeakerChannels()
+                                ).labels,
                             )
                         except (TypeError, ValueError, OverflowError):
                             logger.warning(
@@ -2081,7 +2105,17 @@ class SessionProcessor(threading.Thread):
                         else "nemotron_frame_activity_not_identity_probability"
                     )
                     if decision.speaker_id is not None:
-                        published = decision.speaker_id + self._independent_id_offset
+                        published = self._display_nemotron_channel(
+                            decision.speaker_id, int(decision.analyzed_ms),
+                        )
+                        if published is None:
+                            # A single short cue is not sufficient evidence
+                            # for allocating a new, persistent speaker ID.
+                            item["speaker_status"] = "speaker_birth_pending"
+                            item["speaker_diarization_source"] = (
+                                "nemotron3_provisional"
+                            )
+                            continue
                         item["speaker_id"] = published
                         item["speaker_name"] = f"Speaker {published}"
                         item["speaker_status"] = "acoustic_primary"
