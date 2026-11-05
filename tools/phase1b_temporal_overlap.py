@@ -238,10 +238,12 @@ def diagnose(root: Path, folder: Path, *, meetings: tuple[str, ...],
         if status == "DRIFT":
             drifted.append(meeting)
         print(f"{meeting}: baseline {fmt(frozen['metrics']['der'])} | "
-              f"rerun {fmt(result['overall']['der'])} ({status}) | "
-              f"miss-solo {c['single']['missed_speaker_seconds']:.1f}s | "
-              f"miss-overlap {c['overlap']['missed_speaker_seconds']:.1f}s | "
-              f"overlap full recall {fmt(c['overlap']['all_correct_overlap_fraction'])}")
+              f"rerun {fmt(result['overall']['der'])} ({status})")
+        print(f"  Solo DER {fmt(c['single']['der'])} | "
+              f"Overlap DER {fmt(c['overlap']['der'])} | "
+              f"Miss solo {c['single']['missed_speaker_seconds']:.1f}s / "
+              f"overlap {c['overlap']['missed_speaker_seconds']:.1f}s | "
+              f"Overlap all-spk recall {fmt(c['overlap']['all_correct_overlap_fraction'])}")
     print("Private time-aligned reports:", destination)
     print("No production configuration changed.")
     if drifted:
