@@ -9,7 +9,13 @@ const route = useRoute()
   <div class="app-shell">
     <header class="app-bar">
       <RouterLink to="/" class="brand">
-        <span class="brand-mark">M</span>
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 3 3 10.2l7.4 2.3L21 3Z" />
+            <path d="m21 3-7.5 18-3.1-8.5L21 3Z" />
+            <path d="m10.4 12.5-1 6.2 4.1-3.2" />
+          </svg>
+        </span>
         <span class="brand-name">Meeting of Pioneers</span>
       </RouterLink>
       <nav class="app-nav">
