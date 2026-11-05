@@ -1178,3 +1178,4 @@ onBeforeUnmount(() => stopInternal())
 </style>
 
 <style src="../assets/meeting-refresh.css"></style>
+<style src="../assets/meeting-tool-layout.css"></style>
