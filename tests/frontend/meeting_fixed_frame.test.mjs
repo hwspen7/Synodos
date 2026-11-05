@@ -16,6 +16,8 @@ test('meeting header combines title, metadata, export and recording controls', (
     "saveMeeting()", "recording ? stop() : start()",
   ]) assert.ok(header.includes(value), 'Missing header content: ' + value)
   assert.doesNotMatch(page, /class="meeting-workspace-summary"/)
+  assert.doesNotMatch(page, /class="transcript-panel-heading"/)
+  assert.match(header, /\{\{ paragraphs\.length \}\} turns/)
 })
 
 test('desktop meeting fills viewport and only content panes scroll', () => {
