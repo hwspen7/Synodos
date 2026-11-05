@@ -122,6 +122,7 @@ def meeting_segments(meeting_id):
     segments = []
     for s in state.get('segments') or []:
         segments.append({'id': int(s['id']), 'text': str(s.get('text') or ''),
+                         'speaker_id': int(s.get('speaker_id') or -1),
                          'speaker': str(s.get('speaker_name') or ''),
                          'revision': int(s.get('revision', 0)),
                          'manually_corrected': bool(s.get('manually_corrected', False)),
@@ -158,6 +159,31 @@ def artifacts(meeting_id, limit=30):
             WHERE meeting_id=%s ORDER BY created_at DESC LIMIT %s''', (meeting_id, max(1,min(limit,100)))).fetchall()
     return [{'id':str(r[0]),'kind':r[1],'mode':r[2],'source_revision':r[3],
              'content':r[4],'model_name':r[5],'created_at':r[6]} for r in rows]
+
+
+def latest_speaker_analysis(meeting_id, speaker_id):
+    """Retrieve only this speaker's most recent artifact and active job."""
+    with connection() as conn:
+        artifact = conn.execute(
+            """SELECT id, source_revision, content, model_name, created_at
+               FROM ai_artifacts WHERE meeting_id=%s AND kind='speaker_insights'
+               AND content->>'speaker_id'=%s
+               ORDER BY created_at DESC LIMIT 1""",
+            (meeting_id, str(speaker_id)),
+        ).fetchone()
+        job = conn.execute(
+            """SELECT id FROM ai_jobs WHERE meeting_id=%s
+               AND kind='speaker_insights' AND payload->>'speaker_id'=%s
+               AND status IN ('queued','running')
+               ORDER BY created_at DESC LIMIT 1""",
+            (meeting_id, str(speaker_id)),
+        ).fetchone()
+    return (
+        {'id': str(artifact[0]), 'source_revision': int(artifact[1]),
+         'content': artifact[2], 'model_name': artifact[3],
+         'created_at': artifact[4]} if artifact else None,
+        job_status(job[0]) if job else None,
+    )
 
 
 def review_items(meeting_id, table):
