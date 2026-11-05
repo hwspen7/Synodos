@@ -101,6 +101,19 @@ def process(job, gateway):
         content='\n'.join(f"[{i+1}] {c['text']}" for i,c in enumerate(chunks))[:45000]
         report=gateway.chat(SYSTEM,'Summarize the supplied media and list verifiable key points. Never invent material.\n'+content, model=gateway.model_for('media'))
         return {'media_id':mid,'indexed_chunks':len(chunks),'summary':report}
+    if kind == 'ask_evidence':
+        from intelligence.evidence_qa import evidence_prompt, verified_excerpt_answer
+        query = str(job['payload'].get('question') or '').strip()
+        if len(query) < 2 or len(query) > 2000:
+            raise ValueError('Question must contain 2-2000 characters')
+        hits = retrieval.search(query, gateway, limit=8)
+        if not hits:
+            return verified_excerpt_answer(None, [])
+        selected = gateway.structured(
+            SYSTEM, evidence_prompt(query, hits),
+            model=gateway.model_for('ask'),
+        )
+        return verified_excerpt_answer(selected, hits)
     if kind=='ask':
         query=str(job['payload'].get('question') or '').strip()
         if len(query)<2 or len(query)>2000:
