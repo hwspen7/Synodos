@@ -33,8 +33,21 @@ const segments = ref<MeetingSegment[]>([])
 const selectedSegIds = ref<Set<number>>(new Set())
 const loadingSegments = ref(false)
 const submittingSeg = ref(false)
+const markHumanVerified = ref(false)
 
 const selectedCount = computed(() => selectedSegIds.value.size)
+const selectedSegments = computed(() => segments.value.filter(
+  (item) => selectedSegIds.value.has(item.id),
+))
+const canHumanVerify = computed(() => selectedSegments.value.length > 0 &&
+  selectedSegments.value.every((item) =>
+    item.speaker_profile_id === props.speaker.id &&
+    item.speaker_status === 'manual_override' &&
+    !item.speaker_uncertain &&
+    (item.review_count ?? 0) > 0 &&
+    item.duration_s >= minAudioS.value,
+  ),
+)
 const totalSelectedDuration = computed(() =>
   segments.value
     .filter((s) => selectedSegIds.value.has(s.id))
@@ -129,6 +142,7 @@ async function loadMeetingSegments(): Promise<void> {
     const { segments: segs } = await meetingsApi.segments(selectedMeetingId.value)
     segments.value = segs
     selectedSegIds.value = new Set()
+    markHumanVerified.value = false
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
     segments.value = []
@@ -142,10 +156,18 @@ function toggleSegment(id: number): void {
   if (next.has(id)) next.delete(id)
   else next.add(id)
   selectedSegIds.value = next
+  markHumanVerified.value = false
 }
 
 async function submitMeetingSelection(): Promise<void> {
   if (submittingSeg.value || selectedCount.value === 0) return
+  if (markHumanVerified.value && !canHumanVerify.value) {
+    error.value = 'Verified enrollment requires prior manual identity review and adequate clean audio'
+    return
+  }
+  if (markHumanVerified.value && !window.confirm(
+    'Have you independently listened to each selected segment and confirmed one speaker only? This enrollment will carry human-verified provenance.',
+  )) return
   submittingSeg.value = true
   error.value = ''
   try {
@@ -153,6 +175,7 @@ async function submitMeetingSelection(): Promise<void> {
       props.speaker.id,
       selectedMeetingId.value,
       [...selectedSegIds.value],
+      markHumanVerified.value,
     )
     minAudioS.value = min_audio_s
     addedVectors.value = vectors
@@ -162,6 +185,7 @@ async function submitMeetingSelection(): Promise<void> {
       emit('error', error.value)
     }
     selectedSegIds.value = new Set()
+    markHumanVerified.value = false
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
     emit('error', error.value)
@@ -294,6 +318,15 @@ onBeforeUnmount(() => {
           {{ selectedShortCount }} samples are shorter than {{ minAudioS }} seconds. Voiceprint accuracy may be lower.
         </span>
       </div>
+      <label v-if="selectedCount > 0" class="hint-text">
+        <input v-model="markHumanVerified" type="checkbox" :disabled="!canHumanVerify" />
+        Human-verified enrollment (requires saved identity corrections,
+        adequate duration and independent listening)
+      </label>
+      <p v-if="selectedCount > 0 && !canHumanVerify" class="hint-text">
+        These segments can be saved as unverified candidates. To verify them,
+        first correct the speaker identity in the meeting review panel.
+      </p>
       <button
         v-if="selectedCount > 0"
         class="btn btn-primary"
@@ -315,6 +348,8 @@ onBeforeUnmount(() => {
           <span v-if="v.source === 'meeting' && v.segment_ids.length" class="muted-text">
             Segments #{{ v.segment_ids.join(', ') }}
           </span>
+          <span v-if="v.human_verified" class="ok-badge">Human verified</span>
+          <span v-else class="muted-text">Unverified candidate</span>
           <span v-if="v.short" class="warn-badge">
             <AppIcon name="alert" :size="12" />
             Audio too short
