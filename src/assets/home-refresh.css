@@ -1,38 +1,65 @@
-/* Home workspace: compact entry point, quiet hierarchy, same warm color tokens. */
-.home-compact-hero{margin:0;background:linear-gradient(115deg,#fcfafd 0%,#f7f3fc 68%,#f1e8fa 100%);border-bottom:1px solid var(--mop-border)}
-.home-compact-hero-inner{max-width:1200px;margin:0 auto;padding:45px 28px;display:flex;gap:30px;justify-content:space-between;align-items:center}
-.home-eyebrow{margin:0 0 10px;color:var(--mop-primary-strong);font-size:10px;font-weight:780;letter-spacing:.15em}
-.home-compact-hero h1{margin:0;color:var(--mop-text-strong);font-size:clamp(26px,3vw,38px);line-height:1.18;font-weight:760;letter-spacing:-.04em}
-.home-compact-hero-inner p:not(.home-eyebrow){font-size:13px;color:var(--mop-text-muted);margin:10px 0 0;line-height:1.6}
-.home-compact-hero .btn{white-space:nowrap;box-shadow:0 6px 16px rgba(var(--mop-primary-rgb),.14);font-size:13px;padding:12px 17px}
-.home .page-shell{max-width:1200px;padding-top:26px}
-.home .metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 16px}
-.home .metric-tile{min-width:0;padding:14px 17px;background:#fff;border:1px solid var(--mop-border);box-shadow:none;border-radius:12px}
-.home .metric-icon{width:35px;height:35px;border-radius:10px}
-.home .metric-value{font-size:20px;letter-spacing:-.025em}
-.home .metric-label{font-size:11px}
-.home-quick-library{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:29px}
-.home-library-shortcut{display:flex;align-items:center;gap:14px;min-width:0;text-decoration:none;padding:16px 18px;border-radius:12px;background:#fff;border:1px solid var(--mop-border);transition:border-color .15s,transform .15s}
-.home-library-shortcut:hover{border-color:rgba(var(--mop-primary-rgb),.35);transform:translateY(-1px)}
-.shortcut-icon{height:37px;width:37px;border-radius:10px;background:rgba(var(--mop-primary-rgb),.09);display:flex;align-items:center;justify-content:center;color:var(--mop-primary-strong);flex:none}
-.shortcut-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.shortcut-copy strong{font-size:13px;font-weight:740;color:var(--mop-text-strong)}
-.shortcut-copy small{font-size:11px;color:var(--mop-text-muted)}
-.shortcut-arrow{font-size:19px;color:#b8aea2;font-weight:400}
-.home .toolbar-row{border-bottom:1px solid var(--mop-border);padding:0 0 15px;margin-bottom:7px}
-.home .toolbar-row h2{font-size:18px;letter-spacing:-.025em}
-.home .meeting-list{display:flex;flex-direction:column;gap:0}
-.home .meeting-card{border:0;border-radius:0;border-bottom:1px solid var(--mop-border);box-shadow:none;background:transparent;padding:19px 7px}
-.home .meeting-card:hover{background:rgba(var(--mop-primary-rgb),.025)}
-.home .meeting-card .meeting-title{font-size:14px;font-weight:740}
-.home .meeting-card .meeting-meta{font-size:11px;line-height:1.7}
-.home .meeting-card .meeting-actions{gap:6px}
+/* Workspace home — Chegg-orange accents and calm meeting-first layout. */
+.home{min-width:0}
+.home-compact-hero{margin:0;background:transparent;border-bottom:0}
+.home-compact-hero-inner{
+  max-width:1520px;margin:auto;display:flex;align-items:center;justify-content:space-between;
+  gap:28px;padding:43px clamp(20px,3vw,48px) 14px;
+}
+.home-eyebrow{color:#b35b0b;font-size:11px;font-weight:790;letter-spacing:.14em;margin:0 0 12px}
+.home-compact-hero h1{margin:0;color:#202228;font-size:clamp(29px,3.1vw,42px);font-weight:780;letter-spacing:-.055em;line-height:1.2}
+.home-compact-hero-inner p:not(.home-eyebrow){margin:11px 0 0;font-size:13px;line-height:1.65;color:#777980}
+.home-compact-hero .btn{min-height:46px!important;white-space:nowrap;border-radius:12px!important;padding:11px 21px!important;font-size:13px!important;font-weight:760;box-shadow:0 7px 21px rgba(235,113,0,.12)!important}
+.home-compact-hero .btn:hover:not(:disabled){box-shadow:0 7px 21px rgba(235,113,0,.18)!important}
+.home .metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:0 0 19px}
+.home .metric-tile{
+  display:flex;align-items:center;gap:15px;padding:22px 20px!important;min-height:100px;
+  border:1px solid #e8e7e4;background:#fff;border-radius:15px;box-shadow:none;
+}
+.home .metric-icon{display:flex;align-items:center;justify-content:center;flex:none;width:43px;height:43px;border-radius:12px}
+.home .metric-icon.tone-primary{background:#fff0e1;color:#ba5a00}
+.home .metric-icon.tone-secondary{background:#f3f4f6;color:#5b667b}
+.home .metric-icon.tone-accent{background:#eef7f4;color:#30775e}
+.home .metric-icon.tone-success{background:#f5f1ec;color:#94724e}
+.home .metric-value{color:#202328;font-size:26px;letter-spacing:-.05em;line-height:1.22;font-weight:780}
+.home .metric-label{color:#808087;font-size:11px;font-weight:650;margin-top:3px}
+.home-quick-library{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:0 0 39px}
+.home-library-shortcut{
+  display:flex;align-items:center;gap:15px;min-width:0;text-decoration:none;
+  padding:20px 21px;border-radius:15px;background:#fff;
+  border:1px solid #e8e7e4;box-shadow:none;transition:border-color .16s,transform .16s;
+}
+.home-library-shortcut:hover{border-color:#f3ca9f;transform:translateY(-2px)}
+.shortcut-icon{display:flex;align-items:center;justify-content:center;width:43px;height:43px;border-radius:12px;flex:none;background:#fff1e4;color:#ad5100}
+.shortcut-copy{display:flex;flex-direction:column;gap:5px;min-width:0;flex:1}
+.shortcut-copy strong{color:#2c2e33;font-size:14px;font-weight:760}
+.shortcut-copy small{color:#818188;font-size:11px}
+.shortcut-arrow{font-size:22px;color:#b9ada4;font-weight:400}
+.home .toolbar-row{display:flex;align-items:center;justify-content:space-between;gap:15px;border-bottom:1px solid #e4e3e0;padding:0 0 19px;margin:0 0 4px}
+.home .toolbar-row h2{font-size:22px;letter-spacing:-.035em;color:#2a2d32;font-weight:770}
+.home .section-sub{font-size:12px;color:#8b8b8f;margin:6px 0 0}
+.home .meeting-list{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.home .meeting-card{
+  display:flex;align-items:center;justify-content:space-between;gap:18px;
+  padding:21px 22px!important;background:#fff!important;border:1px solid #e8e7e4!important;
+  border-radius:14px!important;box-shadow:none!important;transition:border-color .16s,box-shadow .16s;
+}
+.home .meeting-card:hover{border-color:#f1c79b!important;box-shadow:0 8px 24px rgba(58,40,24,.04)!important}
+.home .meeting-card .meeting-title{font-size:15px;font-weight:780;color:#292b30;letter-spacing:-.012em;margin-bottom:6px}
+.home .meeting-card .meeting-meta{font-size:11px;color:#87868c;line-height:1.7}
+.home .meeting-card .meeting-main{min-width:0}
+.home .meeting-card .meeting-actions{display:flex;align-items:center;flex-wrap:wrap;gap:7px}
 .home .meeting-card .btn{font-size:11px}
-@media(max-width:850px){.home .metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.home-compact-hero-inner{padding:30px 18px}.home .meeting-card{flex-wrap:wrap;gap:10px}}
-@media(max-width:560px){.home-compact-hero-inner{flex-direction:column;align-items:flex-start;gap:18px}.home-quick-library{grid-template-columns:1fr}.home .page-shell{padding:20px 14px 40px}.home .metric-tile{padding:12px}.home .meeting-card .meeting-actions{width:100%;justify-content:flex-start}.home .meeting-card .action-group{margin-left:auto}}
-
-/* Align the entry page with the meeting workspace and restrained brand palette. */
-.home .metric-tile,.home-library-shortcut{border-color:#e8e3ef;box-shadow:0 5px 20px rgba(54,31,86,.025)}
-.home-compact-hero .btn{background:#68389a;border-color:#68389a;box-shadow:0 7px 20px rgba(104,56,154,.16)}
-.home-compact-hero .btn:hover:not(:disabled){background:#552b83}
-.home .meeting-card:hover{background:#f6f1fa}
+.home .meeting-card .action-group{display:flex;gap:5px}
+.home .meeting-card .btn-primary{background:#fff1e4!important;border-color:#ffe0c0!important;color:#a75105!important}
+.home .meeting-card .btn-primary:hover{background:#ffead5!important}
+.home .meeting-card .btn-danger{color:#bb4a43}
+.home .empty-state{margin-top:16px}
+@media(max-width:1060px){.home .metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.home .meeting-card{flex-wrap:wrap}.home .meeting-card .meeting-actions{width:100%}}
+@media(max-width:680px){
+  .home-compact-hero-inner{padding:27px 16px 13px;align-items:flex-start;flex-direction:column;gap:20px}
+  .home .metric-grid,.home-quick-library{grid-template-columns:1fr}
+  .home .metric-tile{min-height:83px;padding:17px!important}
+  .home .toolbar-row{align-items:flex-start;flex-direction:column}
+  .home .meeting-card{padding:18px!important}
+  .home .meeting-card .action-group{margin-left:auto}
+}
