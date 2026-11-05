@@ -261,7 +261,7 @@ def iter_knowledge_candidates(*, meeting_ids=None, include_embeddings=False,
     sql = (
         "SELECT k.source_kind,k.source_id,k.source_revision,"
         "k.text_content,k.evidence," + embedding_col +
-        " FROM ai_knowledge k LEFT JOIN meeting_records m "
+        ",k.embedding_model FROM ai_knowledge k LEFT JOIN meeting_records m "
         "ON k.source_kind='meeting' AND m.id=k.source_id "
         "WHERE " + " AND ".join(conditions) +
         " ORDER BY k.source_kind,k.source_id,k.chunk_index"
@@ -278,6 +278,7 @@ def iter_knowledge_candidates(*, meeting_ids=None, include_embeddings=False,
                         'source_kind': r[0], 'source_id': r[1],
                         'revision': r[2], 'text': r[3],
                         'evidence': r[4], 'embedding': r[5],
+                        'embedding_model': r[6],
                     }
 
 
