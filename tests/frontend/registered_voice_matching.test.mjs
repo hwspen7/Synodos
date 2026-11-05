@@ -25,7 +25,7 @@ test('WebSocket round trip carries the effective match mode', () => {
   assert.match(ws, /auto_match_saved=auto_match_enabled/)
   assert.match(ws, /"auto_match_active": session\.processor\._auto_profile_mode/)
   assert.match(types, /auto_match_active\?: boolean/)
-  assert.match(page, /serverInfo && !serverInfo\.auto_match_active/)
+  assert.match(page, /serverInfo && \(!serverInfo\.auto_match_active/)
 })
 
 test('the transcript shows a matched voice name with honest provenance', () => {
