@@ -247,3 +247,15 @@
   .meeting-route .meeting-primary{display:flex;flex-direction:column;min-height:65vh}
   .meeting-route .meeting-primary .transcript{flex:1;max-height:65vh;overflow-y:auto}
 }
+
+/* The meeting header owns the transcript title and turn count.
+   Allow transcript rows to start immediately beneath the workspace edge. */
+.meeting-route .meeting-primary .transcript{
+  padding-top:4px;
+}
+.meeting-route .meeting-primary .paragraph:first-child{
+  padding-top:13px;
+}
+.meeting-route .meeting-primary .empty-state{
+  margin:18px 14px;
+}
