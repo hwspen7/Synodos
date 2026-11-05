@@ -112,14 +112,18 @@ class SpeakerSessionIntegrationTests(unittest.TestCase):
 
         class AnonymousTrack:
             def activity_snapshot(self):
-                return np.ones((16, 2), dtype=np.float32)
+                return np.ones((160, 8), dtype=np.float32)
             def is_complete(self):
                 return False
 
         proc.independent_diarization = AnonymousTrack()
-        with patch("sessions.processor.speaker_evidence", return_value={1: {}}), \\
-             patch("sessions.processor.speaker_stats",
-                   return_value={"speaker_switches": 0, "unidentified_segments": 0}):
+        with (
+            patch("sessions.processor.speaker_evidence", return_value={1: {}}),
+            patch("sessions.processor.speaker_stats",
+                  return_value={"speaker_switches": 0, "unidentified_segments": 0}),
+            patch("sessions.processor.choose_caption_speaker",
+                  side_effect=AssertionError("Registered identity must never be reprojected")),
+        ):
             self.assertTrue(proc._rebuild_and_push())
 
         self.assertEqual(len(sent), 1)
