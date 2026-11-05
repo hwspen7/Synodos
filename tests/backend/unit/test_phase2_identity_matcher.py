@@ -48,6 +48,25 @@ class IdentityMatcherTests(unittest.TestCase):
             match_enrolled_voice(people, [0., 0.])["status"], "invalid_probe"
         )
 
+    def test_raw_cosine_match_never_implies_a_verified_identity(self):
+        enrollment = [{
+            "id": "person-A",
+            "vectors": [{"emb": [1., 0.], "embedding_model": "camplus"}],
+        }]
+        result = match_enrolled_voice(enrollment, [1., 0.])
+        self.assertEqual(result["status"], "matched")
+        self.assertFalse(result["enrollment_human_verified"])
+        self.assertEqual(result["evidence_level"], "unverified_enrollment_candidate")
+        self.assertFalse(result["automatic_identity_update"])
+        enrollment[0]["vectors"][0].update({
+            "human_verified": True,
+            "verification_source": "manual_profile_correction",
+        })
+        reviewed = match_enrolled_voice(enrollment, [1., 0.])
+        self.assertTrue(reviewed["enrollment_human_verified"])
+        self.assertEqual(reviewed["evidence_level"], "human_reviewed_enrollment_candidate")
+        self.assertTrue(reviewed["human_review_required"])
+
     def test_low_similarity_not_an_identity(self):
         profile = [{"id": "alice", "vectors": [{"emb": [0., 1.]}]}]
         result = match_enrolled_voice(profile, [1., 0.], threshold=.7)
