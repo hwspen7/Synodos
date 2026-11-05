@@ -173,3 +173,11 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-se
 .page-inline-back{display:inline-flex;align-items:center;gap:6px;color:#9f590f;font-size:12px;font-weight:690;text-decoration:none;margin:0 0 6px}
 .page-inline-back:hover{text-decoration:underline}
 @media(max-width:650px){.workspace-shell .inline-form{flex-direction:column;align-items:stretch}.workspace-shell .inline-form .btn{width:100%}}
+
+/* Speaker library enrollment readiness — eligibility is not verification. */
+.voice-ready-indicator,.voice-needs-sample{
+  display:inline-flex;align-items:center;gap:5px;margin-top:8px;
+  padding:4px 8px;border-radius:7px;font-size:10px;font-weight:700;
+}
+.voice-ready-indicator{background:#edf7ee;color:#367348}
+.voice-needs-sample{background:#fff4e7;color:#a15f12}
