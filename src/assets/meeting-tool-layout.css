@@ -150,3 +150,11 @@
   .meeting-route .meeting-primary .transcript{min-height:60vh}
 }
 @media(prefers-reduced-motion:reduce){.meeting-tool-link{transition:none}}
+
+/* Review opens with a neutral tool chooser, not an automatic AI invocation. */
+.review-tool-welcome{display:flex;flex-direction:column;align-items:flex-start;gap:10px;border:1px dashed #e9dfd3;border-radius:13px;padding:24px 20px;background:#fffaf5}
+.review-welcome-symbol{display:flex;align-items:center;justify-content:center;height:43px;width:43px;border-radius:12px;background:#ffe8d1;color:#a34e00}
+.review-tool-welcome h3{margin:2px 0 0;font-size:15px;font-weight:780;color:#292b30}
+.review-tool-welcome p{margin:0;color:#73767b;font-size:12px;line-height:1.7}
+.review-welcome-action{display:flex;align-items:center;gap:8px;padding:10px 13px;margin-top:9px;border:1px solid #eed0ae;border-radius:9px;background:#fff;color:#a24c00;font-size:12px;font-weight:730}
+.review-welcome-action:hover{background:#fff1e4}
