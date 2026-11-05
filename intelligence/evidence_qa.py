@@ -7,7 +7,6 @@ source attribution, NOT an independent factual assessment of transcripts.
 """
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from phase07.evidence import referenced_hits
