@@ -4,6 +4,7 @@ from __future__ import annotations
 import unittest
 from concurrent.futures import Future
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from speech.turn_integrity import valid_turn_partition
 
@@ -117,7 +118,9 @@ class SessionProcessorTurnIntegrityTests(unittest.TestCase):
             {"start": 1000, "end": 2000, "text": "Hello", "emb": None},
             {"start": 2000, "end": 3000, "text": " world.", "emb": None},
         ])
-        self.assertTrue(proc._collect_speakers())
+        # The legacy splitter remains available for deterministic audits.
+        with patch.dict("os.environ", {"MEETING_CONTENT_FIRST_FUSION": "0"}):
+            self.assertTrue(proc._collect_speakers())
         self.assertEqual(len(proc.segments), 2)
         self.assertEqual(
             "".join(x["text"] for x in proc.segments),
