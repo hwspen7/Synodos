@@ -53,6 +53,9 @@ export function buildTranscriptParagraphs(
       !(seg.overlap_intervals_ms?.length) &&
       seg.start_ms >= last.end_ms &&
       seg.start_ms - last.end_ms <= gapMs &&
+      // An explicitly repeated sentence is a separate utterance, not a
+      // duplicate to be visually glued to its predecessor.
+      last.text.trim() !== text.trim() &&
       seg.end_ms - last.start_ms <= maxDuration &&
       last.text.length + text.length + 1 <= maxChars
     )
