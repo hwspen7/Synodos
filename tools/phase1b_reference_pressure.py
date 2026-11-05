@@ -79,7 +79,7 @@ def diagnose(reports: list[dict], cases: dict[str, dict], root: Path) -> dict:
         if abs(
             pressure["reference_speaker_seconds"]
             - metrics["reference_speaker_seconds"]
-        ) > 0.11:
+        ) > 0.011:
             raise ValueError(f"{meeting}: reference speaker time differs from DER grid")
         diag = report.get("diagnostics") or {}
         count = diag.get("predicted_speakers")
