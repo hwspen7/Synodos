@@ -1,0 +1,64 @@
+name: Registered Speaker Identity
+
+on:
+  push:
+    branches:
+      - feature/meeting-knowledge-quality
+    paths:
+      - "sessions/registered_identity.py"
+      - "sessions/processor.py"
+      - "sessions/session.py"
+      - "storage/speakers.py"
+      - "storage/meetings.py"
+      - "api/websocket.py"
+      - "api/meetings.py"
+      - "src/**"
+      - "tests/backend/test_registered*"
+      - "tests/frontend/registered_voice_matching.test.mjs"
+      - ".github/workflows/registered-speaker-identity.yml"
+  pull_request:
+    paths:
+      - "sessions/**"
+      - "storage/**"
+      - "api/**"
+      - "src/**"
+      - "tests/backend/test_registered*"
+      - "tests/frontend/registered_voice_matching.test.mjs"
+
+jobs:
+  identity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install lightweight recognition test dependencies
+        run: python -m pip install numpy
+      - name: Cross-meeting voice matching tests
+        run: python -m unittest tests.backend.test_registered_voice_matching -v
+      - name: Parse changed backend modules
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          for file in (
+              "sessions/processor.py", "sessions/registered_identity.py",
+              "storage/speakers.py", "storage/meetings.py",
+              "api/websocket.py", "api/meetings.py", "sessions/session.py",
+          ):
+              ast.parse(Path(file).read_text(encoding="utf8"), filename=file)
+          print("Python syntax: passed")
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10"
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Frontend identity integration contracts
+        run: node --test tests/frontend/registered_voice_matching.test.mjs
+      - name: Type-check and build frontend
+        run: pnpm build
