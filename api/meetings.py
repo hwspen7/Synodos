@@ -59,6 +59,7 @@ async def update_meeting_settings(meeting_id: str, payload: MeetingSettingsPaylo
             if meta is None:
                 raise HTTPException(404, "Meeting not found")
             state = meeting_store.load_state(meeting_id) or {}
+            store_revision = (state.get("meta") or {}).get("_store_version")
             state.pop("meta", None)
             state["id"] = meeting_id
             state["title"] = state.get("title") or meta.get("title") or "Untitled Meeting"
@@ -68,7 +69,12 @@ async def update_meeting_settings(meeting_id: str, payload: MeetingSettingsPaylo
             state["hotword_ids"] = list(dict.fromkeys(payload.hotword_ids))
             state["spk_threshold"] = payload.spk_threshold
             state["ui_settings"] = payload.model_dump()
-            meeting_store.save_state(state)
+            try:
+                meeting_store.save_state(
+                    state, expected_store_revision=store_revision,
+                )
+            except ReviewConflict as exc:
+                raise HTTPException(409, str(exc)) from exc
             return {"ok": True, "settings": state["ui_settings"]}
         return await asyncio.to_thread(save)
 
@@ -167,6 +173,7 @@ async def review_saved_segment(
         state = await asyncio.to_thread(meeting_store.load_state, meeting_id)
         if state is None:
             raise HTTPException(404, "meeting not found")
+        store_revision = (state.get("meta") or {}).get("_store_version")
         state.pop("meta", None)
         state["id"] = meeting_id
         if not state.get("segments"):
@@ -196,7 +203,13 @@ async def review_saved_segment(
             raise HTTPException(400, str(exc)) from exc
         except (KeyError, ValueError) as exc:
             raise HTTPException(404, "segment not found") from exc
-        await asyncio.to_thread(meeting_store.save_state, state)
+        try:
+            await asyncio.to_thread(
+                meeting_store.save_state, state,
+                expected_store_revision=store_revision,
+            )
+        except ReviewConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
         segments = await asyncio.to_thread(meeting_store.list_segments, meeting_id)
         reviewed = next(
             (item for item in segments or [] if item["id"] == segment_id),
