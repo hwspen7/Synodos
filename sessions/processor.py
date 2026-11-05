@@ -1931,12 +1931,13 @@ class SessionProcessor(threading.Thread):
             mapper = StableSpeakerChannels(offset=self._independent_id_offset)
             self._nemotron_channels = mapper
         reserved = {
-            label for label in self._participant_label_map.values()
-            if type(label) is int and label > 0
+            label for label in getattr(
+                self, "_participant_label_map", {}
+            ).values() if type(label) is int and label > 0
         }
         reserved.update(
             int(segment["speaker_override_id"])
-            for segment in self.segments
+            for segment in getattr(self, "segments", [])
             if segment.get("speaker_override")
             and type(segment.get("speaker_override_id")) is int
             and segment["speaker_override_id"] > 0
