@@ -12,7 +12,7 @@ function joinCaptionText(left: string, right: string): string {
   const b = right.trimStart()
   if (!a) return b
   if (!b) return a
-  if (/[[-({\uff08\u300a\u300c\u300e\u201c\u2018]$/u.test(a) ||
+  if (/[[({\uff08\u300a\u300c\u300e\u201c\u2018]$/u.test(a) ||
       /[-'\u2019]$/u.test(a) || /^[-'\u2019]/u.test(b) ||
       /^[,!.?;:%)\]}\uff0c\u3002\uff01\uff1f\uff1b\uff1a\u3001\uff09\u300b\u300d\u300f\u201d\u2019]/u.test(b)) {
     return a + b
