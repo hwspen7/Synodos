@@ -50,6 +50,41 @@ class LivePostgresTests(unittest.TestCase):
             speaker_store.delete_speaker(speaker["id"])
             hotword_store.delete(library["id"])
 
+    def test_snapshot_compare_and_swap_preserves_latest_review(self):
+        from sessions.manual_review import ReviewConflict
+        mid = "test_" + uuid.uuid4().hex
+        seg = {
+            "id": 5, "start_sample": 0, "end_sample": 16000,
+            "cluster": -1, "speaker_id": 1, "text": "initial",
+            "revision": 0, "emb": None,
+        }
+        try:
+            self.store.save_state({"id": mid, "segments": [seg]})
+            first = self.store.load_state(mid)
+            second = self.store.load_state(mid)
+            version = first["meta"]["_store_version"]
+            self.assertEqual(version, second["meta"]["_store_version"])
+            second.pop("meta", None)
+            second["segments"][0]["text"] = "confirmed newer revision"
+            self.store.save_state(
+                second, expected_store_revision=version,
+            )
+            first.pop("meta", None)
+            first["segments"][0]["text"] = "stale correction"
+            with self.assertRaises(ReviewConflict):
+                self.store.save_state(
+                    first, expected_store_revision=version,
+                )
+            self.assertEqual(
+                self.store.load_state(mid)["segments"][0]["text"],
+                "confirmed newer revision",
+            )
+            self.assertGreater(
+                self.store.load_state(mid)["meta"]["_store_version"], version,
+            )
+        finally:
+            self.store.delete(mid)
+
     def test_duplicate_segment_rolls_back_entire_save(self):
         mid = "test_" + uuid.uuid4().hex
         seg = {"id": 1, "start_sample": 0, "end_sample": 16000,
