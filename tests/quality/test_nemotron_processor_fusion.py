@@ -133,11 +133,69 @@ class LiveFusionTests(unittest.TestCase):
         activity[100:, 1] = 0.95
         processor.independent_diarization = FakeAcoustics(activity)
         self.assertTrue(processor._rebuild_and_push())
+        # One uncorroborated second voice is NOT enough to publish Speaker 2.
         self.assertEqual([row["speaker_id"]
                           for row in processor.snapshot_state()["segments"]],
-                         [1, 2])
+                         [1, -1])
         self.assertEqual([row["speaker_id"] for row in processor.segments],
                          [17, 18])
+
+    def test_one_human_stays_speaker_one_across_five_nemotron_channels(self):
+        processor = processor_for_test()
+        for index in range(2, 6):
+            processor.segments.append({
+                **processor.segments[0],
+                "id": index,
+                "start_sample": (index - 1) * 32000,
+                "end_sample": index * 32000,
+                "text": f"One person's phrase {index}",
+                "emb": np.array([1.0, .04 * (index - 1)], dtype=np.float32),
+                "speaker_id": 16 + index,
+                "speaker_name": f"Speaker {16 + index}",
+            })
+        processor.segments[0]["end_sample"] = 32000
+        activity = np.zeros((1000, 8), dtype=np.float32)
+        for channel in range(5):
+            activity[channel * 200:(channel + 1) * 200, channel] = .97
+        processor.independent_diarization = FakeAcoustics(activity)
+        self.assertTrue(processor._rebuild_and_push())
+        self.assertEqual(
+            [segment["speaker_id"] for segment in processor.snapshot_state()["segments"]],
+            [1, 1, 1, 1, 1],
+        )
+        self.assertEqual(len(set(processor._nemotron_channels.labels.values())), 1)
+        self.assertEqual(len(processor.segments), 5)
+
+    def test_two_genuine_voices_require_multiple_distinct_acoustic_turns(self):
+        processor = processor_for_test()
+        processor.segments[0]["end_sample"] = 32000
+        for index in (2, 3):
+            processor.segments.append({
+                **processor.segments[0],
+                "id": index,
+                "start_sample": (index - 1) * 32000,
+                "end_sample": index * 32000,
+                "text": f"Distinct voice turn {index}",
+                "emb": np.array([.02 * index, 1.0], dtype=np.float32),
+                "speaker_id": 17 + index,
+                "speaker_name": f"Speaker {17 + index}",
+            })
+        activity = np.zeros((600, 8), dtype=np.float32)
+        activity[:200, 0] = .98
+        activity[200:600, 1] = .98
+        processor.independent_diarization = FakeAcoustics(activity)
+        self.assertTrue(processor._rebuild_and_push())
+        # The first pass confirms a second voice only after its second turn.
+        # A subsequent deterministic rebuild backfills the earlier unknown.
+        self.assertTrue(processor._rebuild_and_push())
+        self.assertEqual(
+            [row["speaker_id"] for row in processor.snapshot_state()["segments"]],
+            [1, 2, 2],
+        )
+        self.assertEqual(
+            [row["text"] for row in processor.snapshot_state()["segments"]],
+            ["Some valid speech", "Distinct voice turn 2", "Distinct voice turn 3"],
+        )
 
     def test_independent_activity_corrects_caption_but_not_acoustic_cluster(self):
         processor = processor_for_test()
