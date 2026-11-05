@@ -101,7 +101,7 @@ def process(job, gateway):
         content='\n'.join(f"[{i+1}] {c['text']}" for i,c in enumerate(chunks))[:45000]
         report=gateway.chat(SYSTEM,'Summarize the supplied media and list verifiable key points. Never invent material.\n'+content, model=gateway.model_for('media'))
         return {'media_id':mid,'indexed_chunks':len(chunks),'summary':report}
-    if kind == 'ask_evidence':
+    if kind in ('ask', 'ask_evidence'):
         from intelligence.evidence_qa import evidence_prompt, verified_excerpt_answer
         query = str(job['payload'].get('question') or '').strip()
         if len(query) < 2 or len(query) > 2000:
@@ -114,21 +114,6 @@ def process(job, gateway):
             model=gateway.model_for('ask'),
         )
         return verified_excerpt_answer(selected, hits)
-    if kind=='ask':
-        query=str(job['payload'].get('question') or '').strip()
-        if len(query)<2 or len(query)>2000:
-            raise ValueError('Question must contain 2-2000 characters')
-        hits=retrieval.search(query,gateway,limit=8)
-        if not hits:
-            return {'answer':'No matching evidence was found.','sources':[]}
-        raw=gateway.structured(SYSTEM,answer_prompt(query,hits), model=gateway.model_for('ask'))
-        nums=raw.get('source_numbers')
-        if not isinstance(nums,list):
-            nums=[]
-        sources=referenced_hits(hits, nums)
-        if not sources:
-            return {'answer':'No attributable evidence was returned.','sources':[]}
-        return {'answer':str(raw.get('answer') or '')[:12000], 'sources':sources}
     if kind == 'context_correction':
         from intelligence.context_correction import review
         revision, segments = _context(job)
