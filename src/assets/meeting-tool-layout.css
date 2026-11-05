@@ -1,0 +1,152 @@
+/* Meeting workstation 3.0: one active utility at a time.
+ * Workspace navigation remains global. Meeting tools belong to a local sidebar.
+ */
+.workspace-shell.meeting-route{--sidebar-width:78px}
+.meeting-route .workspace-brand-copy,
+.meeting-route .workspace-nav-label,
+.meeting-route .workspace-sidebar .workspace-nav-item>span,
+.meeting-route .sidebar-help-card,
+.meeting-route .workspace-collapse-btn span{display:none}
+.meeting-route .workspace-brand{padding-left:3px}
+.meeting-route .workspace-sidebar .workspace-nav-item,
+.meeting-route .workspace-collapse-btn{justify-content:center;padding-left:0;padding-right:0}
+.meeting-route .workspace-sidebar .sidebar-divider{margin-left:2px;margin-right:2px}
+.meeting-route .workspace-topbar{height:62px}
+.meeting-route .meeting-page{padding-top:22px;max-width:1750px}
+.meeting-route .compact-meeting-header{gap:15px;padding:1px 0 20px;border-bottom:0}
+.meeting-route .compact-meeting-titles h1{font-size:clamp(23px,2vw,29px)}
+.meeting-route .toolbar-secondary-actions{border-right:0;padding-right:0}
+.meeting-route .compact-meeting-toolbar .btn{border:1px solid #e8e6e2!important;background:#fff!important;color:#56585e}
+.meeting-route .compact-meeting-toolbar .compact-record-action{
+  background:#b65300!important;border-color:#b65300!important;color:#fff!important;
+  min-width:155px;border-radius:10px;box-shadow:none
+}
+.meeting-route .compact-meeting-toolbar .compact-record-action:hover:not(:disabled){background:#994400!important;border-color:#994400!important}
+.meeting-route .compact-meeting-toolbar .compact-record-action.danger{background:#c7443c!important;border-color:#c7443c!important}
+.meeting-route .meeting-workspace-summary{
+  margin:0 0 18px;min-height:50px;background:#fff;border:1px solid #ebe8e3;
+  border-radius:12px;padding:10px 15px
+}
+.meeting-route .meeting-workspace{
+  display:grid;grid-template-columns:168px minmax(0,1fr);
+  gap:14px;align-items:stretch;position:relative;min-height:65vh;
+}
+.meeting-route .meeting-workspace.tool-panel-open{
+  grid-template-columns:168px minmax(350px,1fr) minmax(370px,450px);
+}
+.meeting-tool-sidebar{
+  display:flex;flex-direction:column;position:sticky;top:76px;align-self:start;
+  min-height:clamp(430px,68vh,840px);padding:17px 9px;
+  border:1px solid #e9e7e3;background:#fff;border-radius:14px;min-width:0
+}
+.meeting-tool-nav-title{padding:6px 13px 10px;color:#a0a0a3;font-size:10px;font-weight:800;letter-spacing:.12em}
+.meeting-tool-section-title{margin-top:21px;padding-top:16px;border-top:1px solid #eeece8}
+.meeting-tool-link{
+  display:flex;align-items:center;gap:11px;width:100%;min-height:43px;
+  padding:9px 12px;text-align:left;border:0;background:transparent;
+  border-radius:9px;color:#666a71;font-size:12px;font-weight:670;cursor:pointer;
+  transition:background .14s,color .14s
+}
+.meeting-tool-link svg{flex:none}
+.meeting-tool-link:hover{background:#fff7f0;color:#9d4900}
+.meeting-tool-link.active{background:#fff0e2;color:#9e4700;font-weight:770}
+.meeting-tool-unsaved{width:6px;height:6px;border-radius:50%;margin-left:auto;background:#eb7100}
+.meeting-tool-nav-bottom{display:flex;align-items:center;gap:8px;margin-top:auto;padding:13px 10px 3px;color:#8a8b91;font-size:11px;border-top:1px solid #eeece8}
+.meeting-tool-status-dot{width:7px;height:7px;border-radius:50%;background:#a7a9ad;flex:none}
+.meeting-tool-status-dot.recording{background:#db4e3b}
+.meeting-route .meeting-primary{
+  min-height:clamp(510px,70vh,920px);border:1px solid #e9e7e3;
+  box-shadow:none;border-radius:14px;min-width:0
+}
+.meeting-route .meeting-primary .transcript{height:clamp(460px,65vh,890px);min-height:420px}
+.meeting-route .transcript-panel-heading{padding:20px 24px}
+.meeting-route .meeting-detail-panel{
+  display:flex;flex-direction:column;min-width:0;min-height:0;
+  height:clamp(510px,70vh,920px);overflow:hidden;
+  background:#fff;border:1px solid #e9e7e3;border-radius:14px;
+  box-shadow:none;
+}
+.meeting-detail-header{
+  flex:none;display:flex;align-items:center;justify-content:space-between;
+  gap:10px;padding:20px 20px 17px;border-bottom:1px solid #eceae6
+}
+.meeting-detail-header h2{margin:3px 0 0;font-size:18px;font-weight:780;letter-spacing:-.03em;color:#292b30}
+.meeting-detail-header .transcript-eyebrow{font-size:10px}
+.meeting-detail-scroll{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;padding:17px}
+.meeting-review-tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-bottom:17px}
+.meeting-review-tools button{
+  display:flex;align-items:center;gap:8px;min-height:43px;padding:8px 10px;
+  border:1px solid #e8e7e3;border-radius:9px;background:#fff;color:#62656b;
+  text-align:left;font-size:11px;font-weight:690;
+}
+.meeting-review-tools button svg{flex:none}
+.meeting-review-tools button:hover{border-color:#efc79f;background:#fffaf6}
+.meeting-review-tools button.active{border-color:#f0c99f;background:#fff2e5;color:#9b4900}
+.meeting-selected-tool{min-width:0}
+.meeting-selected-tool .intelligence-panel,
+.meeting-selected-tool .context-review,
+.meeting-selected-tool .speaker-review,
+.meeting-selected-tool .phase2-evidence{margin:0;border:0;padding:0;border-radius:0;box-shadow:none}
+.meeting-selected-tool .intelligence-panel{border:1px solid #ebe8e4;border-radius:12px;overflow:hidden}
+.meeting-selected-tool .intelligence-panel .workspace-head{padding:15px 13px 9px;gap:8px;flex-wrap:wrap}
+.meeting-selected-tool .intelligence-panel .workspace-meta{padding:0 13px 12px;gap:5px}
+.meeting-selected-tool .intelligence-panel .workspace-body{padding:13px 11px}
+.meeting-selected-tool .intelligence-panel .mode-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.meeting-selected-tool .intelligence-panel .action-grid,
+.meeting-selected-tool .intelligence-panel .review-grid{grid-template-columns:1fr}
+.meeting-selected-tool .intelligence-panel .overview-grid{grid-template-columns:1fr}
+.meeting-selected-tool .intelligence-panel .workspace-nav{overflow-x:auto}
+.meeting-selected-tool .intelligence-panel .nav-tab{min-width:max-content}
+.meeting-detail-scroll .meeting-config-panel,.meeting-detail-scroll .meeting-recordings-panel{
+  margin:0;padding:0;border:0;box-shadow:none;background:transparent;border-radius:0
+}
+.meeting-detail-scroll .config-panel-heading{display:none}
+.meeting-detail-scroll .meeting-config-grid{display:flex;flex-direction:column;gap:11px}
+.meeting-detail-scroll .config-group{padding:16px;min-height:0}
+.meeting-detail-scroll .config-group:last-child{grid-column:auto}
+.meeting-detail-scroll .config-group-title{min-height:0}
+.meeting-detail-scroll .config-panel-footer{gap:12px;align-items:stretch;flex-wrap:wrap}
+.meeting-detail-scroll .config-panel-footer .btn{width:100%}
+.meeting-detail-scroll .recording-card-grid{display:grid;grid-template-columns:1fr;gap:12px}
+.meeting-detail-scroll .recording-media-card{padding:15px}
+.meeting-detail-scroll .recording-media-card audio{height:40px}
+.meeting-detail-scroll .recordings-toolbar{padding:4px 0 13px}
+.meeting-route .meeting-action-notice{margin:0 0 15px;padding:12px 14px}
+.meeting-route .notice-copy p{font-size:11px}
+.meeting-route .notice-actions button{font-size:11px}
+.meeting-route .meeting-config-panel button:focus-visible,
+.meeting-route .meeting-tool-link:focus-visible,
+.meeting-route .meeting-review-tools button:focus-visible{
+  outline:3px solid rgba(235,113,0,.28);outline-offset:2px
+}
+@media(max-width:1360px){
+  .meeting-route .meeting-workspace.tool-panel-open{grid-template-columns:144px minmax(280px,1fr) minmax(325px,390px)}
+  .meeting-route .meeting-workspace{grid-template-columns:144px minmax(0,1fr)}
+}
+@media(max-width:1100px){
+  .meeting-route .meeting-workspace.tool-panel-open,
+  .meeting-route .meeting-workspace{grid-template-columns:112px minmax(0,1fr)}
+  .meeting-tool-link{gap:8px;padding:9px 8px;font-size:11px}
+  .meeting-tool-nav-title{padding-left:8px}
+  .meeting-tool-nav-bottom{font-size:10px}
+  .meeting-route .meeting-detail-panel{
+    position:fixed;right:14px;top:79px;bottom:16px;z-index:40;
+    width:min(440px,calc(100vw - 110px));height:auto;
+    box-shadow:0 18px 60px rgba(33,28,24,.19)
+  }
+}
+@media(max-width:720px){
+  .meeting-route .meeting-workspace.tool-panel-open,
+  .meeting-route .meeting-workspace{display:flex;flex-direction:column;gap:10px}
+  .meeting-route .meeting-tool-sidebar{
+    position:static;min-height:0;flex-direction:row;align-items:center;
+    padding:8px;gap:4px;overflow-x:auto;border-radius:11px
+  }
+  .meeting-tool-nav-title,.meeting-tool-nav-bottom{display:none}
+  .meeting-tool-link{width:auto;min-width:max-content;gap:7px;min-height:39px;padding:7px 10px}
+  .meeting-route .meeting-detail-panel{position:fixed;top:63px;right:0;bottom:0;left:0;width:100%;height:auto;border-radius:14px 14px 0 0}
+  .meeting-route .compact-meeting-header{flex-direction:column;align-items:stretch}
+  .meeting-route .compact-meeting-toolbar{width:100%;justify-content:space-between}
+  .meeting-route .meeting-primary .transcript{min-height:60vh}
+}
+@media(prefers-reduced-motion:reduce){.meeting-tool-link{transition:none}}
