@@ -147,6 +147,7 @@ class MeetingStore:
             "text_confidence": s.get("asr_confidence"),
             "timestamp_quality": s.get("timestamp_quality", "segment"),
             "speaker_status": s.get("speaker_status", "unknown"),
+            "speaker_uncertain": bool(s.get("speaker_uncertain", False)),
             "speaker_similarity": s.get("speaker_similarity"),
             "speaker_margin": s.get("speaker_margin"),
             "speaker_evidence_count": s.get("speaker_evidence_count", 0),
