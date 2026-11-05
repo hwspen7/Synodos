@@ -169,6 +169,7 @@ export interface MeetingDetail {
     vad_threshold?: number
     rec_threshold?: number
     participant_ids?: string[]
+    auto_match_saved?: boolean
     hotword_ids?: string[]
     spk_threshold?: number
   }
