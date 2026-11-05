@@ -303,3 +303,63 @@
   display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:7px;
   background:#fff1e4;color:#995000;font-size:10px;font-weight:700;
 }
+
+
+/* Simplified review: three clear destinations and no nested launch screen. */
+.meeting-detail-scroll .meeting-review-tools{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;
+  position:sticky;top:-17px;z-index:3;
+  margin:0 0 18px;padding:4px;
+  border:1px solid #e9e7e3;border-radius:11px;background:#f7f6f4;
+}
+.meeting-detail-scroll .meeting-review-tools button{
+  display:flex;justify-content:center;text-align:center;align-items:center;
+  min-height:37px;min-width:0;padding:8px 5px;
+  border:1px solid transparent;border-radius:8px;background:transparent;
+  color:#707177;font-weight:690;font-size:11px;
+}
+.meeting-detail-scroll .meeting-review-tools button:hover{background:#fff9f2;color:#9f4b00}
+.meeting-detail-scroll .meeting-review-tools button.active{
+  background:#fff;border-color:#e8e4dd;color:#a04d00;
+  box-shadow:0 2px 6px rgba(41,30,19,.06)
+}
+.review-focus-panel{min-width:0;display:flex;flex-direction:column;gap:14px}
+.review-focus-heading h3{margin:0;color:#282a30;font-weight:770;font-size:15px}
+.review-focus-heading p{margin:7px 0 0;color:#787980;font-size:11px;line-height:1.65}
+.review-focus-panel .context-review{margin-top:3px}
+.review-focus-panel .context-head{flex-direction:column;align-items:stretch}
+.review-focus-panel .context-head h3{display:none}
+.review-focus-panel .context-actions{align-items:stretch;gap:9px}
+.review-focus-panel .context-actions button{white-space:normal}
+.review-speaker-list{display:flex;flex-direction:column;gap:7px}
+.review-speaker-list button{
+  display:flex;align-items:center;gap:11px;min-width:0;width:100%;
+  text-align:left;padding:11px;border:1px solid #e8e6e2;
+  background:#fff;border-radius:10px;color:#3b3d43;cursor:pointer
+}
+.review-speaker-list button:hover:not(:disabled){border-color:#efc79c;background:#fff9f3}
+.review-speaker-list button.active{border-color:#eab778;background:#fff3e7}
+.review-speaker-list button:disabled{opacity:.6;cursor:not-allowed}
+.review-speaker-avatar{flex:none;display:flex;align-items:center;justify-content:center;width:35px;height:35px;border-radius:10px;background:#fff0e1;color:#ae5300}
+.review-speaker-details{display:flex;flex:1;min-width:0;flex-direction:column;gap:3px}
+.review-speaker-details strong{font-size:12px;font-weight:730;overflow-wrap:anywhere}
+.review-speaker-details small{font-size:11px;color:#878990}
+.review-tool-hint,.review-tool-empty{padding:14px;border-radius:10px;background:#faf9f7;font-size:11px;color:#81838a;line-height:1.65}
+.review-tool-hint{margin:0}
+.review-advanced-section{margin-top:6px;border-top:1px solid #ebe9e5;padding-top:8px}
+.review-advanced-toggle{
+  display:flex;align-items:center;justify-content:space-between;
+  width:100%;min-height:39px;border:0;background:transparent;
+  color:#8e5e32;padding:8px 0;text-align:left;font-size:11px;font-weight:710
+}
+.review-advanced-toggle:hover{color:#a64f00}
+.review-advanced-section .speaker-review{padding-top:12px}
+.review-focus-panel .phase2-evidence{border:1px solid #ebe7e1;padding:16px;border-radius:11px}
+.meeting-review-tools button:focus-visible,
+.review-speaker-list button:focus-visible,
+.review-advanced-toggle:focus-visible{
+  outline:3px solid rgba(235,113,0,.28);outline-offset:2px
+}
+@media(max-width:400px){
+  .meeting-detail-scroll .meeting-review-tools button{font-size:10px}
+}
