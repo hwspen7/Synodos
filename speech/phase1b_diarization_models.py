@@ -11,7 +11,10 @@ import math
 import os
 from pathlib import Path
 import time
+import wave
 from typing import Any
+
+import numpy as np
 
 
 MODELS = {
@@ -72,6 +75,29 @@ def _validate_model_path(model_id: str, allow_download: bool) -> str:
     }:
         raise ModelSetupError("Only allowlisted model repositories may be downloaded")
     return model_id
+
+
+def _frozen_pcm16_wave(wav_path: Path, duration_ms: int) -> tuple[np.ndarray, int]:
+    """Decode the pinned AMI 16-kHz PCM16 WAV without TorchCodec or FFmpeg.
+
+    Only the benchmark's exact PCM format is supported. Never silently
+    resample, average channels, or truncate a reference-backed recording.
+    """
+    try:
+        with wave.open(str(wav_path), "rb") as source:
+            sample_rate = source.getframerate()
+            count = source.getnframes()
+            if (source.getnchannels() != 1 or source.getsampwidth() != 2
+                    or source.getcomptype() != "NONE" or sample_rate != 16000):
+                raise ValueError("Frozen AMI audio must be mono PCM16 at 16 kHz")
+            data = source.readframes(count)
+    except (OSError, EOFError, wave.Error) as exc:
+        raise ValueError("Frozen AMI WAV header or frames are invalid") from exc
+    if (count == 0 or len(data) != count * 2
+            or abs(round(1000.0 * count / sample_rate) - duration_ms) > 30):
+        raise ValueError("Frozen AMI PCM data or duration mismatch")
+    values = np.frombuffer(data, dtype="<i2").astype(np.float32) / 32768.0
+    return values, sample_rate
 
 
 def run_model(
@@ -136,7 +162,16 @@ def run_model(
                     "the optional model weights are non-commercial."
                 ) from exc
     try:
-        result = pipeline(str(wav_path))
+        if model == "pyannote":
+            # pyannote accepts in-memory waveforms. The frozen corpus is
+            # mono PCM16; bypassing path-based TorchCodec decoding prevents
+            # unnecessary Windows FFmpeg shared-DLL dependencies.
+            import torch
+            pcm, sample_rate = _frozen_pcm16_wave(wav_path, duration_ms)
+            waveform = torch.from_numpy(pcm).unsqueeze(0)
+            result = pipeline({"waveform": waveform, "sample_rate": sample_rate})
+        else:
+            result = pipeline(str(wav_path))
     except Exception as exc:
         raise ModelSetupError(f"{model} offline inference failed") from exc
     turns = _normalize_turns(result, duration_ms)
