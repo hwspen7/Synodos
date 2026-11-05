@@ -49,3 +49,13 @@ test('speaker library exposes enrollment eligibility without claiming verificati
   assert.match(speakerPage, /Needs a clean CAM\+\+ sample/)
   assert.match(speakerPage, /vector\.duration_s >= 2/)
 })
+
+test('saved meeting segments expose the same voice-match fields as live segments', () => {
+  const live = types.slice(types.indexOf('export interface TranscriptSegment {'), types.indexOf('export interface ServerTranscript'))
+  const saved = types.slice(types.indexOf('export interface MeetingSegment {'), types.indexOf('export interface HealthInfo'))
+  for (const field of ['matched_profile_id', 'matched_profile_name', 'speaker_match_similarity']) {
+    assert.match(live, new RegExp('\\b' + field + '\\?:'))
+    assert.match(saved, new RegExp('\\b' + field + '\\?:'))
+    assert.ok(page.includes(field + ': s.' + field), 'Saved transcript mapper omitted ' + field)
+  }
+})
