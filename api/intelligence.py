@@ -79,7 +79,7 @@ async def submit_job(payload:JobRequest):
             payload.payload['target'] = translation_target(desired)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-    if payload.meeting_id is None and payload.kind not in ('ask','index_media','analyze_media'):
+    if payload.meeting_id is None and payload.kind not in ('ask','ask_evidence','index_media','analyze_media'):
         raise HTTPException(400,'Meeting ID required')
     mid=_meeting_id(payload.meeting_id) if payload.meeting_id else None
     if len(str(payload.payload))>15000:
@@ -182,6 +182,19 @@ async def ask(payload:AnswerRequest):
     _enabled()
     jid=await asyncio.to_thread(store.enqueue,'ask',None,{'question':payload.question})
     return {'job_id':jid,'status':'queued'}
+
+@router.post('/ask/evidence')
+async def ask_evidence(payload: AnswerRequest):
+    """Queue a quote-only, source-validated answer; never trust LLM prose."""
+    _enabled()
+    jid = await asyncio.to_thread(
+        store.enqueue, 'ask_evidence', None, {'question': payload.question}
+    )
+    return {
+        'job_id': jid, 'status': 'queued',
+        'answer_policy': 'verbatim_source_quotes_only',
+    }
+
 
 
 @router.get('/meetings/{meeting_id}/translations/{language}')
