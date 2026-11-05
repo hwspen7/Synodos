@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Validate strict release contracts
-        run: python -m unittest tests.release.test_meeting_knowledge_quality -v
+        run: python -m unittest tests.release.test_meeting_knowledge_quality tests.release.test_meeting_reference_corpus -v
       - name: Compile new release tools
         run: >-
           python -m compileall -q
