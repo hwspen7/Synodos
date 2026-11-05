@@ -302,6 +302,9 @@ async function loadSavedTranscript(): Promise<void> {
         overlap_intervals_ms: s.overlap_intervals_ms,
         caption_projection_status: s.caption_projection_status,
         speaker_diarization_source: s.speaker_diarization_source,
+        matched_profile_id: s.matched_profile_id,
+        matched_profile_name: s.matched_profile_name,
+        speaker_match_similarity: s.speaker_match_similarity,
       })),
     })
   } catch (err) {
@@ -840,6 +843,10 @@ onBeforeUnmount(() => stopInternal())
           <div class="para-head">
             <span class="speaker-dot" :style="{ background: para.color }"></span>
             <span class="speaker-name">{{ para.speaker_name || `Speaker ${para.speaker_id}` }}</span>
+            <span v-if="segments.some(seg => para.segmentIds.includes(seg.id) && seg.speaker_diarization_source === 'registered_voiceprint')"
+              class="speaker-registered-label" title="Matched to a saved voiceprint. Verify important identities before relying on them.">
+              <AppIcon name="check" :size="12" /> Voice match
+            </span>
             <!-- Caption chunk count stays internal; a badge next to Speaker 1
                  looked like a phantom Speaker 12 or Speaker 13. -->
             <span class="para-time">{{ formatTime(para.start_ms) }} \u2013 {{ formatTime(para.end_ms) }}</span>
