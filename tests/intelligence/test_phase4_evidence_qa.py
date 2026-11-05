@@ -80,7 +80,8 @@ class EvidenceQATests(unittest.TestCase):
                 }]}
             def embed(self, *_args, **_kwargs):
                 return None
-        with patch("intelligence.worker.retrieval.search", return_value=HITS):
+        with patch("intelligence.worker.retrieval.search", return_value=HITS), \
+             patch("intelligence.worker.store.evidence_revisions_current", return_value=True):
             result = process({
                 "id": "job", "kind": "ask_evidence",
                 "meeting_id": None,
@@ -101,7 +102,8 @@ class EvidenceQATests(unittest.TestCase):
                     "quote": "We approved the revised camera calibration on Monday.",
                 }]}
         model = FakeGateway()
-        with patch("intelligence.worker.retrieval.search", return_value=HITS):
+        with patch("intelligence.worker.retrieval.search", return_value=HITS), \
+             patch("intelligence.worker.store.evidence_revisions_current", return_value=True):
             result = process({
                 "id": "job", "kind": "ask_evidence",
                 "payload": {"question": "What was approved?"},
@@ -137,13 +139,51 @@ class EvidenceQATests(unittest.TestCase):
                         "quote": "The benchmark release has not yet been approved.",
                     }],
                 }
-        with patch("intelligence.worker.retrieval.search", return_value=HITS):
+        with patch("intelligence.worker.retrieval.search", return_value=HITS), \
+             patch("intelligence.worker.store.evidence_revisions_current", return_value=True):
             result = process({
                 "id": "job", "kind": "ask",
                 "payload": {"question": "Did we approve the benchmark release?"},
             }, Gateway())
         self.assertEqual(result["status"], "verbatim_citations_verified")
         self.assertNotIn("Fabricated direct answer", result["answer"])
+
+    def test_changed_source_during_inference_fails_without_delivering_quote(self):
+        class Gateway:
+            def model_for(self, _mode):
+                return "saluki-test"
+            def structured(self, *_args, **_kwargs):
+                return {"quotes": [{
+                    "source_number": 1,
+                    "quote": "We approved the revised camera calibration on Monday.",
+                }]}
+        with patch("intelligence.worker.retrieval.search", return_value=HITS), \
+             patch("intelligence.worker.store.evidence_revisions_current", return_value=False):
+            with self.assertRaisesRegex(ValueError, "changed during inference"):
+                process({
+                    "id": "test-job", "kind": "ask_evidence",
+                    "payload": {"question": "What was approved?"},
+                }, Gateway())
+
+    def test_meeting_scope_is_passed_through_to_retrieval(self):
+        class Gateway:
+            def model_for(self, _mode):
+                return "saluki-test"
+            def structured(self, *_args, **_kwargs):
+                return {"quotes": []}
+        with patch("intelligence.worker.retrieval.search", return_value=[]) as search:
+            result = process({
+                "id": "test-job", "kind": "ask_evidence",
+                "payload": {
+                    "question": "Where is Atlas?",
+                    "meeting_ids": ["meeting_A"],
+                },
+            }, Gateway())
+        self.assertEqual(result["status"], "abstained")
+        search.assert_called_once_with(
+            "Where is Atlas?", search.call_args.args[1], limit=8,
+            meeting_ids=["meeting_A"],
+        )
 
     def test_missing_source_fails_closed_without_model_inference(self):
         class Gateway:
