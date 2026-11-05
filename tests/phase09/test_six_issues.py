@@ -81,7 +81,10 @@ class Phase09PipelineTests(unittest.TestCase):
             {"start": 4000, "end": 7800, "text": "gamma delta",
              "emb": np.array([0.0, 1.0]), "ambiguous": False},
         ])
-        with patch("sessions.processor.submit_speaker_analysis", return_value=done):
+        # Retain the prior split contract only when explicitly testing the
+        # legacy mode. Content-first mode preserves the original ASR turn.
+        with (patch("sessions.processor.submit_speaker_analysis", return_value=done),
+              patch.dict("os.environ", {"MEETING_CONTENT_FIRST_FUSION": "0"})):
             self.assertTrue(processor._cycle(final=True))
         self.assertEqual([item["text"] for item in processor.segments],
                          ["Alpha beta", "gamma delta"])
