@@ -35,7 +35,7 @@ test('desktop meeting fills viewport and only content panes scroll', () => {
 test('existing transcript and tool functionality are retained', () => {
   for (const name of ['buildTranscriptParagraphs','selectMeetingTool','loadRecordings',
     'saveMeeting()','copyTranscript','applySpeechSettings()','IntelligencePanel',
-    'Phase2IdentityReviewPanel']) assert.ok(page.includes(name))
+    'SpeakerContributionPanel']) assert.ok(page.includes(name))
 })
 
 test('meeting template and layout style are structurally balanced', () => {
