@@ -60,6 +60,10 @@ export interface TranscriptSegment {
   }>
   caption_projection_status?: string
   speaker_diarization_source?: string
+  /** A registered voiceprint is a biometric candidate, not human confirmation. */
+  matched_profile_id?: string | null
+  matched_profile_name?: string | null
+  speaker_match_similarity?: number | null
   /** UI-only pointer to the editable canonical ASR segment. */
   source_segment_id?: number
   revision?: number
