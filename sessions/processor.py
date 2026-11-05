@@ -1772,7 +1772,15 @@ class SessionProcessor(threading.Thread):
         best_sim = -1.0
         for p in self._participants:
             for vec in p["vectors"]:
-                sim = float(np.dot(emb, vec["emb"]))
+                # Do not mix ECAPA vectors with CAM++ turn embeddings.
+                if vec.get("embedding_model", "camplus") != "camplus":
+                    continue
+                reference = np.asarray(vec["emb"], dtype=np.float32).reshape(-1)
+                if reference.shape != np.asarray(emb).shape:
+                    continue
+                sim = float(np.dot(emb, reference))
+                if not np.isfinite(sim):
+                    continue
                 if sim > best_sim:
                     best_sim = sim
                     best_pid = p["id"]
