@@ -66,7 +66,7 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-se
 .workspace-shell .page-title{font-size:27px;font-weight:770;letter-spacing:-.045em}
 .workspace-shell .page-sub{font-size:13px;color:var(--ui-muted);line-height:1.6}
 .workspace-shell .btn{border-radius:10px;min-height:38px;font-size:12px;font-weight:690;box-shadow:none;transition:background .16s,border-color .16s}
-.workspace-shell .btn-primary{background:#eb7100;border-color:#eb7100;color:#fff;box-shadow:none}
+.workspace-shell .btn-primary{background:#b65300;border-color:#b65300;color:#fff;box-shadow:none}
 .workspace-shell .btn-primary:hover:not(:disabled){background:#bd5900;border-color:#bd5900;filter:none;box-shadow:none}
 .workspace-shell .btn-ghost{background:#fff;border:1px solid #e5e4e2;color:#555960}
 .workspace-shell .btn-ghost:hover:not(:disabled){border-color:#f2c295;background:#fff9f3;color:#a84d00}
@@ -143,3 +143,33 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-se
   .workspace-shell .speaker-new .panel,.workspace-shell .hotword-new .panel{padding:20px}
 }
 @media(prefers-reduced-motion:reduce){.workspace-sidebar,.workspace-nav-item,.workspace-shell .btn{transition:none}}
+
+
+/* Shared voiceprint workflow, segmented controls and recorder */
+.workspace-shell .vector-adder{min-width:0}
+.workspace-shell .tab-bar{display:flex;gap:5px;padding:5px;background:#f6f5f3;border:1px solid #e9e7e3;border-radius:12px;margin-bottom:20px}
+.workspace-shell .tab-btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:39px;padding:8px 14px;border-radius:9px;border:0;background:transparent;color:#74757c;font-size:12px;font-weight:710;flex:1}
+.workspace-shell .tab-btn:hover{background:#fffaf4;color:#a75000}
+.workspace-shell .tab-btn.active{background:#fff;color:#a94d00;box-shadow:0 1px 5px rgba(30,20,10,.08)}
+.workspace-shell .read-card{border:1px solid #e9e6df;border-radius:13px;background:#fffaf5;padding:21px;margin-bottom:20px}
+.workspace-shell .read-card-head{display:flex;align-items:center;gap:9px;color:#a85205;font-size:12px;font-weight:760}
+.workspace-shell .read-passage{border-left:3px solid #eb7100;padding:5px 0 5px 15px;color:#4b4642;font-size:14px;line-height:1.8;margin:15px 0 0}
+.workspace-shell .record-btn{min-height:43px;padding:10px 17px;border:1px solid #b65300;background:#b65300;color:#fff;border-radius:11px;font-weight:730}
+.workspace-shell .record-btn:hover:not(:disabled){background:#974400}
+.workspace-shell .record-btn.recording{background:#bd3c33;border-color:#bd3c33}
+.workspace-shell .rec-meta{color:#686a70;font-size:12px;margin-top:13px}
+.workspace-shell .rec-time{font-variant-numeric:tabular-nums;font-weight:760}
+.workspace-shell .meeting-pick-area{border:1px solid #e9e7e3;border-radius:13px;background:#fff;padding:18px}
+.workspace-shell .seg-select-list{border:1px solid #e8e7e4;border-radius:11px}
+.workspace-shell .seg-check-row{border-bottom-color:#ebeae6}
+.workspace-shell .seg-check-row.checked{background:#fff7ee}
+.workspace-shell .adder-results{background:#fffaf4;border:1px solid #f0dfcc;border-radius:12px;padding:16px;margin-top:18px}
+.workspace-shell .vector-result{border-color:#eee8e0}
+.workspace-shell .ok-badge{background:#eaf6ed;color:#347247}
+.workspace-shell .hint-text{line-height:1.65}
+.workspace-shell .inline-form{gap:10px}
+.workspace-shell .inline-form .text-input{min-width:0}
+.page-section-kicker{display:inline-block;margin-bottom:7px;font-size:10px;color:#b3611b;letter-spacing:.13em;font-weight:800}
+.page-inline-back{display:inline-flex;align-items:center;gap:6px;color:#9f590f;font-size:12px;font-weight:690;text-decoration:none;margin:0 0 6px}
+.page-inline-back:hover{text-decoration:underline}
+@media(max-width:650px){.workspace-shell .inline-form{flex-direction:column;align-items:stretch}.workspace-shell .inline-form .btn{width:100%}}
