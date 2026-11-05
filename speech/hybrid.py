@@ -118,11 +118,22 @@ class HybridEngine:
         return self._wrap(primary, audit)
 
     def _auto(self, samples, terms):
-        baseline = self._call("whisper", samples, "auto", terms)
         audit = {"policy": POLICY, "mode": "whisper_window_language_detection",
                  "qwen_attempts": 0, "qwen_accepted": 0,
                  "qwen_failed": 0, "whisper_retained": 0,
                  "uncertain_language": 0}
+        try:
+            baseline = self._call("whisper", samples, "auto", terms)
+        except Exception as exc:
+            audit["whisper_error"] = type(exc).__name__
+            try:
+                recovered = self._call("qwen3", samples, "auto", terms)
+                audit["whisper_failure_recovered"] = bool(has_text(recovered))
+                if has_text(recovered):
+                    return self._wrap(recovered, audit)
+            except Exception as second:
+                audit["qwen_error"] = type(second).__name__
+            raise RuntimeError("Both automatic-language ASR paths failed") from exc
         if not baseline.utterances:
             if acoustic_activity(samples):
                 try:

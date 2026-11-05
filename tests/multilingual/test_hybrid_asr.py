@@ -82,6 +82,22 @@ class HybridRoutingTests(unittest.TestCase):
         self.assertEqual(result.utterances[0].text, "reference")
         qwen.recognize.assert_not_called()
 
+    def test_auto_uses_qwen_if_whisper_crashes(self):
+        whisper, qwen = Mock(), Mock()
+        whisper.recognize.side_effect = RuntimeError("whisper unavailable")
+        qwen.recognize.return_value = sample("backup", "fr")
+        result = HybridEngine(whisper, qwen).recognize(voiced(), "auto")
+        self.assertEqual(result.utterances[0].text, "backup")
+        self.assertTrue(
+            result.recovery_diagnostics["hybrid"]["whisper_failure_recovered"]
+        )
+
+    def test_prewarm_checks_both_backends(self):
+        whisper, qwen = Mock(), Mock()
+        HybridEngine(whisper, qwen)._get_model()
+        whisper._get_model.assert_called()
+        qwen.prewarm.assert_called_once()
+
     def test_auto_qwen_error_keeps_whisper(self):
         whisper, qwen = Mock(), Mock()
         whisper.recognize.return_value = sample("baseline", "ru")

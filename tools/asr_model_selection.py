@@ -154,6 +154,12 @@ def record_predictions(manifest_path: Path, model: str, output: Path,
         raise ValueError("ASR prediction file must stay in frozen E-drive benchmark root")
     configure_cache(ROOT)
     engine = engine_for(model)
+    hybrid_preload_s = None
+    if model == "hybrid-whisper-qwen17":
+        warm_started = time.perf_counter()
+        engine._get_model()
+        hybrid_preload_s = round(time.perf_counter() - warm_started, 4)
+        print("HYBRID PREWARM", hybrid_preload_s, "seconds", flush=True)
     records = []
     for index, case in enumerate(manifest["cases"]):
         samples = load_audio(Path(case["audio_path"]))
@@ -169,7 +175,8 @@ def record_predictions(manifest_path: Path, model: str, output: Path,
             "id": case["id"], "audio_sha256": case["audio_sha256"],
             "text": text, "detected_language": detected,
             "latency_seconds": seconds,
-            "first_call_includes_model_load": index == 0,
+            "first_call_includes_model_load":
+                index == 0 and hybrid_preload_s is None,
             "error": error,
         })
         print("ASR", model, index + 1, "of", len(manifest["cases"]),
@@ -178,6 +185,7 @@ def record_predictions(manifest_path: Path, model: str, output: Path,
         "schema": PREDICTIONS_SCHEMA, "model": model,
         "backend": MODELS[model][0], "model_id": MODELS[model][1],
         "language_mode": language_mode,
+        "hybrid_preload_seconds": hybrid_preload_s,
         "manifest_sha256": sha, "manifest_path": str(manifest_path.resolve()),
         "benchmark_role": manifest["benchmark_role"],
         "observations": records,

@@ -74,3 +74,14 @@ are fixed independently of the sealed FLEURS test cohort.
 - Evaluate AMI and user-consented real meeting speech for content
   retention, speakers, overlapping speech and tail truncation.
 - Reject changes to the default production ASR until those pass.
+
+
+## Benchmark cold-start accounting
+
+The paired ASR runner explicitly prewarms both hybrid backends before
+the first measured clip. It records hybrid_preload_seconds separately.
+Otherwise Qwen's first routed language (often French) would include
+its entire model download and CUDA initialization as a misleading
+inference latency while Whisper's startup is already excluded.
+This is not permission to hide cold-start cost. Measure startup
+readiness, VRAM use and per-window latency as separate product gates.
