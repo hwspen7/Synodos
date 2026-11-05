@@ -46,23 +46,46 @@ def source_hash(text):
 
 
 def build_chunks(segments, max_chars=1300):
-    """Preserve speaker and time provenance for every text chunk."""
+    """Bound every knowledge chunk without truncating long caption segments.
+
+    Preserve source segment ID and timestamps in every piece, even when one
+    human-reviewed caption exceeds the embedding model's input window.
+    A split piece is still just source text, not a new transcript segment.
+    """
+    if type(max_chars) is not int or not 8 <= max_chars <= 8000:
+        raise ValueError('Knowledge chunk bound must be 8-8000 characters')
     chunks, current, length = [], [], 0
     for seg in segments:
         sid = int(seg['id'])
-        content = str(seg.get('text') or '').strip()
-        if not content:
+        remaining = str(seg.get('text') or '').strip()
+        if not remaining:
             continue
-        if current and length + len(content) > max_chars:
-            chunks.append(_chunk(current))
-            current, length = [], 0
-        current.append({'id': sid, 'text': content, 'start_ms': int(seg.get('start_ms', 0)),
-                        'end_ms': int(seg.get('end_ms', 0))})
-        length += len(content)
+        while remaining:
+            if len(remaining) <= max_chars:
+                piece, remaining = remaining, ''
+            else:
+                # Split English near whitespace when possible, but preserve
+                # unspaced languages and IDs without discarding characters.
+                boundary = max(remaining.rfind(' ', 0, max_chars + 1),
+                               remaining.rfind('\\n', 0, max_chars + 1))
+                if boundary < max_chars // 2:
+                    boundary = max_chars
+                piece = remaining[:boundary].rstrip()
+                remaining = remaining[boundary:].lstrip()
+            if not piece:
+                continue
+            if current and length + len(piece) > max_chars:
+                chunks.append(_chunk(current))
+                current, length = [], 0
+            current.append({
+                'id': sid, 'text': piece,
+                'start_ms': int(seg.get('start_ms', 0)),
+                'end_ms': int(seg.get('end_ms', 0)),
+            })
+            length += len(piece)
     if current:
         chunks.append(_chunk(current))
     return chunks
-
 
 def _chunk(segs):
     return {'text': '\n'.join(f"[{s['id']}] {s['text']}" for s in segs),
