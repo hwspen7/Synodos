@@ -109,6 +109,23 @@ async def submit_job(payload:JobRequest):
             raise HTTPException(400, str(exc)) from exc
         except FileNotFoundError as exc:
             raise HTTPException(404, str(exc)) from exc
+    if payload.kind == 'speaker_insights':
+        from core.runtime import meeting_sessions
+        from intelligence.speaker_insights import choose_speaker_turns
+        if mid in meeting_sessions:
+            raise HTTPException(409, 'Stop recording and save the transcript before individual analysis')
+        sid = payload.payload.get('speaker_id')
+        rev = payload.payload.get('source_revision')
+        if type(sid) is not int or sid <= 0 or type(rev) is not int:
+            raise HTTPException(400, 'Speaker ID and transcript revision are required')
+        try:
+            current_revision, turns = await asyncio.to_thread(store.meeting_segments, mid)
+            if current_revision != rev:
+                raise HTTPException(409, 'Transcript changed. Refresh speaker analysis first')
+            choose_speaker_turns(turns, sid)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        payload.payload = {'speaker_id': sid, 'source_revision': rev}
     if payload.kind == 'context_correction':
         # Context review must never run concurrently with a live transcript.
         from core.runtime import meeting_sessions
@@ -182,6 +199,30 @@ async def overview(meeting_id:str):
     for artifact in arts:
         artifact['stale'] = artifact.get('source_revision') is not None and artifact['source_revision'] != revision
     return {'jobs':jobs,'artifacts':arts,'actions':actions,'decisions':decisions}
+
+
+@router.get('/meetings/{meeting_id}/speakers/{speaker_id}/insights')
+async def individual_speaker_insights(meeting_id: str, speaker_id: int):
+    _enabled()
+    mid = _meeting_id(meeting_id)
+    from intelligence.speaker_insights import choose_speaker_turns
+    try:
+        revision, turns = await asyncio.to_thread(store.meeting_segments, mid)
+        speaker_name, selected = choose_speaker_turns(turns, speaker_id)
+        artifact, active_job = await asyncio.to_thread(
+            store.latest_speaker_analysis, mid, speaker_id
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if artifact is not None:
+        artifact['stale'] = artifact['source_revision'] != revision
+        if set(artifact['content'].get('segment_ids', [])) != {s['id'] for s in selected}:
+            artifact['stale'] = True
+    return {
+        'speaker_id': speaker_id, 'speaker_name': speaker_name,
+        'source_revision': revision, 'segment_ids': [s['id'] for s in selected],
+        'artifact': artifact, 'active_job': active_job,
+    }
 
 
 @router.post('/review/{kind}/{item_id}')
