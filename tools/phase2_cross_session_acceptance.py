@@ -49,15 +49,15 @@ def validate_trials(payload: dict, *, min_positive: int = 20,
             raise ValueError("Invalid trial identity, cosine or cross-session provenance")
         if not row.get("human_labeled") is True:
             raise ValueError("Cross-session labels require independent human annotation")
+        pair_key = (model, *sorted((clip_a, clip_b)))
+        if pair_key in unique_clip_pairs:
+            raise ValueError("Duplicate source clips would inflate pair counts")
         for clip, source in (
             (clip_a, (src_a, speaker_a)), (clip_b, (src_b, speaker_b))
         ):
             if clip in clip_provenance and clip_provenance[clip] != source:
                 raise ValueError("Source clip changes recording or human identity")
             clip_provenance[clip] = source
-        pair_key = (model, *sorted((clip_a, clip_b)))
-        if pair_key in unique_clip_pairs:
-            raise ValueError("Duplicate source clips would inflate pair counts")
         ids.add(id_)
         unique_clip_pairs.add(pair_key)
         samples.append({
