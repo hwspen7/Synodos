@@ -7,7 +7,7 @@ from pathlib import Path
 
 from intelligence.speaker_insights import (
     analyze_speaker, choose_speaker_turns, safe_speaker_insights,
-    speaker_prompt, split_speaker_turns,
+    speaker_prompt, speaker_source_hash, split_speaker_turns,
 )
 
 
