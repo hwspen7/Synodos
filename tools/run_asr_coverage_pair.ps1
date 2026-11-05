@@ -66,10 +66,17 @@ foreach ($case in $cases) {
     if ($HumanReferenceVerified.IsPresent) {
         $arguments.HumanReferenceVerified = $true
     }
+    # Retain the complete verbose model log privately; do not print
+    # multi-page JSON in the interactive PowerShell window.
+    $logPath = Join-Path $root ("asr_coverage_$tag.log")
+    if (Test-Path -LiteralPath $logPath) {
+        throw "Refusing to overwrite an existing experiment log: $logPath"
+    }
+    $runFailure = $null
     try {
-        & (Join-Path $PSScriptRoot "run_nemotron_ami.ps1") @arguments
+        & (Join-Path $PSScriptRoot "run_nemotron_ami.ps1") @arguments *> $logPath
     } catch {
-        Write-Warning ("Quality thresholds not accepted, or replay failed: " + $_.Exception.Message)
+        $runFailure = $_.Exception.Message
     }
     foreach ($kind in @(
         "audit_TS3003b_nemotron_",
@@ -78,9 +85,21 @@ foreach ($case in $cases) {
     )) {
         $expected = Join-Path $root ("$kind$tag.json")
         if (-not (Test-Path -LiteralPath $expected -PathType Leaf)) {
-            throw "Incomplete $tag experimental evidence: $expected"
+            throw "Incomplete $tag experiment: missing $kind. See $logPath"
         }
     }
+    $scorePath = Join-Path $root ("audit_TS3003b_phase1_human_text_$tag.json")
+    $score = Get-Content -LiteralPath $scorePath -Raw | ConvertFrom-Json
+    Write-Host ("{0}: CER {1:N2}% | WER {2:N2}% | deletion {3:N2}% | rewrites {4}" -f
+        $case.Label,
+        (100 * [double]$score.measurement.cer),
+        (100 * [double]$score.measurement.wer),
+        (100 * [double]$score.measurement.reference_character_deletion_rate),
+        [int]$score.measurement.confirmed_text_changes)
+    if ($runFailure) {
+        Write-Warning ("Reference quality gate not accepted, or replay exited with an error. Detailed log: " + $logPath)
+    }
+    Write-Host ("Saved detailed model log: " + $logPath)
 }
 $report = Join-Path $root ("phase1a_quality_pair_$label.json")
 & $PythonExe -m tools.phase1a_quality_pair `
@@ -89,5 +108,5 @@ $report = Join-Path $root ("phase1a_quality_pair_$label.json")
 if ($LASTEXITCODE -ne 0) {
     throw "Cannot safely compare the frozen experiments."
 }
-Write-Host "Private paired baseline/quality comparison: $report"
+Write-Host "Paired report saved: $report"
 Write-Host "Metrics are screening evidence only. Do not change default model settings."
