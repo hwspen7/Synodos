@@ -121,6 +121,54 @@ class ReviewApiTests(unittest.TestCase):
                     }))
                 self.assertEqual(raised.exception.status_code, 409)
 
+    def test_concurrent_meeting_save_rejects_stale_manual_review(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MeetingStore(Path(tmp) / "meetings")
+            mid = store.create(title="Race")["id"]
+            store.save_state(sample_state(mid))
+            original_save = store.save_state
+            intervened = False
+
+            def concurrent_save(state, **kwargs):
+                nonlocal intervened
+                if not intervened:
+                    intervened = True
+                    fresh = store.load_state(mid)
+                    fresh["segments"][0]["text"] = "newer concurrent content"
+                    fresh.pop("meta", None)
+                    original_save(fresh)
+                return original_save(state, **kwargs)
+
+            with patch("api.meetings.meeting_store", store), patch.dict(
+                "api.meetings.meeting_sessions", {}, clear=True
+            ), patch.object(store, "save_state", side_effect=concurrent_save):
+                with self.assertRaises(HTTPException) as raised:
+                    asyncio.run(review_saved_segment(mid, 3, {
+                        "expected_revision": 0,
+                        "text": "stale incoming review",
+                    }))
+                self.assertEqual(raised.exception.status_code, 409)
+            final = store.load_state(mid)["segments"][0]
+            self.assertEqual(final["text"], "newer concurrent content")
+            self.assertEqual(final.get("revision", 0), 0)
+            self.assertFalse(final.get("corrections"))
+
+    def test_store_snapshot_cas_without_api(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MeetingStore(Path(tmp))
+            mid = store.create()["id"]
+            store.save_state(sample_state(mid))
+            stale = store.load_state(mid)
+            version = stale["meta"]["_store_version"]
+            fresh = store.load_state(mid)
+            fresh["segments"][0]["text"] = "fresh"
+            fresh.pop("meta", None)
+            store.save_state(fresh)
+            stale.pop("meta", None)
+            with self.assertRaises(ReviewConflict):
+                store.save_state(stale, expected_store_revision=version)
+            self.assertEqual(store.load_state(mid)["segments"][0]["text"], "fresh")
+
     def test_active_recording_is_not_rewritten(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = MeetingStore(Path(tmp))
