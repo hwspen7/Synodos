@@ -928,7 +928,7 @@ onBeforeUnmount(() => stopInternal())
                       <h2>Meeting settings</h2>
                       <p>Configure how speech is captured and presented. Changes take effect when applied.</p>
                     </div>
-                    <button type="button" class="meeting-back" aria-label="Close settings" @click="showAdvancedControls = false"><AppIcon name="x" :size="16" /></button>
+                    <button type="button" class="meeting-back" aria-label="Close settings" @click="selectMeetingTool('transcript')"><AppIcon name="x" :size="16" /></button>
                   </div>
                   <div class="meeting-config-grid">
                     <section class="config-group" aria-label="Speech settings">
@@ -986,7 +986,7 @@ onBeforeUnmount(() => stopInternal())
             <section class="meeting-recordings-panel" aria-label="Saved recordings">
                   <div class="config-panel-heading">
                     <div><span class="transcript-eyebrow">AUDIO LIBRARY</span><h2>Saved recordings</h2><p>Listen to a recording or download the original WAV file.</p></div>
-                    <button type="button" class="meeting-back" aria-label="Close recordings" @click="showRecordings = false"><AppIcon name="x" :size="16" /></button>
+                    <button type="button" class="meeting-back" aria-label="Close recordings" @click="selectMeetingTool('transcript')"><AppIcon name="x" :size="16" /></button>
                   </div>
                   <div class="recordings-toolbar">
                     <span>{{ recordingList.length }} recording{{ recordingList.length === 1 ? '' : 's' }}</span>
