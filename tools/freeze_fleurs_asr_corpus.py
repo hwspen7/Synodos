@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import heapq
 import io
 import json
 import math
@@ -27,6 +28,8 @@ DATASET = "google/fleurs"
 ALLOWED_SPLITS = {"validation": "development", "test": "sealed_test"}
 SHA = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 MIN_SECONDS, MAX_SECONDS = 0.8, 30.0
+FREEZE_VERSION = "sf_v2"
+PLAN_SCHEMA = "meeting-fleurs-freeze-plan-v2"
 
 
 def require_e_drive(path: Path) -> Path:
@@ -106,6 +109,80 @@ def decode_audio_without_torchcodec(value: dict) -> dict:
     return {"array": samples, "sampling_rate": 16000}
 
 
+
+
+def choose_streaming_examples(dataset, *, language: str, count: int,
+                              seed: str) -> list[dict]:
+    """Select smallest SHA256 ranks without reference or audio scoring.
+
+    Keep only the requested amount of un-decoded source records in memory.
+    Ties are broken by source index, matching choose_indices().
+    """
+    if count < 1:
+        raise ValueError("Selection must have positive size")
+    selected = []
+    seen_ids = set()
+    for index, example in enumerate(dataset):
+        if not isinstance(example, dict) or "id" not in example:
+            raise ValueError("Streaming FLEURS row has no official ID")
+        source_id = int(example["id"])
+        if source_id in seen_ids:
+            raise ValueError("Duplicate official example ID; refusing ambiguous freeze")
+        seen_ids.add(source_id)
+        digest = int(hashlib.sha256(
+            f"{seed}/{language}/{source_id}".encode("utf-8")
+        ).hexdigest(), 16)
+        entry = (-digest, -index, example)
+        if len(selected) < count:
+            heapq.heappush(selected, entry)
+        elif entry[:2] > selected[0][:2]:
+            heapq.heapreplace(selected, entry)
+    if len(selected) != count:
+        raise ValueError("Not enough official cases for " + language)
+    return [entry[2] for entry in sorted(
+        selected, key=lambda entry: (-entry[0], -entry[1]))]
+
+
+def freeze_plan(destination: Path, split: str, count: int,
+                seed: str, revision: str | None) -> tuple[str, Path]:
+    """Pin the upstream revision before downloading or converting any WAV."""
+    dest_plan = destination / "freeze_plan.json"
+    manifest = destination / "manifest.json"
+    if manifest.exists():
+        raise FileExistsError("Completed frozen manifest already exists: " + str(manifest))
+    expected = {
+        "schema": PLAN_SCHEMA,
+        "dataset": DATASET,
+        "split": split,
+        "per_language": count,
+        "selection_seed": seed,
+        "decoder_version": FREEZE_VERSION,
+        "language_codes": list(LANGUAGES),
+    }
+    if dest_plan.exists():
+        saved = json.loads(dest_plan.read_text(encoding="utf-8"))
+        if (not isinstance(saved, dict) or
+                any(saved.get(k) != value for k, value in expected.items()) or
+                not isinstance(saved.get("dataset_revision"), str) or
+                not SHA.fullmatch(saved["dataset_revision"]) or
+                (revision and revision != saved["dataset_revision"])):
+            raise ValueError(
+                "Existing partial freeze has a different split, seed, "
+                "decoder or revision; no mixed-version data permitted"
+            )
+        return saved["dataset_revision"], dest_plan
+    from huggingface_hub import HfApi
+    selected_revision = revision or HfApi().dataset_info(DATASET).sha
+    if not isinstance(selected_revision, str) or not SHA.fullmatch(selected_revision):
+        raise ValueError("Pin an exact official dataset revision")
+    expected["dataset_revision"] = selected_revision
+    destination.mkdir(parents=True, exist_ok=True)
+    with dest_plan.open("x", encoding="utf-8") as out:
+        json.dump(expected, out, ensure_ascii=True, indent=2)
+        out.write("\n")
+    return selected_revision, dest_plan
+
+
 def encode_pcm16(decoded) -> tuple[bytes, float]:
     import numpy as np
     if hasattr(decoded, "get_all_samples"):
@@ -142,31 +219,30 @@ def freeze_fleurs(root: Path, split: str, per_language: int, seed: str,
     root = require_e_drive(root)
     configure_cache(root)
     from datasets import Audio, load_dataset
-    from huggingface_hub import HfApi
-    commit = revision or HfApi().dataset_info(DATASET).sha
-    if not isinstance(commit, str) or not SHA.fullmatch(commit):
-        raise ValueError("Pin an exact 40/64 character dataset revision")
-    destination = root / ("fleurs_" + split + "_" + str(per_language))
+    # Separate output namespace avoids contaminating a partial freeze made
+    # with an earlier TorchCodec or source revision. Never delete old WAVs.
+    destination = root / (
+        "fleurs_" + split + "_" + str(per_language) + "_" + FREEZE_VERSION
+    )
+    commit, plan_path = freeze_plan(
+        destination, split, per_language, seed, revision
+    )
     manifest = destination / "manifest.json"
-    if manifest.exists():
-        raise FileExistsError("Existing corpus manifest is immutable: " + str(manifest))
-    destination.mkdir(parents=True, exist_ok=True)
     cases = []
     for lang, config in LANGUAGES.items():
-        dataset = load_dataset(DATASET, config, split=split,
-                               revision=commit,
-                               cache_dir=os.environ["HF_DATASETS_CACHE"])
-        # Never instantiate the TorchCodec decoder on Windows. Keep the
-        # original compressed bytes/path and decode through libsndfile.
+        # Streaming only the requested split prevents eager downloads of
+        # the entire train and test parquet sets for every language.
+        dataset = load_dataset(
+            DATASET, config, split=split, revision=commit,
+            streaming=True, cache_dir=os.environ["HF_DATASETS_CACHE"]
+        )
+        # Keep compressed audio undecoded until selected. No TorchCodec.
         dataset = dataset.cast_column("audio", Audio(decode=False))
-        # Select using IDs alone before any audio decoding or reference scoring.
-        ids = [{"id": int(row["id"])} for row in dataset.select_columns(["id"])]
-        chosen = choose_indices(ids, language=lang, count=per_language, seed=seed)
-        if len(chosen) != per_language:
-            raise ValueError("Not enough official cases for " + lang)
+        chosen = choose_streaming_examples(
+            dataset, language=lang, count=per_language, seed=seed
+        )
         lang_cases = []
-        for index in chosen:
-            example = dataset[index]
+        for example in chosen:
             reference = str(example.get("transcription") or "").strip()
             if not reference:
                 raise ValueError("Selected official reference is empty")
@@ -178,7 +254,13 @@ def freeze_fleurs(root: Path, split: str, per_language: int, seed: str,
             hash_value = hashlib.sha256(pcm).hexdigest()
             if wav.exists():
                 if hashlib.sha256(wav.read_bytes()).hexdigest() != hash_value:
-                    raise ValueError("Frozen audio differs from official export: " + filename)
+                    raise ValueError(
+                        "Existing WAV differs from pinned official decoding: "
+                        + str(wav) + " existing_sha256="
+                        + hashlib.sha256(wav.read_bytes()).hexdigest()
+                        + " expected_sha256=" + hash_value
+                        + ". No overwrite. Inspect this versioned directory."
+                    )
             else:
                 with wav.open("xb") as output:
                     output.write(pcm)
@@ -200,6 +282,10 @@ def freeze_fleurs(root: Path, split: str, per_language: int, seed: str,
         print("FROZEN", lang, len(lang_cases), "official cases", flush=True)
     document = {
         "schema": SCHEMA, "dataset": DATASET,
+        "decoder_version": FREEZE_VERSION,
+        "freeze_plan_file": str(plan_path.resolve()),
+        "freeze_plan_sha256": hashlib.sha256(plan_path.read_bytes()).hexdigest(),
+        "selected_split_streaming": True,
         "dataset_revision": commit, "license": "CC BY 4.0",
         "attribution": "Google FLEURS",
         "data_split": split, "benchmark_role": ALLOWED_SPLITS[split],

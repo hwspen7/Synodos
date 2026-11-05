@@ -18,7 +18,7 @@ The command defaults to DRY RUN. Download only with --apply.
     & .\.venv\Scripts\python.exe -m tools.freeze_fleurs_asr_corpus --split validation --per-language 20 --apply
 
 Result manifest:
-E:\AI-Cache\MeetingReference\ASRSelection\fleurs_validation_20\manifest.json
+E:\AI-Cache\MeetingReference\ASRSelection\fleurs_validation_20_sf_v2\manifest.json
 
 The short development set has 200 cases. It may be used for debugging
 engine setup and decoding differences. It is not release test evidence.
@@ -71,3 +71,35 @@ To repair an environment affected by the original installation advice:
 
 Verify CUDA and test the actual audio decode before downloading an entire
 cohort. Keep experimental qwen-asr packages in a separate E-drive venv.
+
+
+## Partial-run recovery and split-only streaming
+
+As of the sf_v2 freezer, the default output path is versioned to avoid
+a collision with WAVs created by the older TorchCodec/decode path:
+
+    E:\AI-Cache\MeetingReference\ASRSelection\fleurs_validation_20_sf_v2
+
+The old fleurs_validation_20 folder is preserved for investigation.
+Never remove source caches, old WAVs, or QA records merely to rerun.
+
+A freeze_plan.json file pins dataset revision, seed, split, language set
+and decoder version BEFORE audio export begins. When a download fails,
+rerun the exact same --split and --per-language command. The tool
+resumes against the pinned revision and verifies existing WAV SHA256.
+Conflicts remain fail-closed and print both hashes; nothing is replaced.
+
+Only the requested split is streamed (validation or test), instead of
+eagerly downloading unrelated train and test data. Selection is the
+same deterministic SHA256 ranking of official source IDs; audio and
+reference text do not influence the sample choice. Selected compressed
+records are held only in a bounded in-memory list, and then decoded
+with soundfile for export. The other split never participates.
+
+After finishing the 200 development cases, use:
+
+    $manifest = "E:\AI-Cache\MeetingReference\ASRSelection\fleurs_validation_20_sf_v2\manifest.json"
+
+The independently frozen 1,000-case final test manifest is under:
+
+    E:\AI-Cache\MeetingReference\ASRSelection\fleurs_test_100_sf_v2\manifest.json

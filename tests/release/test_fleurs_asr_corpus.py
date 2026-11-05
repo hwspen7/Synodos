@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import io
 import wave
-from tools.freeze_fleurs_asr_corpus import choose_indices, encode_pcm16, decode_audio_without_torchcodec, LANGUAGES, SCHEMA
+from tools.freeze_fleurs_asr_corpus import choose_indices, choose_streaming_examples, freeze_plan, encode_pcm16, decode_audio_without_torchcodec, LANGUAGES, SCHEMA
 
 
 class FleursCorpusTests(unittest.TestCase):
@@ -21,6 +21,41 @@ class FleursCorpusTests(unittest.TestCase):
         self.assertEqual(a, b)
         self.assertEqual(len(set(a)), 10)
         self.assertNotEqual(a, choose_indices(ids, language="en", count=10, seed="fixed"))
+
+    def test_streaming_selection_matches_offline_hash_ranking(self):
+        records = [{"id": i, "audio": {"bytes": b"not decoded"}} for i in range(40)]
+        chosen = choose_streaming_examples(iter(records),
+                                           language="en", count=11, seed="frozen")
+        indices = choose_indices(records, language="en", count=11, seed="frozen")
+        self.assertEqual([row["id"] for row in chosen], indices)
+        self.assertTrue(all(row["audio"]["bytes"] == b"not decoded" for row in chosen))
+
+    def test_streaming_rejects_duplicate_ids(self):
+        with self.assertRaises(ValueError):
+            choose_streaming_examples(iter([{"id": 7}, {"id": 7}]),
+                                      language="en", count=1, seed="v1")
+
+    def test_partial_resume_pins_dataset_revision_and_seed(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sha, path = freeze_plan(root, "validation", 20, "frozen", "a" * 40)
+            self.assertEqual(sha, "a" * 40)
+            self.assertTrue(path.is_file())
+            self.assertEqual(
+                freeze_plan(root, "validation", 20, "frozen", None)[0], sha
+            )
+            with self.assertRaises(ValueError):
+                freeze_plan(root, "validation", 20, "changed", None)
+            with self.assertRaises(ValueError):
+                freeze_plan(root, "validation", 20, "frozen", "b" * 40)
+
+    def test_completed_freeze_is_immutable(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            freeze_plan(root, "validation", 20, "frozen", "a" * 40)
+            (root / "manifest.json").write_text("{}", encoding="utf-8")
+            with self.assertRaises(FileExistsError):
+                freeze_plan(root, "validation", 20, "frozen", None)
 
     def test_fleurs_accepts_actual_hub_commit_shas(self):
         from tools.freeze_fleurs_asr_corpus import SHA

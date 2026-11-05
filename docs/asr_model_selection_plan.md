@@ -36,7 +36,7 @@ Freeze development FLEURS first (requires datasets, soundfile, scipy; NOT torchc
     python -m tools.freeze_fleurs_asr_corpus --split validation --per-language 20 --apply
 
 Set the E-drive development manifest:
-    $manifest = "E:\AI-Cache\MeetingReference\ASRSelection\fleurs_validation_20\manifest.json"
+    $manifest = "E:\AI-Cache\MeetingReference\ASRSelection\fleurs_validation_20_sf_v2\manifest.json"
     $results = "E:\AI-Cache\MeetingReference\ASRSelection\trials"
     New-Item -ItemType Directory -Force $results | Out-Null
 
@@ -132,3 +132,19 @@ QwenEngine also requires faster-whisper for VAD and numpy in the isolated
 runtime. Install these in the experimental venv, not in Meeting's
 production environment. Do not run any automatic package upgrades in the
 production environment.
+
+
+## 2026-11-05 FLEURS streaming recovery
+
+The original eager loader downloaded all three Parquet splits for a
+single language, although only validation was requested. It also
+reused the same WAV folder after switching from TorchCodec decoding to
+libsndfile. A previously exported en_1634.wav can therefore disagree
+with the updated decoder's reproducible PCM output.
+
+The updated freezer uses a new sf_v2 output namespace, a pinned
+freeze_plan.json, stream-only loading of the selected split and
+fail-closed SHA256 validation. Do not delete the old folder or
+overwrite conflicting WAVs. The original download cache may be reused
+where the datasets library supports it. Running the same command again
+continues a partial sf_v2 freeze without changing its locked revision.
