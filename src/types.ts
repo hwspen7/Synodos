@@ -225,6 +225,10 @@ export interface MeetingSegment {
   overlap_intervals_ms?: TranscriptSegment['overlap_intervals_ms']
   caption_projection_status?: string
   speaker_diarization_source?: string
+  /** Same saved voice-match provenance as the live transcript. */
+  matched_profile_id?: TranscriptSegment['matched_profile_id']
+  matched_profile_name?: TranscriptSegment['matched_profile_name']
+  speaker_match_similarity?: TranscriptSegment['speaker_match_similarity']
   text: string
   start_ms: number
   end_ms: number
