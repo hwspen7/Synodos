@@ -72,7 +72,10 @@ def process(job, gateway):
         return {'artifact_id':aid,'data':data,'source_revision':revision}
     if kind=='index_meeting':
         rev,segments=_context(job)
-        chunks=build_chunks(segments)
+        # A coalesced 1,300-character block can contain the entire small
+        # meeting. Quote selection must instead retrieve the relevant
+        # utterance with its own segment ID and timestamp.
+        chunks=build_chunks(segments, coalesce=False)
         for ch in chunks:
             ch['embedding']=gateway.embed(ch['text'])
             ch['embedding_model']=gateway.cfg.embed_model if ch['embedding'] else None
