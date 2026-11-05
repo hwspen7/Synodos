@@ -180,7 +180,7 @@ async def search(payload:SearchRequest):
 @router.post('/ask')
 async def ask(payload:AnswerRequest):
     _enabled()
-    jid=await asyncio.to_thread(store.enqueue,'ask',None,{'question':payload.question})
+    jid=await asyncio.to_thread(store.enqueue,'ask_evidence',None,{'question':payload.question})
     return {'job_id':jid,'status':'queued'}
 
 @router.post('/ask/evidence')
