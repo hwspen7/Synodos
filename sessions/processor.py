@@ -63,6 +63,7 @@ from sessions.outbox import enqueue_message
 from sessions.translation_tasks import submit_translation
 from sessions.speaker_tasks import submit_speaker_analysis, submit_acoustic_window
 from sessions.speaker_evidence import speaker_evidence
+from sessions.registered_identity import match_saved_voice
 from speech.acoustic_timeline import AcousticTimeline
 from speech.diarization import resolve_diarization_mode
 from speech.turn_integrity import valid_turn_partition
@@ -236,6 +237,7 @@ class SessionProcessor(threading.Thread):
             else settings.spk_match_threshold
         )
         self._participants: list[dict] = []
+        self._auto_profile_mode = False
         self._participant_label_map: dict[str, int] = {}
         # Handle transcripts and speaker assignments.
         self._unknown_index: dict[int, int] = {}
@@ -575,6 +577,8 @@ class SessionProcessor(threading.Thread):
                     "speaker_id": (
                         int(s.get("speaker_override_id") or -1)
                         if s.get("speaker_override")
+                        else s.get("speaker_id", -1)
+                        if s.get("matched_profile_id") and s.get("matched_profile_name")
                         else self._independent_published.get(
                             int(s["id"]),
                             s.get("saved_nemotron_id") or s.get(
@@ -588,7 +592,8 @@ class SessionProcessor(threading.Thread):
                             int(s["id"])
                         ] <= 0 else f"Speaker {self._independent_published[int(s['id'])]}")
                         if (int(s["id"]) in self._independent_published
-                            and not s.get("speaker_override"))
+                            and not s.get("speaker_override")
+                            and not s.get("matched_profile_id"))
                         else s.get("speaker_name", "")
                     ),
                     "speaker_diarization_source": (
@@ -596,8 +601,10 @@ class SessionProcessor(threading.Thread):
                             int(s["id"])
                         ] > 0 else "nemotron3_uncertain")
                         if (int(s["id"]) in self._independent_published
-                            and not s.get("speaker_override"))
-                        else s.get("speaker_diarization_source", "camplus")
+                            and not s.get("speaker_override")
+                            and not s.get("matched_profile_id"))
+                        else ("registered_voiceprint" if s.get("matched_profile_id")
+                              else s.get("speaker_diarization_source", "camplus"))
                     ),
                     "speaker_activity_score": self._independent_scores.get(
                         int(s["id"]), {},
@@ -649,6 +656,8 @@ class SessionProcessor(threading.Thread):
                     "asr_confidence": s.get("asr_confidence"),
                     "recognition_origin": s.get("recognition_origin", "primary"),
                     "speaker_match_similarity": s.get("speaker_match_similarity"),
+                    "matched_profile_id": s.get("matched_profile_id"),
+                    "matched_profile_name": s.get("matched_profile_name"),
                     "speaker_evidence_status": s.get("speaker_evidence_status", "unavailable"),
                     **acoustics[s["id"]],
                     "timestamp_quality": s.get("timestamp_quality", "segment"),
@@ -719,6 +728,8 @@ class SessionProcessor(threading.Thread):
                     "asr_confidence": item.get("asr_confidence"),
                     "recognition_origin": item.get("recognition_origin", "primary"),
                     "speaker_match_similarity": item.get("speaker_match_similarity"),
+                    "matched_profile_id": item.get("matched_profile_id"),
+                    "matched_profile_name": item.get("matched_profile_name"),
                     "speaker_evidence_status": item.get("speaker_evidence_status", "unavailable"),
                     "timestamp_quality": item.get("timestamp_quality", "segment"),
                     "words": item.get("words", []),
@@ -768,13 +779,24 @@ class SessionProcessor(threading.Thread):
         self.meeting_title = state.get("title") or self.meeting_title
 
     def load_participants(self) -> None:
-        """Audio transcription and speaker data handling."""
-        if not self.speaker_store or not self.participant_ids:
+        """Load explicitly selected identities, or a conservative library snapshot.
+
+        An empty participant selection enables cross-meeting matching by
+        default. MEETING_AUTO_SPEAKER_MATCH=0 disables the automatic fallback.
+        Auto-discovered IDs are not written into meeting participant settings.
+        """
+        self._auto_profile_mode = False
+        if not self.speaker_store:
             self._participants = []
             return
-        self._participants = self.speaker_store.get_for_matching(self.participant_ids)
-        # Handle transcripts and speaker assignments.
-        self.participant_ids = [p["id"] for p in self._participants]
+        if self.participant_ids:
+            self._participants = self.speaker_store.get_for_matching(self.participant_ids)
+            self.participant_ids = [p["id"] for p in self._participants]
+        elif os.getenv("MEETING_AUTO_SPEAKER_MATCH", "1").strip().lower() in ("1", "true", "yes"):
+            self._participants = self.speaker_store.get_auto_matching_profiles()
+            self._auto_profile_mode = True
+        else:
+            self._participants = []
 
     def load_hotwords(self) -> None:
         """Audio transcription and speaker data handling."""
@@ -1603,7 +1625,15 @@ class SessionProcessor(threading.Thread):
                     record.setdefault("speaker_name", "Unidentified Speaker")
                     continue
                 pid, similarity = self._match_participant(emb)
-                if pid is not None and similarity >= self.spk_threshold:
+                if pid is not None and similarity >= (
+                    max(self.spk_threshold, float(os.getenv(
+                        "MEETING_AUTO_SPEAKER_SIMILARITY", "0.78",
+                    ))) if self._auto_profile_mode else self.spk_threshold
+                ):
+                    record["matched_profile_id"] = pid
+                    record["matched_profile_name"] = next(
+                        (p["name"] for p in self._participants if p["id"] == pid), "Participant"
+                    )
                     if pid not in self._participant_label_map:
                         self._participant_label_map[pid] = self._next_free_speaker_id()
                     record["cluster"] = -1
@@ -1629,8 +1659,11 @@ class SessionProcessor(threading.Thread):
         )
         matched: dict[int, str] = {}
         pool: list[int] = []
+        available_names = {p["id"]: p["name"] for p in self._participants}
         for i, seg in enumerate(self.segments):
             seg["speaker_match_similarity"] = None
+            seg["matched_profile_id"] = None
+            seg["matched_profile_name"] = None
             if (seg["emb"] is None
                     or (seg.get("speaker_evidence_status") == "short_probe"
                         and seg.get("speaker_uncertain"))):
@@ -1638,9 +1671,15 @@ class SessionProcessor(threading.Thread):
                 seg["cluster"] = UNIDENTIFIED_CLUSTER
                 continue
             participant_id, sim = self._match_participant(seg["emb"])
-            if participant_id is not None and sim >= self.spk_threshold:
+            if participant_id is not None and sim >= (
+                max(self.spk_threshold, float(os.getenv(
+                    "MEETING_AUTO_SPEAKER_SIMILARITY", "0.78",
+                ))) if self._auto_profile_mode else self.spk_threshold
+            ):
                 matched[seg["id"]] = participant_id
                 seg["speaker_match_similarity"] = float(sim)
+                seg["matched_profile_id"] = participant_id
+                seg["matched_profile_name"] = available_names[participant_id]
                 seg["cluster"] = -1
             else:
                 seg["cluster"] = -2
@@ -1713,6 +1752,16 @@ class SessionProcessor(threading.Thread):
         """Audio transcription and speaker data handling."""
         if not self._participants:
             return None, -1.0
+        if self._auto_profile_mode:
+            return match_saved_voice(
+                emb, self._participants,
+                minimum_similarity=float(os.getenv(
+                    "MEETING_AUTO_SPEAKER_SIMILARITY", "0.78",
+                )),
+                minimum_margin=float(os.getenv(
+                    "MEETING_AUTO_SPEAKER_MARGIN", "0.08",
+                )),
+            )
         best_pid: Optional[str] = None
         best_sim = -1.0
         for p in self._participants:
@@ -1854,6 +1903,9 @@ class SessionProcessor(threading.Thread):
                 ),
                 "speaker_name": s.get("speaker_name")
                 or f"Speaker {s.get('speaker_id', self._speaker_map.get(s['cluster'], s['cluster']))}",
+                "matched_profile_id": s.get("matched_profile_id"),
+                "matched_profile_name": s.get("matched_profile_name"),
+                "speaker_match_similarity": s.get("speaker_match_similarity"),
                 "start_ms": round(s["start_sample"] * 1000 / self.settings.sample_rate),
                 "end_ms": round(s["end_sample"] * 1000 / self.settings.sample_rate),
                 "text": s["text"],
@@ -1880,6 +1932,13 @@ class SessionProcessor(threading.Thread):
         for item, source in zip(items, ordered):
             if source.get("speaker_override"):
                 item["speaker_diarization_source"] = "manual_override"
+                continue
+            if source.get("matched_profile_id") and source.get("matched_profile_name"):
+                # A supported registered voiceprint is an identity, while a
+                # Nemotron integer is only an anonymous acoustic turn index.
+                # Never let the anonymous label erase an identified person.
+                item["speaker_name"] = source["matched_profile_name"]
+                item["speaker_diarization_source"] = "registered_voiceprint"
                 continue
             saved = source.get("saved_nemotron_id")
             if type(saved) is int and saved > 0:
