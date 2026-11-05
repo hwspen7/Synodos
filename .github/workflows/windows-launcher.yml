@@ -16,6 +16,7 @@ on:
       - 'tools/run_phase1a_ablation.ps1'
       - 'tools/run_phase1b_compare.ps1'
       - 'tools/run_asr_coverage_pair.ps1'
+      - 'tools/check_phase12_integrity.ps1'
       - '.github/workflows/windows-launcher.yml'
   pull_request:
     paths:
@@ -30,6 +31,7 @@ on:
       - 'tools/run_phase1a_ablation.ps1'
       - 'tools/run_phase1b_compare.ps1'
       - 'tools/run_asr_coverage_pair.ps1'
+      - 'tools/check_phase12_integrity.ps1'
       - '.github/workflows/windows-launcher.yml'
 
 jobs:
@@ -52,7 +54,8 @@ jobs:
             'tools/run_phase12_acceptance.ps1',
             'tools/run_phase1a_ablation.ps1',
             'tools/run_phase1b_compare.ps1',
-            'tools/run_asr_coverage_pair.ps1'
+            'tools/run_asr_coverage_pair.ps1',
+            'tools/check_phase12_integrity.ps1'
           )
           foreach ($script in $scripts) {
             $tokens = $null
