@@ -38,6 +38,39 @@ class EvidenceQATests(unittest.TestCase):
         self.assertFalse(result["factual_entailment_verified"])
         self.assertTrue(result["review_required"])
 
+    def test_model_selects_ids_and_backend_copies_verbatim_source(self):
+        result = verified_excerpt_answer({"source_numbers": [2]}, HITS)
+        self.assertEqual(result["status"], "verbatim_citations_verified")
+        self.assertEqual(
+            result["quotes"][0]["quote"],
+            HITS[1]["text"],
+        )
+        self.assertEqual(result["sources"][0]["source_id"], "record-2")
+        self.assertNotIn("embedding", result["sources"][0])
+        self.assertFalse(result["factual_entailment_verified"])
+
+    def test_invalid_indices_cannot_become_citations(self):
+        for proposed in [
+            {"source_numbers": [True]},
+            {"source_numbers": [0, 9, -1]},
+            {"source_numbers": ["1"]},
+            {"source_numbers": {"1": 1}},
+            {"source_numbers": []},
+            {"source_numbers": [1], "quotes": [{"source_number": 1,
+                "quote": "Fabricated and not present in the source"}]},
+        ]:
+            with self.subTest(proposed=proposed):
+                result = verified_excerpt_answer(proposed, HITS)
+                self.assertEqual(result["status"], "abstained")
+                self.assertEqual(result["sources"], [])
+
+    def test_duplicate_index_selection_has_one_canonical_citation(self):
+        result = verified_excerpt_answer(
+            {"source_numbers": [1, 1, 2]}, HITS
+        )
+        self.assertEqual(len(result["quotes"]), 2)
+        self.assertEqual(len(result["sources"]), 2)
+
     def test_fabricated_quote_or_nonexistent_citation_abstains(self):
         for proposed in [
             {"quotes": [{"source_number": 1, "quote": "Approved the whole release for production"}]},
