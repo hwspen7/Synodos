@@ -114,4 +114,16 @@ class QwenEngine:
                 if finish > begin:
                     utterances.append(Utterance(text, begin, finish, detected, tuple(units), quality))
         label = next(iter(recognized_languages)) if len(recognized_languages) == 1 else "mul" if recognized_languages else "und"
-        return Recognition(tuple(utterances), label, engine="qwen3", speech_detected=True)
+        # Preserve the acoustic speech-off boundary separately from approximate
+        # ASR window timestamps. The streaming committer needs this provenance
+        # to avoid decoding the same final phoneme in the next buffer.
+        intervals = tuple(
+            (max(0, int(region["start"]) * 1000 // 16000),
+             min(len(samples) * 1000 // 16000,
+                 int(region["end"]) * 1000 // 16000))
+            for region in regions
+        )
+        return Recognition(
+            tuple(utterances), label, engine="qwen3",
+            speech_detected=True, speech_intervals_ms=intervals,
+        )

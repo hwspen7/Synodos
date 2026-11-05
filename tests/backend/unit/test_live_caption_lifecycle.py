@@ -158,6 +158,48 @@ class RealtimeSubtitleContracts(unittest.TestCase):
             for row in events
         ))
 
+    def test_tail_echo_is_filtered_before_provisional_caption(self):
+        processor, models, events = self.make_processor(engine="hybrid")
+        sr = processor.settings.sample_rate
+        processor.segments = [{
+            "id": 1, "start_sample": sr, "end_sample": sr * 2,
+            "text": "Hi, how are you man?", "speaker_id": 1,
+            "speaker_name": "Speaker 1", "cluster": -3, "emb": None,
+        }]
+        processor._next_segment_id = 2
+        processor.buffer.set_start_offset(sr * 2)
+        processor.buffer.append(np.full(sr * 3, 0.03, dtype=np.float32))
+        models.recognize_multilingual = lambda *a, **kw: Recognition(
+            utterances=(Utterance(
+                "Man.", 0, 930, "en", timestamp_quality="window_estimate"
+            ),),
+            language="en", speech_detected=True,
+        )
+        with patch("sessions.processor.submit_speaker_analysis") as speaker:
+            self.assertFalse(processor._cycle(final=False))
+        self.assertEqual(len(processor.segments), 1)
+        self.assertFalse(any(x["type"] == "partial" and x["text"]
+                             for x in events))
+        speaker.assert_not_called()
+
+    def test_live_confirmed_acoustic_off_boundary_consumes_small_tail(self):
+        processor, models, events = self.make_processor(engine="hybrid")
+        sr = processor.settings.sample_rate
+        processor.buffer.append(np.full(sr * 8, .03, dtype=np.float32))
+        models.recognize_multilingual = lambda *a, **kw: Recognition(
+            utterances=(Utterance(
+                "Hi, how are you man?", 1000, 2000, "en"
+            ),),
+            language="en", speech_detected=True,
+            speech_intervals_ms=((950, 2250),),
+        )
+        with patch("sessions.processor.submit_speaker_analysis",
+                   return_value=None):
+            self.assertTrue(processor._cycle(final=False))
+        self.assertEqual(len(processor.segments), 1)
+        self.assertEqual(processor.segments[0]["end_sample"], 2 * sr)
+        self.assertEqual(processor.buffer.start_offset(), int(2.33 * sr))
+
     def test_stale_preview_clears_even_when_vad_stays_positive(self):
         processor, models, events = self.make_processor(engine="whisper")
         sr = processor.settings.sample_rate

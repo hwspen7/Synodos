@@ -44,6 +44,7 @@ from observability.metrics import metrics
 from phase07.telemetry import telemetry
 from phase07.speakers import speaker_stats, find_distinct_participant
 from speech.commit_guard import is_temporal_duplicate, is_adjacent_tail_echo
+from speech.commit_boundary import completed_voice_drop
 from speech.acoustic_guard import uninformative_audio
 from sessions.speaker_birth_guard import tentative_new_clusters
 from speech.coverage_retention import choose_safe_drop
@@ -904,19 +905,9 @@ class SessionProcessor(threading.Thread):
                 local_end = max(local_end, b_local)
                 metrics.increment("asr_unvoiced_candidate_rejected")
                 continue
-            # Handle transcripts and speaker assignments.
-            should_hold = not final and (
-                buffer_s - end_ms / 1000.0 < self._trusted_threshold_s
-                or (
-                    self._speech_settings.engine != "legacy"
-                    and buffer_s < self._min_commit_context_s
-                )
-            )
-            if should_hold:
-                unconfirmed.append(sentence)
-                commit_receipt["held"] += 1
-                continue
-
+            # Reconcile the new ASR hypothesis with already confirmed speech
+            # BEFORE displaying a provisional caption. Otherwise a trailing
+            # "Man." can appear as live text until the seven-second commit gate.
             s_g = start_offset + int(start_ms * sr / 1000)
             e_g = start_offset + int(end_ms * sr / 1000)
             if e_g <= s_g or start_ms < 0 or end_ms > buffer_s * 1000 + 250:
@@ -934,12 +925,21 @@ class SessionProcessor(threading.Thread):
                             "timestamp_quality", "segment"
                         ),
                     )):
-                # The preceding confirmed sentence already contains the
-                # entire last word. Do not create another transcript or
-                # speaker evidence from its unaligned boundary echo.
                 commit_receipt["tail_echo_skipped"] += 1
                 metrics.increment("asr_adjacent_tail_echo_skipped")
                 local_end = max(local_end, e_g - start_offset)
+                continue
+
+            should_hold = not final and (
+                buffer_s - end_ms / 1000.0 < self._trusted_threshold_s
+                or (
+                    self._speech_settings.engine != "legacy"
+                    and buffer_s < self._min_commit_context_s
+                )
+            )
+            if should_hold:
+                unconfirmed.append(sentence)
+                commit_receipt["held"] += 1
                 continue
 
             seg_audio = audio[s_g - start_offset : e_g - start_offset]
@@ -1108,6 +1108,20 @@ class SessionProcessor(threading.Thread):
                 )
                 for gap in exhausted:
                     self._record_untranscribed_voice(gap)
+        # Only the validated end of a completed acoustic turn can retire
+        # leftover trailing phonemes. Never advance through a distinct voice
+        # region or a pending unconfirmed utterance.
+        if (self._speech_settings.engine == "hybrid"
+                and local_end > 0
+                and commit_receipt["published_new"] > 0
+                and not final):
+            verified_end = completed_voice_drop(
+                local_end, len(audio), recognition.speech_intervals_ms,
+                sample_rate=sr,
+            )
+            if verified_end > local_end:
+                metrics.increment("asr_confirmed_acoustic_tail_consumed")
+                local_end = verified_end
         # Handle transcripts and speaker assignments.
         if local_end > 0:
             # Preserve any earlier unfinished utterance before advancing audio.

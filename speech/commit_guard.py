@@ -37,8 +37,7 @@ def is_adjacent_tail_echo(
     It does not attempt unsafe translation/transliteration matching.
     """
     if (sample_rate <= 0 or start < 0 or end <= start
-            or end - start > round(0.75 * sample_rate)
-            or timestamp_quality == "word"):
+            or end - start > round(1.05 * sample_rate)):
         return False
     # Only one short Latin word; full sentences and CJK code switching
     # cannot be judged duplicative by a text suffix alone.
@@ -50,10 +49,28 @@ def is_adjacent_tail_echo(
     for previous in reversed(confirmed[-8:]):
         old_start = int(previous.get("start_sample", -1))
         old_end = int(previous.get("end_sample", -1))
-        if (old_start < 0 or old_end - old_start < round(0.7 * sample_rate)
-                or start < old_end - round(0.18 * sample_rate)
-                or start > old_end + round(0.12 * sample_rate)
-                or end > old_end + round(0.40 * sample_rate)):
+        if old_start < 0 or old_end - old_start < round(0.7 * sample_rate):
+            continue
+        if timestamp_quality == "word":
+            # Precise, independently positioned words are preserved. Only
+            # the same previous word's *acoustic interval* can be an echo.
+            prior_words = previous.get("words") or []
+            if not prior_words:
+                continue
+            last = prior_words[-1]
+            if not isinstance(last, dict):
+                continue
+            last_start = int(last.get("start_ms", -100000)) * sample_rate // 1000
+            last_end = int(last.get("end_ms", -100000)) * sample_rate // 1000
+            base = int(previous.get("_audio_base_sample", 0))
+            last_start += base
+            last_end += base
+            if (abs(start - last_start) > round(0.18 * sample_rate)
+                    or abs(end - last_end) > round(0.23 * sample_rate)):
+                continue
+        elif (start < old_end - round(0.18 * sample_rate)
+              or start > old_end + round(0.24 * sample_rate)
+              or end > old_end + round(0.96 * sample_rate)):
             continue
         old_text = str(previous.get("text") or "").strip()
         if not old_text.endswith((".", "?", "!", "\u3002", "\uff1f", "\uff01")):

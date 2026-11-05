@@ -61,6 +61,33 @@ class CommitGuardTests(unittest.TestCase):
             }]
         ))
 
+    def test_actual_man_echo_with_window_estimate(self):
+        prior = [{
+            "start_sample": 16000, "end_sample": 32000,
+            "text": "Hi, how are you man?",
+        }]
+        # Regression for the observed 00:01-00:03 two-caption artifact.
+        self.assertTrue(is_adjacent_tail_echo(
+            32000, 46900, "Man.", prior, timestamp_quality="window_estimate"
+        ))
+        self.assertFalse(is_adjacent_tail_echo(
+            40000, 54000, "Man.", prior, timestamp_quality="window_estimate"
+        ))
+
+    def test_precise_word_same_sound_is_echo_but_new_reply_survives(self):
+        prior = [{
+            "start_sample": 16000, "end_sample": 32000,
+            "_audio_base_sample": 0,
+            "text": "Hi, how are you man?",
+            "words": [{"start_ms": 1610, "end_ms": 1980, "text": " man"}],
+        }]
+        self.assertTrue(is_adjacent_tail_echo(
+            25900, 32000, "Man.", prior, timestamp_quality="word"
+        ))
+        self.assertFalse(is_adjacent_tail_echo(
+            32600, 38800, "Man.", prior, timestamp_quality="word"
+        ))
+
     def test_full_sentence_echo_and_overlap_other_speaker_preserved(self):
         prior = [{
             "start_sample": 40000, "end_sample": 56000,
