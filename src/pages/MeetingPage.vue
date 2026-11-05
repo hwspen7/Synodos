@@ -747,7 +747,7 @@ onBeforeUnmount(() => stopInternal())
             <span class="status-chip" :class="statusClass"><span class="status-dot" aria-hidden="true"></span>{{ statusText }}</span>
             <span v-if="recording" class="compact-mic-meter" :style="{ '--mic-fill': Math.min(100, micLevel * 300) + '%' }" aria-label="Microphone input level"></span>
             <span v-if="recording">Captured {{ capturedSeconds.toFixed(1) }}s · Received {{ deliveredSeconds.toFixed(1) }}s</span>
-            <span v-else>{{ transcriptMeta.segments }} transcript segments</span>
+            <span v-else>{{ paragraphs.length }} turns</span>
           </div>
           <div class="meeting-header-context" aria-label="Meeting details">
             <span><strong>Language</strong> {{ language === 'auto' ? 'Auto' : language.toUpperCase() }}</span>
@@ -807,10 +807,6 @@ onBeforeUnmount(() => stopInternal())
         </div>
       </nav>
       <div class="meeting-primary">
-        <div class="transcript-panel-heading">
-          <div><span class="transcript-eyebrow">MEETING RECORD</span><h2>Transcript</h2><span>Speaker-attributed conversation · timestamps preserved</span></div>
-          <span class="transcript-count">{{ paragraphs.length }} turns</span>
-        </div>
         <section v-if="error" class="meeting-action-notice" role="alert">
               <div class="notice-symbol"><AppIcon name="alert" :size="19" /></div>
               <div class="notice-copy"><strong>Recording needs attention</strong><p>{{ error }}</p></div>
