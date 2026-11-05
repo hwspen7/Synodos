@@ -154,8 +154,11 @@ class CorroboratedSpeakerChannels:
         ):
             return None
         # Recheck against ALL known references just before allocating.
-        if any(self._scores(candidate)[0][1] > self.distinct_voice_max_similarity
-               for candidate in vectors):
+        if any(
+            (scores := self._scores(candidate))
+            and scores[0][1] > self.distinct_voice_max_similarity
+            for candidate in vectors
+        ):
             return None
         label = self._channels.resolve(
             channel, sum(duration for duration, _ in turns.values()),
