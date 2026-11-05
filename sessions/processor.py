@@ -65,6 +65,7 @@ from sessions.speaker_tasks import submit_speaker_analysis, submit_acoustic_wind
 from sessions.speaker_evidence import speaker_evidence
 from sessions.registered_identity import match_saved_voice
 from sessions.corroborated_speaker_channels import CorroboratedSpeakerChannels
+from sessions.rapid_speaker_fragmentation import repair_rapid_anonymous_births
 from speech.acoustic_timeline import AcousticTimeline
 from speech.diarization import resolve_diarization_mode
 from speech.turn_integrity import valid_turn_partition
@@ -1753,6 +1754,15 @@ class SessionProcessor(threading.Thread):
                                   len(tentative))
         self._remap_speakers()
         self._assign_labels(matched)
+        # Nemotron is optional. Apply a separate content-preserving guard
+        # when CAM++ alone rapidly invents several anonymous identities.
+        rapid = repair_rapid_anonymous_births(
+            self.segments, sample_rate=self.settings.sample_rate,
+        )
+        if rapid["merged"]:
+            metrics.increment("speaker_rapid_births_merged", rapid["merged"])
+        if rapid["deferred"]:
+            metrics.increment("speaker_rapid_births_deferred", rapid["deferred"])
         if live_hybrid:
             self._speaker_birth_approved.update(
                 int(seg["speaker_id"]) for seg in self.segments
