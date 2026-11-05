@@ -1,0 +1,26 @@
+name: Real meeting audio evaluation tooling
+
+on:
+  push:
+    branches:
+      - feature/meeting-knowledge-quality
+    paths:
+      - 'tools/prepare_real_meeting_evaluation.py'
+      - 'tests/release/test_real_meeting_evaluation.py'
+      - '.github/workflows/real-meeting-audio-evaluation.yml'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  deterministic_safety:
+    name: Real meeting import and provenance safety
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest tests.release.test_real_meeting_evaluation -v
+      - run: python -m compileall -q tools/prepare_real_meeting_evaluation.py
