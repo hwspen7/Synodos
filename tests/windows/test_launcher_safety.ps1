@@ -81,4 +81,14 @@ if ($launcher -notmatch 'Local\\MeetingOfPioneers_Vite_5173') {
 if ($launcher -notmatch 'Another Meeting frontend is initializing') {
     throw 'Frontend child process lacks a bounded competing-launch wait.'
 }
+# The multi-speaker profile must be a deliberate opt-in and must not reuse a
+# pre-existing single-speaker backend with the wrong process environment.
+if ($launcher -notmatch 'MEETING_MULTISPEAKER_TEST' -or
+    $launcher -notmatch "MEETING_INDEPENDENT_DIARIZATION = 'nemotron3'" -or
+    $launcher -notmatch "MEETING_DIARIZATION_MODE = 'cluster'") {
+    throw 'Explicit multi-speaker model activation is missing.'
+}
+if ($launcher -notmatch "MEETING_FORCE_BACKEND_RESTART -eq '1' -or") {
+    throw 'Multi-speaker mode must restart any previous backend.'
+}
 Write-Output 'Windows launcher process safety tests passed.'

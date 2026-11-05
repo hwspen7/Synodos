@@ -58,6 +58,16 @@ function Set-BackendEnvironment {
     }
     $env:MEETING_RECORD_AUDIO = '1'
     $env:APP_ENABLE_METRICS = '1'
+    # Explicit real multi-speaker evaluation; never silently treat an ASR
+    # single-speaker test as evidence of automatic diarization quality.
+    # The Nemotron model is optional and remains off in ordinary launches.
+    if ($env:MEETING_MULTISPEAKER_TEST -eq '1') {
+        $env:MEETING_DIARIZATION_MODE = 'cluster'
+        $env:MEETING_INDEPENDENT_DIARIZATION = 'nemotron3'
+        $env:MEETING_CONTENT_FIRST_FUSION = '1'
+        $env:MEETING_DIARIZATION_DIAGNOSTICS = '1'
+        Write-Host 'Multi-speaker validation: independent Nemotron3 + CAM++ candidate enabled.'
+    }
 }
 
 function Set-DatabaseEnvironment {
@@ -233,6 +243,9 @@ function Start-Launcher {
     Write-Host ''
     Write-Host 'Meeting of Pioneers - one-click startup' -ForegroundColor Cyan
     Write-Host 'AI: Saluki 27B  |  ASR: Hybrid V2 (Whisper + Qwen 1.7B)  |  DB: PostgreSQL'
+    if ($env:MEETING_MULTISPEAKER_TEST -eq '1') {
+        Write-Host 'Multi-speaker test selected: force backend restart to activate a fresh Nemotron session.' -ForegroundColor Yellow
+    }
     if (-not (Test-Path -LiteralPath $Python)) {
         throw "Python environment is missing: $Python"
     }
@@ -296,7 +309,8 @@ function Start-Launcher {
     if ($null -ne $backendPid) {
         try { $backendReady = Test-BackendReady } catch { $backendReady = $false }
         $sourceUpdated = Test-BackendSourceUpdated $backendPid
-        $forceRestart = $env:MEETING_FORCE_BACKEND_RESTART -eq '1'
+        $forceRestart = ($env:MEETING_FORCE_BACKEND_RESTART -eq '1' -or
+            $env:MEETING_MULTISPEAKER_TEST -eq '1')
         if ($backendReady -and ($sourceUpdated -or $forceRestart)) {
             Write-Host 'Backend source code changed since startup; applying the updated version.'
             $backendReady = $false

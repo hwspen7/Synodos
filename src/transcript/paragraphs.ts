@@ -1,0 +1,70 @@
+/** Presentation-only grouping of consecutive caption segments by speaker.
+ *
+ * Never change the source ASR segments, timestamps, speaker labels, or text.
+ * A paragraph is a view grouping, not a second speaker turn or ASR commit.
+ */
+import type { Segment, Paragraph } from '../types'
+
+const FINISHED_THOUGHT = /[.!?\u3002\uff01\uff1f]["'\u201d\u2019\uff09\])}]*\s*$/u
+const CJK = /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/u
+
+function joinCaptionText(left: string, right: string): string {
+  const a = left.trimEnd()
+  const b = right.trimStart()
+  if (!a) return b
+  if (!b) return a
+  if (/[[({\uff08\u300a\u300c\u300e\u201c\u2018]$/u.test(a) ||
+      /^[,!.?;:%)\]}\uff0c\u3002\uff01\uff1f\uff1b\uff1a\u3001\uff09\u300b\u300d\u300f\u201d\u2019]/u.test(b)) {
+    return a + b
+  }
+  if (CJK.test(a.slice(-1)) || CJK.test(b.charAt(0))) return a + b
+  return a + ' ' + b
+}
+
+export function buildTranscriptParagraphs(
+  segments: readonly Segment[], opts: {
+    mergeGapS?: number
+    translationTarget?: string
+    maxParagraphMs?: number
+    maxParagraphChars?: number
+  } = {},
+): Paragraph[] {
+  const gapMs = Math.min(750, Math.max(0, Math.round((opts.mergeGapS ?? 2) * 1000)))
+  const maxDuration = opts.maxParagraphMs ?? 24000
+  const maxChars = opts.maxParagraphChars ?? 420
+  const ordered = [...segments].sort((a, b) => a.start_ms - b.start_ms || a.id - b.id)
+  const paragraphs: Paragraph[] = []
+  for (const seg of ordered) {
+    if (!seg.text.trim()) continue
+    const text = opts.translationTarget && seg.translation?.trim()
+      ? seg.translation : seg.text
+    const last = paragraphs[paragraphs.length - 1]
+    const canonicalId = seg.source_segment_id ?? seg.id
+    // A speaker switch, overlap, unknown identity or completed sentence is
+    // a real boundary, regardless of the gap and visible text length.
+    const canMerge = Boolean(
+      last && seg.speaker_id > 0 &&
+      seg.speaker_id === last.speaker_id &&
+      (seg.speaker_name || '') === (last.speaker_name || '') &&
+      !(seg.overlap_intervals_ms?.length) &&
+      seg.start_ms >= last.end_ms &&
+      seg.start_ms - last.end_ms <= gapMs &&
+      seg.end_ms - last.start_ms <= maxDuration &&
+      last.text.length + text.length + 1 <= maxChars &&
+      !FINISHED_THOUGHT.test(last.text)
+    )
+    if (canMerge && last) {
+      last.end_ms = seg.end_ms
+      if (!last.segmentIds.includes(canonicalId)) last.segmentIds.push(canonicalId)
+      last.text = joinCaptionText(last.text, text)
+    } else {
+      paragraphs.push({
+        id: seg.id, speaker_id: seg.speaker_id,
+        speaker_name: seg.speaker_name,
+        start_ms: seg.start_ms, end_ms: seg.end_ms,
+        text, segmentIds: [canonicalId], color: seg.color,
+      })
+    }
+  }
+  return paragraphs
+}

@@ -329,7 +329,19 @@ class SessionProcessor(threading.Thread):
             self._ecapa_shadow_audio.clear()
             independent = getattr(self, "independent_diarization", None)
             if independent is not None:
-                closed_payload["independent_diarization"] = independent.report()
+                independent_report = independent.report()
+                closed_payload["independent_diarization"] = independent_report
+                if independent_report.get("state") != "completed":
+                    self._put({
+                        "type": "feature_warning",
+                        "feature": "diarization",
+                        "message": (
+                            "Independent Nemotron diarization did not finish "
+                            "successfully. Automatic speaker assignments "
+                            "require acoustic review; this meeting must not "
+                            "be counted as a passed multi-speaker test."
+                        ),
+                    })
                 try:
                     from speech.overlap_content_risk import overlap_content_risk
                     official = independent.final_turns_snapshot()

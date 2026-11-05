@@ -47,6 +47,26 @@ def processor_for_test():
 
 
 class LiveFusionTests(unittest.TestCase):
+    def test_opt_in_multi_speaker_diagnostics_do_not_rewrite_camplus(self):
+        processor = processor_for_test()
+        processor.segments.append({
+            **processor.segments[0],
+            "id": 2, "start_sample": 16000, "end_sample": 32000,
+            "text": "Second human reply",
+            "emb": np.array([0., 1.], dtype=np.float32),
+            "speaker_id": 18, "speaker_name": "Speaker 18",
+        })
+        activity = np.zeros((200, 8), dtype=np.float32)
+        activity[:100, 0] = 0.95
+        activity[100:, 1] = 0.95
+        processor.independent_diarization = FakeAcoustics(activity)
+        self.assertTrue(processor._rebuild_and_push())
+        self.assertEqual([row["speaker_id"]
+                          for row in processor.snapshot_state()["segments"]],
+                         [1, 2])
+        self.assertEqual([row["speaker_id"] for row in processor.segments],
+                         [17, 18])
+
     def test_independent_activity_corrects_caption_but_not_acoustic_cluster(self):
         processor = processor_for_test()
         activity = np.zeros((100, 8), dtype=np.float32)

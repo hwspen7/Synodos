@@ -13,6 +13,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import { speakerColor } from '@/speaker/clustering'
 import { splitDisplaySentences } from '@/transcript/display'
 import { expandContentFirstSegments } from '@/transcript/contentFirst'
+import { buildTranscriptParagraphs } from '@/transcript/paragraphs'
 import {
   supportedLanguages, restoredSpeechChoices,
 } from '@/config/phase1Languages'
@@ -123,9 +124,9 @@ const statusClass = computed(() => {
 
 /** Group neighboring same-speaker segments locally into paragraphs. */
 const paragraphs = computed<Paragraph[]>(() =>
-  buildParagraphs(expandContentFirstSegments(
+  buildTranscriptParagraphs(expandContentFirstSegments(
     segments.value, Boolean(translationTarget.value),
-  )),
+  ), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value }),
 )
 const overlapWarnings = computed(() => segments.value.reduce(
   (sum, seg) => sum + (seg.overlap_intervals_ms?.length ?? 0), 0,
@@ -206,69 +207,6 @@ function showToast(message: string): void {
   }, 2600)
 }
 
-function endsFinishedThought(text: string): boolean {
-  return /[.!?\u3002\uff01\uff1f]["'\u201d\u2019\uff09\])}]*\s*$/.test(text.trimEnd())
-}
-
-function mergeGapMs(): number {
-  // A short gap alone is insufficient justification to merge entire turns.
-  return Math.min(Math.round((mergeGapS.value || 2) * 1000), 180)
-}
-
-/** Join text without breaking CJK scripts or concatenating Latin words. */
-function joinTranscriptText(left: string, right: string): string {
-  const a = left.trimEnd()
-  const b = right.trimStart()
-  if (!a) return b
-  if (!b) return a
-  if (/[[({\uff08\u300a\u300c\u300e\u201c\u2018]$/.test(a) || /^[,!.?;:%)\]}\uff0c\u3002\uff01\uff1f\uff1b\uff1a\u3001\uff09\u300b\u300d\u300f\u201d\u2019]/.test(b)) return a + b
-  const cjk = /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/
-  if (cjk.test(a.slice(-1)) || cjk.test(b.charAt(0))) return a + b
-  return a + ' ' + b
-}
-
-/** Merge adjacent segments with matching speakers and short gaps. */
-function buildParagraphs(segs: Segment[]): Paragraph[] {
-  const ordered = [...segs].sort((a, b) => a.start_ms - b.start_ms)
-  const gap = mergeGapMs()
-  const paras: Paragraph[] = []
-  for (const seg of ordered) {
-    const last = paras[paras.length - 1]
-    const visibleText = translationTarget.value && seg.translation?.trim()
-      ? seg.translation : seg.text
-    if (
-      last &&
-      seg.speaker_id === last.speaker_id &&
-      seg.start_ms >= last.end_ms &&
-      seg.start_ms - last.end_ms < gap &&
-      (seg.end_ms - last.start_ms) <= 6500 &&
-      (last.text.length + visibleText.length) <= 150 &&
-      !endsFinishedThought(last.text) &&
-      // A label such as "Unidentified Speaker" is not evidence of same voice.
-      seg.speaker_id > 0
-    ) {
-      last.end_ms = seg.end_ms
-      const canonicalId = seg.source_segment_id ?? seg.id
-      if (!last.segmentIds.includes(canonicalId)) {
-        last.segmentIds.push(canonicalId)
-      }
-      last.text = joinTranscriptText(last.text, visibleText)
-    } else {
-      paras.push({
-        id: seg.id,
-        speaker_id: seg.speaker_id,
-        speaker_name: seg.speaker_name,
-        start_ms: seg.start_ms,
-        end_ms: seg.end_ms,
-        text: visibleText,
-        segmentIds: [seg.source_segment_id ?? seg.id],
-        color: seg.color,
-      })
-    }
-  }
-  return paras
-}
-
 /** Replace the entire segment list when the backend sends a snapshot. */
 function applyTranscript(msg: ServerTranscript): void {
   const segs: Segment[] = msg.segments.map((s) => ({
@@ -278,7 +216,7 @@ function applyTranscript(msg: ServerTranscript): void {
   segments.value = segs
   transcriptMeta.value = {
     segments: msg.segments.length,
-    paragraphs: buildParagraphs(expandContentFirstSegments(
+    paragraphs: buildTranscriptParagraphs(expandContentFirstSegments(
       segs, Boolean(translationTarget.value),
     )).length,
   }
