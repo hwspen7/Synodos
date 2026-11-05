@@ -71,7 +71,7 @@ def process(job, gateway):
         aid=store.save_artifact(job['meeting_id'],job['id'],kind,mode,revision,data,gateway.model_for(mode))
         return {'artifact_id':aid,'data':data,'source_revision':revision}
     if kind == 'speaker_insights':
-        from intelligence.speaker_insights import analyze_speaker, choose_speaker_turns
+        from intelligence.speaker_insights import analyze_speaker, choose_speaker_turns, speaker_source_hash
         data = job.get('payload') or {}
         speaker_id = data.get('speaker_id')
         revision, segments = _context(job)
@@ -85,7 +85,8 @@ def process(job, gateway):
         if current_revision != revision:
             raise ValueError('Transcript changed while analyzing; refresh and retry')
         current_name, current_selected = choose_speaker_turns(current_segments, speaker_id)
-        if current_name != name or [s['id'] for s in current_selected] != [s['id'] for s in selected]:
+        if (current_name != name or
+                speaker_source_hash(current_selected) != speaker_source_hash(selected)):
             raise ValueError('Speaker attribution changed while analyzing; retry')
         model = gateway.model_for('meeting')
         aid = store.save_artifact(job['meeting_id'], job['id'], kind, 'meeting',
