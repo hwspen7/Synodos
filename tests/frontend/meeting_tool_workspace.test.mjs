@@ -13,10 +13,10 @@ const toolHandler = source.slice(start, end)
 
 test('meeting tools share exactly one active destination', () => {
   assert.match(toolHandler, /activeMeetingTool\.value = tool/)
-  assert.match(toolHandler, /showReviewPanel\.value = tool === 'review'/)
-  assert.match(toolHandler, /showRecordings\.value = tool === 'recordings'/)
-  assert.match(toolHandler, /showAdvancedControls\.value = tool === 'settings'/)
   assert.match(source, /activeMeetingTool = ref<MeetingTool>\('transcript'\)/)
+  assert.doesNotMatch(source, /const showReviewPanel = ref/)
+  assert.doesNotMatch(source, /const showRecordings = ref/)
+  assert.doesNotMatch(source, /const showAdvancedControls = ref/)
 })
 
 test('meeting tool controls live inside the local sidebar', () => {
