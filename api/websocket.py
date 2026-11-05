@@ -59,6 +59,7 @@ async def ws_audio(
     meeting_id: Optional[str] = Query(default=None),
     title: Optional[str] = Query(default=None),
     participants: Optional[str] = Query(default=None),
+    auto_match_saved: Optional[bool] = Query(default=None),
     hotwords: Optional[str] = Query(default=None),
     spk_threshold: Optional[float] = Query(default=None),
     language: str = Query(default="en"),
@@ -149,6 +150,14 @@ async def ws_audio(
         else:
             participant_ids = list((loaded_state or {}).get("participant_ids") or [])
         participants_explicit = participants is not None
+        saved_auto_match = (loaded_state or {}).get("ui_settings") or {}
+        auto_match_enabled = (
+            bool(auto_match_saved) if auto_match_saved is not None
+            else bool(saved_auto_match.get(
+                "auto_match_saved",
+                (loaded_state or {}).get("auto_match_saved", True),
+            ))
+        )
         # Explicitly selected hotword libraries take precedence over saved settings.
         if hotwords is not None:
             hotword_ids = [h.strip() for h in hotwords.split(",") if h.strip()]
@@ -179,6 +188,7 @@ async def ws_audio(
             hotword_ids=hotword_ids,
             spk_threshold=match_thr,
             participants_explicit=participants_explicit,
+            auto_match_saved=auto_match_enabled,
             hotwords_explicit=hotwords_explicit,
             spk_threshold_explicit=spk_threshold_explicit,
         )
