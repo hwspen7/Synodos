@@ -37,9 +37,9 @@ def match_enrolled_voice(
     if probe is None:
         return {"status": "invalid_probe", "profile_id": None,
                 "similarity": None, "margin": None}
-    ranked: list[tuple[float, str]] = []
+    ranked: list[tuple[float, str, bool]] = []
     for person in participants:
-        candidate_scores: list[float] = []
+        candidate_scores: list[tuple[float, bool]] = []
         for row in person.get("vectors") or []:
             if row.get("embedding_model", "camplus") != model_id:
                 continue
@@ -48,14 +48,23 @@ def match_enrolled_voice(
             enrolled = _unit(row.get("emb"))
             if enrolled is None or enrolled.size != probe.size:
                 continue
-            candidate_scores.append(float(np.dot(probe, enrolled)))
+            candidate_scores.append((
+                float(np.dot(probe, enrolled)),
+                row.get("human_verified") is True
+                and row.get("verification_source") == "manual_profile_correction",
+            ))
         if candidate_scores:
-            ranked.append((max(candidate_scores), str(person["id"])))
+            best_score, best_verified = max(
+                candidate_scores, key=lambda item: item[0],
+            )
+            ranked.append((best_score, str(person["id"]), best_verified))
     ranked.sort(reverse=True, key=lambda v: v[0])
     if not ranked:
         return {"status": "no_compatible_enrollment", "profile_id": None,
-                "similarity": None, "margin": None}
-    top, sid = ranked[0]
+                "similarity": None, "margin": None,
+                "enrollment_human_verified": False,
+                "automatic_identity_update": False}
+    top, sid, verified = ranked[0]
     delta = top - ranked[1][0] if len(ranked) > 1 else None
     if top < threshold:
         status = "below_threshold"
@@ -70,4 +79,12 @@ def match_enrolled_voice(
         "margin": round(delta, 6) if delta is not None else None,
         "score_kind": "raw_cosine_not_probability",
         "embedding_model": model_id,
+        "enrollment_human_verified": verified if status == "matched" else False,
+        "evidence_level": (
+            "human_reviewed_enrollment_candidate" if verified and status == "matched"
+            else "unverified_enrollment_candidate" if status == "matched"
+            else "insufficient_or_ambiguous"
+        ),
+        "automatic_identity_update": False,
+        "human_review_required": True,
     }
