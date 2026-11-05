@@ -128,6 +128,36 @@ class RealtimeSubtitleContracts(unittest.TestCase):
         processor._cycle(final=False)
         self.assertEqual(len([x for x in events if x["type"] == "partial"]), 3)
 
+    def test_live_hybrid_tail_echo_not_saved_as_new_speaker(self):
+        processor, models, events = self.make_processor(engine="hybrid")
+        sr = processor.settings.sample_rate
+        prior_end = sr * 14
+        processor.segments = [{
+            "id": 1, "start_sample": prior_end - sr,
+            "end_sample": prior_end,
+            "text": "Who are you?", "speaker_id": 1,
+            "speaker_name": "Speaker 1", "cluster": -3, "emb": None,
+        }]
+        processor._next_segment_id = 2
+        processor.buffer.set_start_offset(prior_end)
+        processor.buffer.append(
+            np.full(int(sr * 7.5), .03, dtype=np.float32)
+        )
+        models.recognize_multilingual = lambda *a, **kw: Recognition(
+            utterances=(Utterance("You.", 0, 250, "en"),),
+            language="en", speech_detected=True,
+        )
+        processor._rebuild_and_push = lambda: False
+        with patch("sessions.processor.submit_speaker_analysis") as speaker:
+            self.assertFalse(processor._cycle(final=False))
+        speaker.assert_not_called()
+        self.assertEqual(len(processor.segments), 1)
+        self.assertEqual(processor.segments[0]["text"], "Who are you?")
+        self.assertFalse(any(
+            row.get("type") == "partial" and row.get("text") == "You."
+            for row in events
+        ))
+
     def test_stale_preview_clears_even_when_vad_stays_positive(self):
         processor, models, events = self.make_processor(engine="whisper")
         sr = processor.settings.sample_rate

@@ -56,7 +56,7 @@ def is_adjacent_tail_echo(
                 or end > old_end + round(0.40 * sample_rate)):
             continue
         old_text = str(previous.get("text") or "").strip()
-        if not old_text.endswith((".", "?", "!", "。", "？", "！")):
+        if not old_text.endswith((".", "?", "!", "\u3002", "\uff1f", "\uff01")):
             continue
         tokens = re.findall(
             r"[a-z0-9]+", unicodedata.normalize("NFKC", old_text).casefold()
