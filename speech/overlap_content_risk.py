@@ -15,10 +15,12 @@ def overlap_content_risk(
     acoustic_turns: Sequence[Mapping],
     caption_turns: Sequence[Mapping],
     *, acoustic_origin_ms: int = 0, speaker_id_offset: int = 0,
+    speaker_id_map: Mapping[int, int] | None = None,
     min_overlap_ms: int = 120, max_review_spans: int = 32,
 ) -> dict:
     if (type(acoustic_origin_ms) is not int or acoustic_origin_ms < 0
             or type(speaker_id_offset) is not int
+            or (speaker_id_map is not None and not isinstance(speaker_id_map, Mapping))
             or not 20 <= min_overlap_ms <= 2000
             or not 1 <= max_review_spans <= 256):
         raise ValueError("Invalid overlap audit configuration")
@@ -35,8 +37,14 @@ def overlap_content_risk(
                 or type(a) is not int or type(b) is not int
                 or a < 0 or b <= a):
             raise ValueError("Invalid final acoustic turn")
+        # Preserve unassigned acoustic channels as distinct negative IDs
+        # in the audit, so an unrecognized voice is not counted as covered.
+        display_id = (
+            sid + speaker_id_offset if speaker_id_map is None
+            else speaker_id_map.get(sid, -sid)
+        )
         intervals.append((a + acoustic_origin_ms, b + acoustic_origin_ms,
-                          sid + speaker_id_offset))
+                          display_id))
     captions = []
     for turn in caption_turns:
         a, b, sid = (
