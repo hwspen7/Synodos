@@ -5,7 +5,6 @@
  */
 import type { Segment, Paragraph } from '../types'
 
-const FINISHED_THOUGHT = /[.!?\u3002\uff01\uff1f]["'\u201d\u2019\uff09\])}]*\s*$/u
 const CJK = /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/u
 
 function joinCaptionText(left: string, right: string): string {
@@ -13,7 +12,8 @@ function joinCaptionText(left: string, right: string): string {
   const b = right.trimStart()
   if (!a) return b
   if (!b) return a
-  if (/[[({\uff08\u300a\u300c\u300e\u201c\u2018]$/u.test(a) ||
+  if (/[[-({\uff08\u300a\u300c\u300e\u201c\u2018]$/u.test(a) ||
+      /[-'\u2019]$/u.test(a) || /^[-'\u2019]/u.test(b) ||
       /^[,!.?;:%)\]}\uff0c\u3002\uff01\uff1f\uff1b\uff1a\u3001\uff09\u300b\u300d\u300f\u201d\u2019]/u.test(b)) {
     return a + b
   }
@@ -29,9 +29,12 @@ export function buildTranscriptParagraphs(
     maxParagraphChars?: number
   } = {},
 ): Paragraph[] {
-  const gapMs = Math.min(750, Math.max(0, Math.round((opts.mergeGapS ?? 2) * 1000)))
-  const maxDuration = opts.maxParagraphMs ?? 24000
-  const maxChars = opts.maxParagraphChars ?? 420
+  // The previous 750 ms hard cap fragmented continuous conversations
+  // into a separate card for each small pause. Keep the source turns intact
+  // and group consecutive utterances for reading within a bounded paragraph.
+  const gapMs = Math.min(2500, Math.max(0, Math.round((opts.mergeGapS ?? 2) * 1000)))
+  const maxDuration = opts.maxParagraphMs ?? 28000
+  const maxChars = opts.maxParagraphChars ?? 520
   const ordered = [...segments].sort((a, b) => a.start_ms - b.start_ms || a.id - b.id)
   const paragraphs: Paragraph[] = []
   for (const seg of ordered) {
@@ -50,11 +53,10 @@ export function buildTranscriptParagraphs(
       seg.start_ms >= last.end_ms &&
       seg.start_ms - last.end_ms <= gapMs &&
       seg.end_ms - last.start_ms <= maxDuration &&
-      last.text.length + text.length + 1 <= maxChars &&
-      !FINISHED_THOUGHT.test(last.text)
+      last.text.length + text.length + 1 <= maxChars
     )
     if (canMerge && last) {
-      last.end_ms = seg.end_ms
+      last.end_ms = Math.max(last.end_ms, seg.end_ms)
       if (!last.segmentIds.includes(canonicalId)) last.segmentIds.push(canonicalId)
       last.text = joinCaptionText(last.text, text)
     } else {
