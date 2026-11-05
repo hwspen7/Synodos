@@ -90,6 +90,21 @@ class EvidenceQATests(unittest.TestCase):
         self.assertNotIn("Fictitious", result["answer"])
         self.assertEqual(result["sources"][0]["revision"], 2)
 
+    def test_evidence_endpoint_queues_distinct_opt_in_job(self):
+        import asyncio
+        from api.intelligence import AnswerRequest, ask_evidence
+        with patch("api.intelligence._enabled"), patch(
+            "api.intelligence.store.enqueue", return_value="job-123"
+        ) as enqueue:
+            result = asyncio.run(ask_evidence(
+                AnswerRequest(question="What did we decide?")
+            ))
+        self.assertEqual(result["answer_policy"], "verbatim_source_quotes_only")
+        self.assertEqual(result["job_id"], "job-123")
+        enqueue.assert_called_once_with(
+            "ask_evidence", None, {"question": "What did we decide?"}
+        )
+
     def test_missing_source_fails_closed_without_model_inference(self):
         class Gateway:
             def structured(self, *_args, **_kwargs):
