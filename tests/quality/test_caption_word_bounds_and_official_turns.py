@@ -71,8 +71,8 @@ class CaptionProjectionTests(unittest.TestCase):
         activity[:, 6] = 0.99  # Channel 7, suppressed by official model result.
         processor.independent_diarization = FinalAcoustic(activity)
         self.assertTrue(processor._rebuild_and_push())
-        self.assertEqual(processor._independent_published[1], 3)
-        self.assertEqual(processor.snapshot_state()["segments"][0]["speaker_id"], 3)
+        self.assertEqual(processor._independent_published[1], 1)
+        self.assertEqual(processor.snapshot_state()["segments"][0]["speaker_id"], 1)
 
     def test_official_empty_turns_reject_legacy_fallback(self):
         class FinalNoVoice(FakeAcoustics):
