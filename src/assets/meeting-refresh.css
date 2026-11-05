@@ -198,3 +198,71 @@
   .meeting-running-status{font-size:11px}
 }
 @media(prefers-reduced-motion:reduce){.summary-live-dot.active{animation:none}}
+
+
+/* Settings are grouped by task instead of sharing one dense toolbar. */
+.meeting-config-panel,.meeting-recordings-panel{
+  padding:24px 26px;margin:0 0 22px;background:var(--mop-surface);
+  border:1px solid #e8e3ed;border-radius:16px;
+  box-shadow:0 7px 24px rgba(45,27,67,.025);
+}
+.config-panel-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px}
+.config-panel-heading h2{font-size:19px;letter-spacing:-.025em;font-weight:750;line-height:1.3;margin:0;color:var(--mop-text-strong)}
+.config-panel-heading p{color:var(--mop-text-muted);font-size:12px;margin:6px 0 0;line-height:1.6}
+.meeting-config-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.config-group{display:flex;flex-direction:column;align-items:stretch;gap:14px;min-width:0;padding:19px;border:1px solid #eae5ee;border-radius:13px;background:#fdfcff}
+.config-group-title{display:flex;align-items:flex-start;gap:11px;min-height:64px;padding-bottom:14px;border-bottom:1px solid #eeeaf1}
+.config-step{display:inline-flex;align-items:center;justify-content:center;flex:none;width:28px;height:28px;border-radius:9px;background:#f1eaf8;color:#68389a;font-size:11px;font-weight:760;font-variant-numeric:tabular-nums}
+.config-group-title h3{font-size:14px;letter-spacing:-.015em;font-weight:750;margin:1px 0 3px;color:var(--mop-text-strong)}
+.config-group-title p{font-size:11px;line-height:1.5;color:var(--mop-text-muted);margin:0}
+.config-group .field{display:flex;flex-direction:column;align-items:stretch;gap:7px;margin:0;color:var(--mop-text-strong);font-size:12px;font-weight:650}
+.config-group select,.config-group input[type=number]{width:100%;height:42px;min-height:42px;max-width:none;padding:7px 11px;background:#fff;border:1px solid #dcd5e4;border-radius:10px;color:var(--mop-text-strong);font-size:13px;font-weight:500}
+.config-group select:disabled,.config-group input:disabled{opacity:.6}
+.config-checkbox{display:flex;align-items:flex-start;gap:11px;cursor:pointer;padding:11px 0 0}
+.config-checkbox input{flex:none;margin-top:3px;accent-color:#68389a;width:16px;height:16px}
+.config-checkbox span{display:flex;flex-direction:column;gap:3px}
+.config-checkbox strong{font-size:12px;font-weight:700;color:var(--mop-text-strong)}
+.config-checkbox small{font-size:11px;color:var(--mop-text-muted);line-height:1.5}
+.config-help{margin:0;padding:12px 13px;background:#f6f2fb;border-radius:9px;font-size:11px;line-height:1.6;color:#65576e}
+.config-resource{display:flex;align-items:center;gap:11px;min-height:70px;width:100%;padding:12px 13px;text-align:left;background:#fff;border:1px solid #e7e0ed;border-radius:11px;color:var(--mop-text-strong);transition:background .15s,border-color .15s}
+.config-resource:hover{background:#f7f2fc;border-color:#c6afd8}
+.config-resource-icon{display:flex;align-items:center;justify-content:center;width:36px;height:36px;flex:none;background:#f2ebf8;color:#68389a;border-radius:10px}
+.config-resource>span:nth-child(2){display:flex;flex-direction:column;flex:1;gap:3px;min-width:0}
+.config-resource strong{font-size:12px;font-weight:720}
+.config-resource small{font-size:11px;line-height:1.5;color:var(--mop-text-muted)}
+.resource-chevron{font-size:23px;font-weight:350;color:#a59bab}
+.config-panel-footer{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:17px 0 0;margin-top:18px;border-top:1px solid #ebe6ef}
+.config-footer-meta{color:var(--mop-text-muted);font-size:12px}
+.config-panel-footer .btn-primary{min-height:41px;background:#68389a;border-color:#68389a;border-radius:10px;box-shadow:none;font-size:12px}
+.config-utilities{margin-top:18px;border-top:1px solid #efecf2;padding-top:12px}
+.config-disclosure{display:flex;align-items:center;gap:8px;width:100%;padding:8px 0;border:0;background:transparent;color:#74657f;text-align:left;font-weight:650;font-size:12px}
+.config-disclosure>span{margin-left:auto;font-size:18px;font-weight:400}
+.diagnostics-content{padding:12px 0 0;display:flex;flex-direction:column;gap:10px}
+.diagnostics-content .hint-text{font-size:11px;line-height:1.6}
+.meeting-recordings-panel{margin-bottom:22px}
+.recordings-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 0 16px;border-bottom:1px solid #ede8f0;font-size:12px;font-weight:650;color:var(--mop-text-muted)}
+.recording-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding-top:18px}
+.recording-media-card{display:flex;flex-direction:column;min-width:0;gap:14px;padding:18px;border:1px solid #e7e1ed;border-radius:13px;background:#fdfcff}
+.recording-media-top{display:flex;align-items:center;gap:11px}
+.recording-media-icon{display:flex;align-items:center;justify-content:center;width:38px;height:38px;flex:none;border-radius:11px;background:#f0e9f8;color:#68389a}
+.recording-media-top h3{font-size:13px;font-weight:740;margin:0 0 3px}
+.recording-media-top p{margin:0;color:var(--mop-text-muted);font-size:11px;font-variant-numeric:tabular-nums}
+.recording-media-card audio{display:block;width:100%;min-width:0;height:42px}
+.recording-download{display:inline-flex;align-items:center;gap:7px;align-self:flex-start;color:#68389a;font-size:12px;font-weight:720;text-decoration:none}
+.recording-download:hover{text-decoration:underline}
+.recording-empty{text-align:center;padding:38px 16px;color:var(--mop-text-muted)}
+.recording-empty svg{color:#68389a}
+.recording-empty h3{font-size:14px;color:var(--mop-text-strong);margin:10px 0 5px}
+.recording-empty p{font-size:12px;margin:0}
+.recordings-show-all{display:block;margin:18px auto 0;padding:10px 16px;background:#f4eef9;color:#68389a;border:0;border-radius:9px;font-size:12px;font-weight:720}
+.recordings-show-all:hover{background:#ebe0f5}
+@media(max-width:1100px){.meeting-config-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.config-group:last-child{grid-column:1/-1}}
+@media(max-width:700px){
+  .meeting-config-panel,.meeting-recordings-panel{padding:18px 15px;margin-bottom:15px}
+  .meeting-config-grid,.recording-card-grid{grid-template-columns:1fr}
+  .config-group:last-child{grid-column:auto}
+  .config-group{padding:15px}
+  .config-panel-footer{align-items:stretch;flex-direction:column}
+  .config-panel-footer .btn{width:100%}
+  .config-group-title{min-height:0}
+}
