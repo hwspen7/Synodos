@@ -9,6 +9,7 @@ from audio.buffer import AudioBuffer
 from core.config import Settings
 from core.runtime import models, settings
 from sessions.processor import SessionProcessor
+from sessions.stable_speaker_channels import StableSpeakerChannels
 from sessions.lifecycle import SessionLifecycle, SessionPhase
 from storage.meetings import MeetingStore
 from storage.speakers import SpeakerStore
@@ -110,6 +111,9 @@ class Session:
                          if type(item.get("speaker_id")) is int
                          and item["speaker_id"] > 0),
                         default=0,
+                    )
+                    self.processor._nemotron_channels = StableSpeakerChannels(
+                        offset=self.processor._independent_id_offset
                     )
             self.processor.load_participants()
             self.processor.load_hotwords()
