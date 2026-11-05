@@ -25,6 +25,7 @@ class MeetingSettingsPayload(BaseModel):
     vad_threshold: float = Field(default=4.0, ge=0.5, le=30)
     rec_threshold: float = Field(default=1.5, ge=0.2, le=30)
     participant_ids: list[str] = Field(default_factory=list, max_length=64)
+    auto_match_saved: bool = True
     hotword_ids: list[str] = Field(default_factory=list, max_length=64)
     spk_threshold: float = Field(default=0.3, ge=0, le=1)
 
@@ -66,6 +67,7 @@ async def update_meeting_settings(meeting_id: str, payload: MeetingSettingsPaylo
             state.setdefault("sample_rate", app_settings.sample_rate)
             state.setdefault("merge_gap_s", app_settings.merge_gap_s)
             state["participant_ids"] = list(dict.fromkeys(payload.participant_ids))
+            state["auto_match_saved"] = payload.auto_match_saved
             state["hotword_ids"] = list(dict.fromkeys(payload.hotword_ids))
             state["spk_threshold"] = payload.spk_threshold
             state["ui_settings"] = payload.model_dump()
