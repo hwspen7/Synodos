@@ -48,10 +48,10 @@ class Phase34RunnerPostgresTests(unittest.TestCase):
                     "\n<evidence>", 1
                 )[0]
                 if question in refused:
-                    return {"quotes": []}
+                    return {"source_numbers": []}
                 expected_sentence = gold.get(question)
                 if expected_sentence is None:
-                    return {"quotes": []}
+                    return {"source_numbers": []}
                 excerpt = prompt.split("<evidence>\n", 1)[1].split(
                     "\n</evidence>", 1
                 )[0]
@@ -61,11 +61,8 @@ class Phase34RunnerPostgresTests(unittest.TestCase):
                              if i + 1 < len(positions) else len(excerpt))
                     block = excerpt[match.start():right]
                     if expected_sentence in block:
-                        return {"quotes": [{
-                            "source_number": int(match.group(1)),
-                            "quote": expected_sentence,
-                        }]}
-                return {"quotes": []}
+                        return {"source_numbers": [int(match.group(1))]}
+                return {"source_numbers": []}
 
         for mode in ("lexical", "hybrid"):
             config = SimpleNamespace(
