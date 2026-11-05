@@ -791,7 +791,7 @@ class SessionProcessor(threading.Thread):
         Auto-discovered IDs are not written into meeting participant settings.
         """
         self._auto_profile_mode = False
-        self._auto_match_cache.clear()
+        self._auto_match_cache = {}
         if not self.speaker_store:
             self._participants = []
             return
@@ -1765,7 +1765,7 @@ class SessionProcessor(threading.Thread):
         """Audio transcription and speaker data handling."""
         if not self._participants:
             return None, -1.0
-        if self._auto_profile_mode:
+        if getattr(self, "_auto_profile_mode", False):
             return match_saved_voice(
                 emb, self._participants,
                 minimum_similarity=float(os.getenv(
