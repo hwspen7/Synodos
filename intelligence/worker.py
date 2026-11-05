@@ -111,7 +111,7 @@ def process(job, gateway):
             return verified_excerpt_answer(None, [])
         selected = gateway.structured(
             SYSTEM, evidence_prompt(query, hits),
-            model=gateway.model_for('ask'),
+            model=gateway.model_for('ask'), evidence_only=True,
         )
         return verified_excerpt_answer(selected, hits)
     if kind == 'context_correction':
