@@ -32,7 +32,7 @@ recordings are kept as hard acoustic pressure tests. Published text alone
 is NOT proof that faint overlapping speech is audible. No automatic
 human labels or synthetic cases become real-meeting gold.
 
-Freeze development FLEURS first (requires datasets[audio] / torchcodec):
+Freeze development FLEURS first (requires datasets, soundfile, scipy; NOT torchcodec):
     python -m tools.freeze_fleurs_asr_corpus --split validation --per-language 20 --apply
 
 Set the E-drive development manifest:
@@ -97,3 +97,33 @@ latency meeting the live-caption objective. The numeric production
 gate thresholds must be determined from product requirements and
 frozen BEFORE examining the sealed test. Separate English-specialist
 routing is a follow-on only if it improves end-to-end performance.
+
+
+## Separate Windows Qwen environment and safe model dispatch
+
+Do not install qwen-asr into the main Meeting .venv. The Meeting .venv
+retains the validated torch 2.7.0+cu128, torchaudio 2.7.0 stack.
+The Qwen models should use a separate E-drive environment; scoring
+is Python-only and can run from the Meeting environment because it reads
+only exported JSON predictions.
+
+    py -3.12 -m venv E:\AI-Cache\Environments\meeting-qwen-asr
+    $qpy = "E:\AI-Cache\Environments\meeting-qwen-asr\Scripts\python.exe"
+    $env:PIP_CACHE_DIR = "E:\AI-Cache\Pip"
+    $env:HF_HOME = "E:\AI-Cache\MeetingReference\ASRSelection\cache\huggingface"
+    & $qpy -m pip install torch==2.7.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cu128
+    & $qpy -m pip install qwen-asr
+    & $qpy -m pip check
+    & $qpy -c "import torch; print(torch.__version__,torch.cuda.is_available())"
+
+Run the Whisper trial with the regular Meeting .venv Python interpreter.
+Run the two Qwen trials with $qpy, e.g.:
+
+    & $qpy -m tools.asr_model_selection run --manifest $manifest --model qwen3-asr-1.7b --language-mode auto --output "$results\qwen17.json"
+    & $qpy -m tools.asr_model_selection run --manifest $manifest --model qwen3-asr-0.6b --language-mode auto --output "$results\qwen06.json"
+
+If qwen-asr's installer updates torch incompatibly in the isolated
+environment, repair only that experimental environment; do not edit
+Meeting's working GPU stack. The Qwen inference runner imports the
+local project source and does not require installing the full
+Meeting backend into the isolated venv.

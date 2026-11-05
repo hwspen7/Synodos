@@ -13,7 +13,8 @@ On Windows, all download caches, WAVs and manifests are constrained to E.
 The command defaults to DRY RUN. Download only with --apply.
 
     cd E:\Meeting-Fixed10-Test
-    & .\.venv\Scripts\python.exe -m pip install "datasets[audio]" huggingface_hub torchcodec
+    & .\.venv\Scripts\python.exe -m pip install --no-deps "datasets==5.1.0"
+    & .\.venv\Scripts\python.exe -m pip install "huggingface_hub" "soundfile>=0.13" scipy
     & .\.venv\Scripts\python.exe -m tools.freeze_fleurs_asr_corpus --split validation --per-language 20 --apply
 
 Result manifest:
@@ -45,3 +46,28 @@ Use a separate independently audio-reviewed AMI IHM clean-meeting
 cohort for meeting-domain efficacy. Keep the existing three AMI mixed
 headset sources as difficult audio; never relabel inaudible official
 words as human-confirmed.
+
+
+## Windows CUDA dependency safety (2026-11-05)
+
+Do NOT run pip install datasets[audio] or pip install torchcodec in the
+production Meeting virtual environment. Their latest resolver may replace
+torch 2.7.0+cu128 with a newer incompatible version, breaking torchaudio
+2.7.0 and potentially the existing Whisper/CUDA deployment.
+
+Use the existing datasets package if it is installed. Audio records are
+loaded with datasets.Audio(decode=False), then decoded via soundfile,
+not TorchCodec. For 16 kHz WAV examples no FFmpeg is needed. For compressed
+MP3 the installed libsndfile must support MP3 decoding. If this fails,
+the tool raises an explicit error rather than modifying CUDA libraries.
+The scipy resampler is used only when the source encoding differs
+from 16 kHz.
+
+To repair an environment affected by the original installation advice:
+
+    & .\.venv\Scripts\python.exe -m pip uninstall -y torchcodec
+    & .\.venv\Scripts\python.exe -m pip install "torch==2.7.0" "torchaudio==2.7.0" --index-url https://download.pytorch.org/whl/cu128
+    & .\.venv\Scripts\python.exe -m pip check
+
+Verify CUDA and test the actual audio decode before downloading an entire
+cohort. Keep experimental qwen-asr packages in a separate E-drive venv.

@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import io
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -61,6 +62,50 @@ def choose_indices(metadata, *, language: str, count: int, seed: str) -> list[in
     return [index for _, index in ordered[:count]]
 
 
+
+def decode_audio_without_torchcodec(value: dict) -> dict:
+    """Read FLEURS encoded audio with libsndfile, not the PyTorch ABI.
+
+    This avoids TorchCodec, which has no Windows cp312 wheel compatible
+    with the Meeting production torch 2.7 CUDA stack.
+    """
+    import numpy as np
+    import soundfile as sf
+
+    if not isinstance(value, dict):
+        raise ValueError("Unexpected encoded audio record")
+    data = value.get("bytes")
+    if data is not None:
+        if not isinstance(data, bytes):
+            raise ValueError("Encoded audio bytes must be bytes")
+        reader = io.BytesIO(data)
+    else:
+        filename = value.get("path")
+        if not isinstance(filename, str) or not filename:
+            raise ValueError("Encoded audio has no bytes or source file")
+        reader = filename
+    try:
+        samples, rate = sf.read(reader, dtype="float32", always_2d=False)
+    except (RuntimeError, OSError) as exc:
+        raise ValueError(
+            "Audio decode failed in libsndfile. Verify soundfile MP3 support; "
+            "do not install datasets[audio] or torchcodec in Meeting .venv."
+        ) from exc
+    samples = np.asarray(samples, dtype=np.float32)
+    if samples.ndim != 1:
+        raise ValueError("FLEURS source audio must be mono")
+    if not np.isfinite(samples).all() or samples.size == 0:
+        raise ValueError("Empty or invalid source audio")
+    if rate != 16000:
+        # Preserve all selected examples instead of silently skipping
+        # files based on their original codec's sampling frequency.
+        from scipy.signal import resample_poly
+        scale = math.gcd(int(rate), 16000)
+        samples = resample_poly(samples, 16000 // scale,
+                                int(rate) // scale).astype(np.float32)
+    return {"array": samples, "sampling_rate": 16000}
+
+
 def encode_pcm16(decoded) -> tuple[bytes, float]:
     import numpy as np
     if hasattr(decoded, "get_all_samples"):
@@ -96,7 +141,7 @@ def freeze_fleurs(root: Path, split: str, per_language: int, seed: str,
         raise ValueError("Choose 10 to 400 cases per language")
     root = require_e_drive(root)
     configure_cache(root)
-    from datasets import load_dataset
+    from datasets import Audio, load_dataset
     from huggingface_hub import HfApi
     commit = revision or HfApi().dataset_info(DATASET).sha
     if not isinstance(commit, str) or not SHA.fullmatch(commit):
@@ -111,6 +156,9 @@ def freeze_fleurs(root: Path, split: str, per_language: int, seed: str,
         dataset = load_dataset(DATASET, config, split=split,
                                revision=commit,
                                cache_dir=os.environ["HF_DATASETS_CACHE"])
+        # Never instantiate the TorchCodec decoder on Windows. Keep the
+        # original compressed bytes/path and decode through libsndfile.
+        dataset = dataset.cast_column("audio", Audio(decode=False))
         # Select using IDs alone before any audio decoding or reference scoring.
         ids = [{"id": int(row["id"])} for row in dataset.select_columns(["id"])]
         chosen = choose_indices(ids, language=lang, count=per_language, seed=seed)
@@ -122,7 +170,7 @@ def freeze_fleurs(root: Path, split: str, per_language: int, seed: str,
             reference = str(example.get("transcription") or "").strip()
             if not reference:
                 raise ValueError("Selected official reference is empty")
-            pcm, duration = encode_pcm16(example["audio"])
+            pcm, duration = encode_pcm16(decode_audio_without_torchcodec(example["audio"]))
             sample_id = str(int(example["id"]))
             filename = lang + "_" + sample_id + ".wav"
             wav = destination / "wav" / filename
@@ -189,7 +237,7 @@ def main(argv=None):
         print("FROZEN CORPUS", len(result["cases"]), "cases", file)
         print("MANUAL AUDIO REVIEW: NOT PERFORMED; PRODUCTION RELEASE: BLOCKED")
         return 0
-    except (OSError, ValueError, TypeError, KeyError, ImportError) as exc:
+    except (OSError, ValueError, TypeError, KeyError, ImportError, RuntimeError) as exc:
         print("FLEURS PREPARATION FAILED:", type(exc).__name__,
               str(exc), file=sys.stderr)
         return 2

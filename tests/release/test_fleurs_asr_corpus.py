@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import io
 import wave
-from tools.freeze_fleurs_asr_corpus import choose_indices, encode_pcm16, LANGUAGES, SCHEMA
+from tools.freeze_fleurs_asr_corpus import choose_indices, encode_pcm16, decode_audio_without_torchcodec, LANGUAGES, SCHEMA
 
 
 class FleursCorpusTests(unittest.TestCase):
@@ -36,6 +36,18 @@ class FleursCorpusTests(unittest.TestCase):
             self.assertEqual((f.getframerate(), f.getnchannels(), f.getsampwidth()),
                              (16000, 1, 2))
             self.assertEqual(f.getnframes(), 16000)
+
+    def test_decode_embedded_pcm_wav_without_torchcodec(self):
+        array = np.linspace(-.1, .1, 16000, dtype=np.float32)
+        encoded, _ = encode_pcm16({"array": array, "sampling_rate": 16000})
+        restored = decode_audio_without_torchcodec({"bytes": encoded, "path": None})
+        self.assertEqual(restored["sampling_rate"], 16000)
+        self.assertEqual(len(restored["array"]), 16000)
+        self.assertAlmostEqual(restored["array"][1000], array[1000], delta=.0001)
+
+    def test_decode_invalid_bytes_fails_without_torch_upgrades(self):
+        with self.assertRaises(ValueError):
+            decode_audio_without_torchcodec({"bytes": b"not recorded audio"})
 
     def test_refuse_nonfinite_audio_and_incompatible_rates(self):
         with self.assertRaises(ValueError):
