@@ -64,6 +64,19 @@ class EvidenceQATests(unittest.TestCase):
                 self.assertEqual(result["status"], "abstained")
                 self.assertEqual(result["sources"], [])
 
+    def test_model_generated_answer_is_discarded_when_indices_are_valid(self):
+        result = verified_excerpt_answer(
+            {"answer": "Falsely asserted a complete production rollout.",
+             "source_numbers": [1]},
+            HITS,
+        )
+        self.assertEqual(result["status"], "verbatim_citations_verified")
+        self.assertNotIn("Falsely asserted", result["answer"])
+        self.assertIn(
+            "We approved the revised camera calibration",
+            result["answer"],
+        )
+
     def test_duplicate_index_selection_has_one_canonical_citation(self):
         result = verified_excerpt_answer(
             {"source_numbers": [1, 1, 2]}, HITS
@@ -77,7 +90,6 @@ class EvidenceQATests(unittest.TestCase):
             {"quotes": [{"source_number": 3, "quote": "We approved the revised camera calibration on Monday."}]},
             {"quotes": [{"source_number": True, "quote": "We approved the revised camera calibration on Monday."}]},
             {"quotes": [{"source_number": 1, "quote": "We approved"}]},
-            {"answer": "Falsely asserted summary", "source_numbers": [1]},
         ]:
             with self.subTest(proposed=proposed):
                 result = verified_excerpt_answer(proposed, HITS)
