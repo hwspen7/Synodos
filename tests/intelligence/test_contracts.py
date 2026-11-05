@@ -19,7 +19,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(len(r),1)
         self.assertEqual(r[0]['evidence']['segment_ids'],[1,2])
     def test_long_multilingual_caption_is_split_without_content_loss(self):
-        original = ("中文会议记录需要保留所有文字" * 200)
+        original = ("\u4e2d\u6587\u4f1a\u8bae\u8bb0\u5f55\u9700\u8981\u4fdd\u7559\u6240\u6709\u6587\u5b57" * 200)
         chunks = build_chunks([
             {'id': 42, 'text': original, 'start_ms': 100, 'end_ms': 60000},
         ], max_chars=120)
