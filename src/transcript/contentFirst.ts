@@ -20,23 +20,29 @@ export function hasStableSpeakerCues(
   let previousEnd = -1
   let previousSpeaker = -1
   let runDuration = 0
+  let transitions = 0
+  let totalDuration = 0
   for (const cue of cues) {
     const duration = cue.end_ms - cue.start_ms
     if (
       !Number.isInteger(cue.speaker_id) || cue.speaker_id <= 0 ||
-      !Number.isFinite(duration) || duration < 350 ||
+      !Number.isFinite(duration) || duration < 500 ||
       (previousEnd >= 0 && cue.start_ms < previousEnd)
     ) return false
     if (cue.speaker_id !== previousSpeaker) {
       // A speaker change cannot be justified by a short orphaned syllable.
-      if (previousSpeaker > 0 && runDuration < 700) return false
+      // A word-level speaker flicker is not a trustworthy new voice.
+      // Require stable acoustic support on BOTH sides of the transition.
+      if (previousSpeaker > 0 && runDuration < 1500) return false
+      if (previousSpeaker > 0 && ++transitions > 2) return false
       previousSpeaker = cue.speaker_id
       runDuration = 0
     }
     runDuration += duration
+    totalDuration += duration
     previousEnd = cue.end_ms
   }
-  return runDuration >= 700
+  return transitions > 0 && runDuration >= 1500 && totalDuration >= 3500
 }
 
 export function expandContentFirstSegments(
