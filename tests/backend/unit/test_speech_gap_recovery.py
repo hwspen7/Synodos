@@ -115,6 +115,39 @@ class GapRecoveryTests(unittest.TestCase):
             (),
         )
 
+    def test_subsecond_gap_only_under_opt_in_recovery_policy(self):
+        original = (Utterance("Existing statement", 2500, 3500),)
+        regions = vad((1000, 1520), (2500, 3500))
+        self.assertEqual(
+            uncovered_voice_intervals(regions, original, 10000), ()
+        )
+        def transcribe(audio, **kwargs):
+            return [FakeText("yeah", 0.22, 0.52)], SimpleNamespace(language="en")
+        output, stats = recover_missing_voice(
+            self.audio, regions, original, transcribe, {},
+            language="en", max_windows=3, min_uncovered_ms=350,
+        )
+        self.assertEqual([item.text for item in output],
+                         ["yeah", "Existing statement"])
+        self.assertEqual(stats["recovery_attempted"], 1)
+        self.assertEqual(stats["recovery_confirmed"], 1)
+        self.assertEqual(output[0].recognition_origin, "gap_recovery")
+
+    def test_short_gap_retry_remains_strictly_bounded(self):
+        calls = []
+        def transcribe(audio, **kwargs):
+            calls.append(len(audio))
+            return [], SimpleNamespace(language="en")
+        output, stats = recover_missing_voice(
+            self.audio,
+            vad((0, 450), (650, 1100), (1300, 1750), (1950, 2400)),
+            (), transcribe, {}, language="en",
+            max_windows=3, min_uncovered_ms=350,
+        )
+        self.assertEqual(output, ())
+        self.assertEqual(stats["recovery_attempted"], 3)
+        self.assertEqual(len(calls), 3)
+
     def test_budget_is_limited_even_on_many_uncovered_regions(self):
         attempted = []
         def transcribe(chunk, **kwargs):
