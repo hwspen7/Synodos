@@ -18,6 +18,43 @@ class ContractTests(unittest.TestCase):
         r=build_chunks([{'id':1,'text':'Hello','start_ms':2,'end_ms':11},{'id':2,'text':'world','start_ms':12,'end_ms':20}],10)
         self.assertEqual(len(r),1)
         self.assertEqual(r[0]['evidence']['segment_ids'],[1,2])
+    def test_evidence_granularity_keeps_per_segment_provenance(self):
+        segments = [
+            {"id": 1, "text": "The demonstration is November 27.",
+             "start_ms": 100, "end_ms": 800},
+            {"id": 2, "text": "Maya Chen owns engineering.",
+             "start_ms": 900, "end_ms": 2100},
+            {"id": 3, "text": "The spending cap is 48000.",
+             "start_ms": 2200, "end_ms": 3100},
+        ]
+        combined = build_chunks(segments)
+        granular = build_chunks(segments, coalesce=False)
+        self.assertEqual(len(combined), 1)
+        self.assertEqual(len(granular), 3)
+        self.assertEqual(
+            [item["evidence"]["segment_ids"] for item in granular],
+            [[1], [2], [3]],
+        )
+        self.assertEqual(
+            [(item["evidence"]["start_ms"], item["evidence"]["end_ms"])
+             for item in granular],
+            [(100, 800), (900, 2100), (2200, 3100)],
+        )
+
+    def test_granular_long_caption_preserves_all_text(self):
+        text = "Calibration data 12345 " * 100
+        chunks = build_chunks([
+            {"id": 27, "text": text, "start_ms": 0, "end_ms": 45000},
+        ], max_chars=96, coalesce=False)
+        self.assertGreater(len(chunks), 10)
+        self.assertEqual(
+            "".join(x["text"].removeprefix("[27] ") for x in chunks),
+            text.strip(),
+        )
+        self.assertTrue(
+            all(x["evidence"]["segment_ids"] == [27] for x in chunks)
+        )
+
     def test_long_multilingual_caption_is_split_without_content_loss(self):
         original = ("\u4e2d\u6587\u4f1a\u8bae\u8bb0\u5f55\u9700\u8981\u4fdd\u7559\u6240\u6709\u6587\u5b57" * 200)
         chunks = build_chunks([
