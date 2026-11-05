@@ -59,7 +59,7 @@ class QualityCandidateTests(unittest.TestCase):
             self.assertEqual([u.text for u in result.utterances], ["Hello"])
             recover.assert_called_once()
 
-    def test_candidate_has_no_effect_on_explicit_language_whisper_vad(self):
+    def test_candidate_bypasses_duplicate_inner_vad_for_explicit_language(self):
         with patch.dict(os.environ, {
             "MEETING_ASR_QUALITY_CANDIDATE": "1",
             "MEETING_WHISPER_GAP_RECOVERY": "0",
@@ -71,7 +71,29 @@ class QualityCandidateTests(unittest.TestCase):
                 (primary, {"recovery_attempted": 0}),
             ):
                 engine.recognize(np.zeros(16000, dtype=np.float32), language="en")
-            self.assertTrue(model.transcribe.call_args.kwargs["vad_filter"])
+            self.assertFalse(model.transcribe.call_args.kwargs["vad_filter"])
+
+    def test_candidate_recovery_uses_bounded_subsecond_windows(self):
+        with patch.dict(os.environ, {
+            "MEETING_ASR_QUALITY_CANDIDATE": "1",
+            "MEETING_ASR_TRACE_STAGES": "1",
+        }, clear=True):
+            engine, model = self._engine()
+            recorded = {}
+            def recover(samples, regions, primary, transcribe, kwargs, **options):
+                recorded.update(options)
+                return primary, {
+                    "recovery_attempted": 0,
+                    "recovery_confirmed": 0,
+                    "recovery_failed": 0,
+                }
+            with mock_voiced_audio(), patch(
+                "speech.whisper.recover_missing_voice", side_effect=recover,
+            ):
+                engine.recognize(np.zeros(16000, dtype=np.float32), language="en")
+        self.assertEqual(recorded["max_windows"], 3)
+        self.assertEqual(recorded["min_uncovered_ms"], 350)
+        self.assertFalse(model.transcribe.call_args.kwargs["vad_filter"])
 
     def test_coverage_retention_defers_drop_then_reports_exhaustion(self):
         attempts = {}
