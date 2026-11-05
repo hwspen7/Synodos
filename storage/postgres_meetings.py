@@ -29,8 +29,14 @@ class PostgresMeetingStore(MeetingStore):
     def _read_payload(self, meeting_id: str) -> dict | None:
         self._check_id(meeting_id)
         with self.database.pool.connection() as conn:
-            row = conn.execute("SELECT meta, state FROM meeting_records WHERE id = %s", (meeting_id,)).fetchone()
-        return {"meta": row[0], "state": row[1]} if row else None
+            row = conn.execute(
+                "SELECT meta, state, revision FROM meeting_records WHERE id = %s",
+                (meeting_id,),
+            ).fetchone()
+        return {
+            "meta": {**(row[0] or {}), "_store_version": int(row[2])},
+            "state": row[1],
+        } if row else None
 
     def exists(self, meeting_id: str) -> bool:
         self._check_id(meeting_id)
@@ -61,7 +67,8 @@ class PostgresMeetingStore(MeetingStore):
             rows = conn.execute("SELECT meta FROM meeting_records ORDER BY updated_at DESC, id").fetchall()
         return [r[0] for r in rows]
 
-    def save_state(self, state: dict) -> dict:
+    def save_state(self, state: dict, *,
+                   expected_store_revision: int | None = None) -> dict:
         from psycopg.types.json import Jsonb
         mid = state["id"]
         self._check_id(mid)
@@ -80,7 +87,17 @@ class PostgresMeetingStore(MeetingStore):
                 "INSERT INTO meeting_records (id, meta, state) VALUES (%s, '{}'::jsonb, NULL) "
                 "ON CONFLICT (id) DO NOTHING", (mid,),
             )
-            old = conn.execute("SELECT meta FROM meeting_records WHERE id = %s FOR UPDATE", (mid,)).fetchone()[0]
+            from sessions.manual_review import ReviewConflict
+            locked = conn.execute(
+                "SELECT meta, revision FROM meeting_records WHERE id = %s FOR UPDATE",
+                (mid,),
+            ).fetchone()
+            old, version = locked[0], int(locked[1])
+            if (expected_store_revision is not None
+                    and version != expected_store_revision):
+                raise ReviewConflict(
+                    f"Stale meeting snapshot {expected_store_revision}; current is {version}"
+                )
             meta = {
                 "id": mid,
                 "title": (state.get("title") or "Untitled Meeting").strip() or "Untitled Meeting",
