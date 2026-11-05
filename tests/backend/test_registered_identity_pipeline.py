@@ -42,6 +42,7 @@ class SpeakerSessionIntegrationTests(unittest.TestCase):
         proc.auto_match_saved = auto_match_saved
         proc._participants = []
         proc._auto_profile_mode = False
+        proc._auto_match_cache = {}
         proc.spk_threshold = 0.3
         return proc
 
