@@ -145,6 +145,13 @@ onMounted(load)
               <span class="dot-sep">·</span>
               Updated {{ fmtDate(speaker.updated_at) }}
             </p>
+            <span v-if="speaker.vectors.some(vector => vector.embedding_model !== 'ecapa' && !vector.short && vector.duration_s >= 2)"
+              class="voice-ready-indicator" title="Has at least one eligible CAM++ voiceprint. A future match still requires sufficient acoustic similarity.">
+              <AppIcon name="check" :size="12" /> Auto-match eligible
+            </span>
+            <span v-else class="voice-needs-sample" title="Automatic cross-meeting matching requires a compatible, clean CAM++ sample of at least two seconds.">
+              Needs a clean CAM++ sample
+            </span>
           </div>
         </div>
         <div class="speaker-actions">
