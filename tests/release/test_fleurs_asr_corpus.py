@@ -22,6 +22,12 @@ class FleursCorpusTests(unittest.TestCase):
         self.assertEqual(len(set(a)), 10)
         self.assertNotEqual(a, choose_indices(ids, language="en", count=10, seed="fixed"))
 
+    def test_fleurs_accepts_actual_hub_commit_shas(self):
+        from tools.freeze_fleurs_asr_corpus import SHA
+        self.assertIsNotNone(SHA.fullmatch("a" * 40))
+        self.assertIsNotNone(SHA.fullmatch("a" * 64))
+        self.assertIsNone(SHA.fullmatch("a" * 39))
+
     def test_pcm_export_is_mono_and_16000(self):
         wav, duration = encode_pcm16({"array": np.zeros(16000, np.float32),
                                       "sampling_rate":16000})

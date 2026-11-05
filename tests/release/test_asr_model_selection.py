@@ -14,7 +14,9 @@ from tools.asr_model_selection import (
 class ASRModelSelectionTests(unittest.TestCase):
     def test_text_normalization_and_distance(self):
         self.assertEqual(normalize("Hello, WORLD!")[0], ["hello", "world"])
-        self.assertEqual(normalize("你好！")[1], list("你好"))
+        self.assertEqual(normalize("\u4f60\u597d\uff01")[1], list("\u4f60\u597d"))
+        self.assertEqual(normalize("\u0928\u092e\u0938\u094d\u0924\u0947 \u0926\u0941\u0928\u093f\u092f\u093e")[0],
+                         ["\u0928\u092e\u0938\u094d\u0924\u0947", "\u0926\u0941\u0928\u093f\u092f\u093e"])
         self.assertEqual(distance(["a", "b", "c"], ["a", "x", "c"]), 1)
         self.assertEqual(p95([1, 2, 3, 4, 5]), 5)
 

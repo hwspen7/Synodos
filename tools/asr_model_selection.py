@@ -180,8 +180,19 @@ def record_predictions(manifest_path: Path, model: str, output: Path,
 
 def normalize(text):
     raw = unicodedata.normalize("NFKC", text).casefold()
-    words = TOKEN_RE.findall(raw)
-    return words, [c for c in "".join(words) if c.isalnum()]
+    # Preserve Unicode combining marks, e.g. Indic vowel signs, which
+    # ordinary regex word matching would incorrectly split or discard.
+    cleaned = []
+    for char in raw:
+        kind = unicodedata.category(char)[0]
+        if kind in "LNM" or char.isspace():
+            cleaned.append(char)
+        elif char in ("'", "’"):
+            continue
+        else:
+            cleaned.append(" ")
+    words = "".join(cleaned).split()
+    return words, list("".join(words))
 
 
 def distance(a, b):

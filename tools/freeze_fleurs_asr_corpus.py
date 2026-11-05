@@ -24,7 +24,7 @@ LANGUAGES = {
 ROOT = Path(r"E:\AI-Cache\MeetingReference\ASRSelection")
 DATASET = "google/fleurs"
 ALLOWED_SPLITS = {"validation": "development", "test": "sealed_test"}
-SHA = re.compile(r"[0-9a-f]{64}")
+SHA = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 MIN_SECONDS, MAX_SECONDS = 0.8, 30.0
 
 
