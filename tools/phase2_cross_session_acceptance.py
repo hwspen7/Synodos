@@ -25,6 +25,7 @@ def validate_trials(payload: dict, *, min_positive: int = 20,
         raise ValueError("Invalid trial count")
     ids = set()
     unique_clip_pairs = set()
+    clip_provenance: dict[str, tuple[str, str]] = {}
     samples = []
     for row in rows:
         if not isinstance(row, dict):
@@ -48,6 +49,12 @@ def validate_trials(payload: dict, *, min_positive: int = 20,
             raise ValueError("Invalid trial identity, cosine or cross-session provenance")
         if not row.get("human_labeled") is True:
             raise ValueError("Cross-session labels require independent human annotation")
+        for clip, source in (
+            (clip_a, (src_a, speaker_a)), (clip_b, (src_b, speaker_b))
+        ):
+            if clip in clip_provenance and clip_provenance[clip] != source:
+                raise ValueError("Source clip changes recording or human identity")
+            clip_provenance[clip] = source
         pair_key = (model, *sorted((clip_a, clip_b)))
         if pair_key in unique_clip_pairs:
             raise ValueError("Duplicate source clips would inflate pair counts")
@@ -64,6 +71,20 @@ def validate_trials(payload: dict, *, min_positive: int = 20,
     negatives = len(samples) - positives
     if positives < min_positive or negatives < min_negative:
         raise ValueError("Insufficient genuine or impostor pairs")
+    # Pair counts are NOT independent observations when a small number of
+    # original voice clips are reused across many pair combinations.
+    positive_clips = {
+        clip for row in samples if row["same_person"]
+        for clip in (row["clip_a"], row["clip_b"])
+    }
+    negative_clips = {
+        clip for row in samples if not row["same_person"]
+        for clip in (row["clip_a"], row["clip_b"])
+    }
+    minimum_clips = max(10, min_positive // 2)
+    if (len(positive_clips) < minimum_clips
+            or len(negative_clips) < minimum_clips):
+        raise ValueError("Insufficient distinct original voice clips per trial class")
     if len({s for x in samples for s in (x["session_a"], x["session_b"])}) < 3:
         raise ValueError("Insufficient independent recording sessions")
     if len({x["embedding_model"] for x in samples}) != 1:
@@ -72,6 +93,10 @@ def validate_trials(payload: dict, *, min_positive: int = 20,
 
 
 def rates(trials: list[dict], threshold: float) -> dict:
+    if not trials or not any(x["same_person"] for x in trials) or all(
+        x["same_person"] for x in trials
+    ):
+        raise ValueError("Rates require genuine and impostor comparisons")
     if not math.isfinite(threshold) or not -1.001 <= threshold <= 1.001:
         raise ValueError("Invalid threshold")
     positives = [x for x in trials if x["same_person"]]
@@ -140,6 +165,13 @@ def evaluate(dev_payload: dict, holdout_payload: dict, *,
         "dev": dev_rates,
         "holdout": holdout_rates,
         "holdout_goal_met": passed,
+        "dev_unique_clips": len({
+            clip for row in dev for clip in (row["clip_a"], row["clip_b"])
+        }),
+        "holdout_unique_clips": len({
+            clip for row in holdout for clip in (row["clip_a"], row["clip_b"])
+        }),
+        "pair_counts_are_independent_observations": False,
         "may_auto_update_production_threshold": False,
         "note": (
             "This is only identity-verification calibration; it is not DER. "
