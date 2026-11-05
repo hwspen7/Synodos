@@ -61,11 +61,12 @@ const showParticipants = ref(false)
 const showDiagnostics = ref(false)
 const showAllRecordings = ref(false)
 type MeetingTool = 'transcript' | 'review' | 'recordings' | 'settings'
-type ReviewTool = 'ai' | 'correction' | 'speakers' | 'identity'
+type ReviewTool = 'home' | 'ai' | 'correction' | 'speakers' | 'identity'
 const activeMeetingTool = ref<MeetingTool>('transcript')
-const activeReviewTool = ref<ReviewTool>('ai')
+const activeReviewTool = ref<ReviewTool>('home')
 function selectMeetingTool(tool: MeetingTool): void {
   activeMeetingTool.value = tool
+  if (tool === 'review') activeReviewTool.value = 'home'
   if (tool === 'recordings') void loadRecordings()
 }
 
@@ -662,8 +663,8 @@ function recordingUrl(name: string): string {
 function openIdentityEvidence(id: number): void {
   if (recording.value || status.value === 'stopping') return
   identityReviewSegmentId.value = id
-  activeReviewTool.value = 'identity'
   selectMeetingTool('review')
+  activeReviewTool.value = 'identity'
 }
 
 function editSpeakerById(id: number): void {
@@ -908,7 +909,15 @@ onBeforeUnmount(() => stopInternal())
               <button type="button" :class="{ active: activeReviewTool === 'identity' }" :aria-pressed="activeReviewTool === 'identity'" @click="activeReviewTool = 'identity'"><AppIcon name="check" :size="16"/> Identity evidence</button>
             </nav>
             <div class="meeting-selected-tool">
-              <IntelligencePanel v-if="activeReviewTool === 'ai'" :meeting-id="props.id" :segments="segments" />
+              <div v-if="activeReviewTool === 'home'" class="review-tool-welcome">
+                <div class="review-welcome-symbol"><AppIcon name="file-text" :size="24" /></div>
+                <h3>Choose a review tool</h3>
+                <p>Open only what you need. Your transcript remains visible while you review its content or speaker identities.</p>
+                <button type="button" class="review-welcome-action" @click="activeReviewTool = 'ai'">
+                  <AppIcon name="file-text" :size="16" /> Open AI workspace
+                </button>
+              </div>
+              <IntelligencePanel v-else-if="activeReviewTool === 'ai'" :meeting-id="props.id" :segments="segments" />
               <ContextCorrectionPanel v-else-if="activeReviewTool === 'correction'" :meeting-id="props.id" :segments="segments"
                 :recording="recording || status === 'connecting' || status === 'stopping'" @applied="loadSavedTranscript" />
               <OfflineSpeakerPanel v-else-if="activeReviewTool === 'speakers'" :meeting-id="props.id"
