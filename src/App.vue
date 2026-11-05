@@ -41,10 +41,10 @@ watch(() => route.fullPath, () => { mobileNavigationOpen.value = false })
       <div class="sidebar-divider"></div>
       <div class="workspace-nav-label">WORKSPACE</div>
       <nav class="workspace-nav" aria-label="Main navigation">
-        <RouterLink to="/" class="workspace-nav-item" :class="{ active: route.name === 'home' }" title="Overview">
+        <RouterLink to="/" class="workspace-nav-item" :class="{ active: route.name === 'home' && route.hash !== '#meetings' }" title="Overview">
           <AppIcon name="home" :size="19" /><span>Overview</span>
         </RouterLink>
-        <RouterLink to="/" class="workspace-nav-item" :class="{ active: route.name === 'meeting' }" title="Meetings">
+        <RouterLink to="/#meetings" class="workspace-nav-item" :class="{ active: route.name === 'meeting' || route.hash === '#meetings' }" title="Meetings">
           <AppIcon name="file-text" :size="19" /><span>Meetings</span>
           <span v-if="isMeeting" class="sidebar-current-indicator" aria-hidden="true"></span>
         </RouterLink>
@@ -82,7 +82,7 @@ watch(() => route.fullPath, () => { mobileNavigationOpen.value = false })
         </div>
         <div class="workspace-topbar-right">
           <span class="workspace-local-pill"><span aria-hidden="true"></span> Local workspace</span>
-          <RouterLink to="/" class="workspace-quick-action"><AppIcon name="plus" :size="17" /> Meetings</RouterLink>
+          <RouterLink to="/#meetings" class="workspace-quick-action"><AppIcon name="file-text" :size="17" /> Browse meetings</RouterLink>
         </div>
       </header>
       <div class="workspace-page-content"><RouterView /></div>
