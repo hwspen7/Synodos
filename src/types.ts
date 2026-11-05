@@ -229,6 +229,7 @@ export interface MeetingSegment {
   manually_corrected?: boolean
   speaker_profile_id?: string | null
   speaker_status?: string
+  speaker_uncertain?: boolean
   speaker_evidence_status?: string
 }
 
