@@ -7,6 +7,38 @@ import type { Segment } from '@/types'
 import { speakerColor } from '@/speaker/clustering'
 import { isExactContentProjection } from './contentProof'
 
+/** Reject unstable acoustic micro-cues before they become visible speaker turns.
+ *
+ * An exact text projection alone does not prove a correct speaker assignment.
+ * When the diarizer alternates identities within a word or loses identity on
+ * sub-second spans, keep the original confirmed caption and its stable label.
+ */
+export function hasStableSpeakerCues(
+  cues: readonly { speaker_id: number; start_ms: number; end_ms: number; text: string }[],
+): boolean {
+  if (cues.length < 2) return false
+  let previousEnd = -1
+  let previousSpeaker = -1
+  let runDuration = 0
+  for (const cue of cues) {
+    const duration = cue.end_ms - cue.start_ms
+    if (
+      !Number.isInteger(cue.speaker_id) || cue.speaker_id <= 0 ||
+      !Number.isFinite(duration) || duration < 350 ||
+      (previousEnd >= 0 && cue.start_ms < previousEnd)
+    ) return false
+    if (cue.speaker_id !== previousSpeaker) {
+      // A speaker change cannot be justified by a short orphaned syllable.
+      if (previousSpeaker > 0 && runDuration < 700) return false
+      previousSpeaker = cue.speaker_id
+      runDuration = 0
+    }
+    runDuration += duration
+    previousEnd = cue.end_ms
+  }
+  return runDuration >= 700
+}
+
 export function expandContentFirstSegments(
   canonical: Segment[], useTranslation: boolean,
 ): Segment[] {
@@ -18,7 +50,7 @@ export function expandContentFirstSegments(
       segment.caption_projection_status !== 'split_verified' ||
       segment.speaker_diarization_source === 'manual_override' ||
       (useTranslation && !!segment.translation?.trim()) ||
-      cues.some((cue) => !Number.isInteger(cue.speaker_id)) ||
+      !hasStableSpeakerCues(cues) ||
       !isExactContentProjection(
         segment.text, segment.start_ms, segment.end_ms, cues,
       )
