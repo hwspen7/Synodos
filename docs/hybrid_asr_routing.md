@@ -103,3 +103,36 @@ exception stops the hybrid trial immediately, retains an intentionally
 incomplete prediction file, and returns a failure status. This prevents
 silent fallback from masquerading as healthy dual-model accuracy. In
 live meetings Whisper still provides text fallback when Qwen fails.
+
+
+## Full-context routing experiment (context-v2, NOT production default)
+
+The first complete development run of hybrid-whisper-qwen17 scored a
+macro error of 0.08676 on the 200-clip FLEURS validation cohort.
+Qwen3-ASR-1.7B alone scored 0.07552 and Whisper alone 0.09179.
+All six languages routed to Qwen scored worse in v1 than Qwen alone.
+The suspected confound is double cropping from Whisper text bounds and
+Qwen's second acoustic VAD, plus changed forced-language mode.
+
+Keep the original hybrid-whisper-qwen17 model as a frozen comparison.
+Use experimental hybrid-whisper-qwen17-context-v2 to test the hypothesis.
+On an auto-language, <=30-second recording with one consistent,
+confident Whisper language in fr, es, ja, ru, de, hi, pass the complete
+original 16 kHz recording to Qwen using language=auto. This preserves
+Qwen's independent acoustic context and mirrors its standalone decoder
+input. Other audio follows the original per-Whisper-segment route,
+which still requires live-multilingual quality verification.
+
+The v2 audit records full_single_language_v2. Qwen errors and empty
+replacement transcripts explicitly FAIL the research benchmark rather
+than silently scoring Whisper fallback as Qwen output. Neither this
+experimental v2 nor v1 changes Meeting's production default.
+
+Run from the main Meeting .venv with a new immutable output path:
+
+    & $py -m tools.asr_model_selection run --manifest $manifest --model hybrid-whisper-qwen17-context-v2 --language-mode auto --output "$results\hybrid-v2.json"
+    & $py -m tools.asr_model_selection score --manifest $manifest --predictions "$results\hybrid-v2.json" --output "$results\hybrid-v2.score.json"
+
+Full-window rerouting still depends on Whisper's language ID and adds
+Whisper + Qwen compute. A higher score than Qwen alone or unacceptable
+latency rejects this candidate. Do not tune on the sealed test cohort.

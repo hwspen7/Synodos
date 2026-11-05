@@ -22,6 +22,9 @@ class ASRModelSelectionTests(unittest.TestCase):
             "policy": "frozen", "primary_error": "RuntimeError"
         }), "HybridBackendFailed:primary_error")
         self.assertEqual(hybrid_operational_error({
+            "strategy": "full_single_language_v2", "qwen_empty": 1
+        }), "QwenEmptyReroute")
+        self.assertEqual(hybrid_operational_error({
             "policy": "frozen", "qwen_attempts": 1,
             "qwen_accepted": 1, "qwen_failed": 0
         }), "")
@@ -82,6 +85,9 @@ class ASRModelSelectionTests(unittest.TestCase):
     def test_hybrid_model_is_an_explicit_candidate(self):
         from tools.asr_model_selection import MODELS, engine_for
         self.assertEqual(MODELS["hybrid-whisper-qwen17"][0], "hybrid")
+        self.assertEqual(
+            MODELS["hybrid-whisper-qwen17-context-v2"][0], "hybrid"
+        )
         with patch.dict("os.environ", {"MEETING_HYBRID_QWEN_PYTHON": ""}):
             with self.assertRaises(ValueError):
                 engine_for("hybrid-whisper-qwen17")

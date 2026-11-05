@@ -34,6 +34,9 @@ MODELS = {
     "hybrid-whisper-qwen17": (
         "hybrid", "Whisper-large-v3+Qwen3-ASR-1.7B/fleurs-validation-200-v1"
     ),
+    "hybrid-whisper-qwen17-context-v2": (
+        "hybrid", "Whisper-large-v3+Qwen3-ASR-1.7B/full-context-v2"
+    ),
 }
 CJK_CER = {"zh", "ja"}
 HEX64 = re.compile(r"[0-9a-f]{64}")
@@ -131,6 +134,9 @@ def engine_for(model: str):
         return HybridEngine(
             WhisperEngine("large-v3", device="cuda", compute_type="float16"),
             QwenWorkerClient(python, "Qwen/Qwen3-ASR-1.7B"),
+            full_language_window=(
+                model == "hybrid-whisper-qwen17-context-v2"
+            ),
         )
     from speech.qwen import QwenEngine
     return QwenEngine(identifier, device="cuda:0", aligner=False)
@@ -152,6 +158,8 @@ def hybrid_operational_error(audit):
         return "MissingHybridRoutingAudit"
     if int(audit.get("qwen_failed", 0)) > 0:
         return "QwenWorkerRerouteFailed"
+    if int(audit.get("qwen_empty", 0)) > 0:
+        return "QwenEmptyReroute"
     for key in ("primary_error", "fallback_error",
                 "qwen_error", "whisper_error"):
         if audit.get(key):
@@ -172,7 +180,7 @@ def record_predictions(manifest_path: Path, model: str, output: Path,
     configure_cache(ROOT)
     engine = engine_for(model)
     hybrid_preload_s = None
-    if model == "hybrid-whisper-qwen17":
+    if model.startswith("hybrid-whisper-qwen17"):
         warm_started = time.perf_counter()
         engine._get_model()
         hybrid_preload_s = round(time.perf_counter() - warm_started, 4)
@@ -185,7 +193,7 @@ def record_predictions(manifest_path: Path, model: str, output: Path,
         error, text, detected = "", "", "und"
         audit = None
         try:
-            if model == "hybrid-whisper-qwen17":
+            if model.startswith("hybrid-whisper-qwen17"):
                 text, detected, diagnostics = infer_one(
                     engine, samples, chosen_language, with_diagnostics=True
                 )
@@ -204,11 +212,11 @@ def record_predictions(manifest_path: Path, model: str, output: Path,
                 index == 0 and hybrid_preload_s is None,
             "error": error,
         }
-        if model == "hybrid-whisper-qwen17":
+        if model.startswith("hybrid-whisper-qwen17"):
             observation["hybrid_routing"] = audit
         records.append(observation)
         status = "FAILED" if error else "OK"
-        if model == "hybrid-whisper-qwen17" and isinstance(audit, dict):
+        if model.startswith("hybrid-whisper-qwen17") and isinstance(audit, dict):
             status += (
                 " QWEN_ATTEMPTS=" + str(audit.get("qwen_attempts", 0))
                 + " QWEN_ACCEPTED=" + str(audit.get("qwen_accepted", 0))
@@ -216,7 +224,7 @@ def record_predictions(manifest_path: Path, model: str, output: Path,
             )
         print("ASR", model, index + 1, "of", len(manifest["cases"]),
               status, flush=True)
-        if model == "hybrid-whisper-qwen17" and error:
+        if model.startswith("hybrid-whisper-qwen17") and error:
             print("HYBRID TRIAL HALTED AFTER BACKEND FAILURE", flush=True)
             break
     result = {

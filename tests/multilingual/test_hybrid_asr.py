@@ -74,6 +74,70 @@ class HybridRoutingTests(unittest.TestCase):
         self.assertEqual(qwen.recognize.call_args.kwargs["language"], "fr")
         self.assertEqual(result.recovery_diagnostics["hybrid"]["qwen_accepted"], 1)
 
+    def test_v2_full_clip_matches_standalone_qwen_auto_input(self):
+        whisper, qwen = Mock(), Mock()
+        whisper.recognize.return_value = sample(
+            "french", "fr", 200, 850, .95
+        )
+        qwen.recognize.return_value = sample(
+            "bonjour complet", "fr", 20, 1050, .95
+        )
+        audio = voiced()
+        result = HybridEngine(
+            whisper, qwen, full_language_window=True
+        ).recognize(audio, "auto")
+        self.assertEqual(result.utterances[0].text, "bonjour complet")
+        self.assertEqual(result.utterances[0].start_ms, 20)
+        self.assertEqual(result.utterances[0].end_ms, 1050)
+        np.testing.assert_array_equal(
+            qwen.recognize.call_args.args[0], audio
+        )
+        self.assertEqual(
+            qwen.recognize.call_args.kwargs["language"], "auto"
+        )
+        audit = result.recovery_diagnostics["hybrid"]
+        self.assertEqual(audit["qwen_attempts"], 1)
+        self.assertEqual(audit["qwen_accepted"], 1)
+        self.assertEqual(audit["strategy"], "full_single_language_v2")
+
+    def test_v2_mixed_language_preserves_per_segment_routing(self):
+        whisper, qwen = Mock(), Mock()
+        whisper.recognize.return_value = Recognition(
+            utterances=(
+                Utterance("english", 100, 900, "en"),
+                Utterance("french", 1100, 1850, "fr",
+                          language_confidence=.95),
+            ), language="mul", speech_detected=True
+        )
+        qwen.recognize.return_value = sample("francais", "fr")
+        result = HybridEngine(
+            whisper, qwen, full_language_window=True
+        ).recognize(voiced(), "auto")
+        self.assertEqual(qwen.recognize.call_args.kwargs["language"], "fr")
+        self.assertEqual(result.utterances[0].text, "english")
+
+    def test_v2_low_confidence_does_not_full_clip_route(self):
+        whisper, qwen = Mock(), Mock()
+        whisper.recognize.return_value = sample(
+            "reference", "fr", confidence=.40
+        )
+        HybridEngine(
+            whisper, qwen, full_language_window=True
+        ).recognize(voiced(), "auto")
+        qwen.recognize.assert_not_called()
+
+    def test_v2_preserves_baseline_when_qwen_empty(self):
+        whisper, qwen = Mock(), Mock()
+        whisper.recognize.return_value = sample("baseline", "hi")
+        qwen.recognize.return_value = sample("", "hi")
+        result = HybridEngine(
+            whisper, qwen, full_language_window=True
+        ).recognize(voiced(), "auto")
+        self.assertEqual(result.utterances[0].text, "baseline")
+        self.assertEqual(
+            result.recovery_diagnostics["hybrid"]["qwen_empty"], 1
+        )
+
     def test_auto_low_language_confidence_keeps_whisper(self):
         whisper, qwen = Mock(), Mock()
         whisper.recognize.return_value = sample(

@@ -59,8 +59,9 @@ class HybridEngine:
     Qwen re-runs only bounded Whisper-labelled speech segments. This has
     measurable extra cost, so it remains opt-in until live-caption QA.
     """
-    def __init__(self, whisper, qwen):
+    def __init__(self, whisper, qwen, *, full_language_window=False):
         self.whisper, self.qwen = whisper, qwen
+        self.full_language_window = bool(full_language_window)
 
     def _get_model(self):
         self.whisper._get_model()
@@ -144,6 +145,41 @@ class HybridEngine:
                 except Exception as exc:
                     audit["fallback_error"] = type(exc).__name__
             return self._wrap(baseline, audit)
+
+        if self.full_language_window:
+            selected_languages = {
+                normalize_language(item.language) for item in baseline.utterances
+            }
+            reliable = all(
+                item.language_confidence is None or (
+                    isinstance(item.language_confidence, (float, int))
+                    and math.isfinite(item.language_confidence)
+                    and item.language_confidence >= .60
+                ) for item in baseline.utterances
+            )
+            # An unmodified bounded recording avoids text-derived cuts
+            # and the extra VAD boundary. This route is intentionally
+            # restricted to a homogeneous short acoustic interval.
+            if (samples.size <= 30 * 16000 and reliable
+                    and len(selected_languages) == 1
+                    and next(iter(selected_languages)) in QWEN_LANGUAGES):
+                audit["strategy"] = "full_single_language_v2"
+                audit["qwen_attempts"] += 1
+                try:
+                    # Preserve the standalone Qwen auto-language inference
+                    # configuration: model choice is determined by Whisper
+                    # language ID, but Qwen is not forced to use that label.
+                    candidate = self._call(
+                        "qwen3", samples, "auto", terms
+                    )
+                    if has_text(candidate):
+                        audit["qwen_accepted"] += 1
+                        return self._wrap(candidate, audit)
+                    audit["qwen_empty"] = 1
+                except Exception:
+                    audit["qwen_failed"] += 1
+                audit["whisper_retained"] = len(baseline.utterances)
+                return self._wrap(baseline, audit)
 
         duration_ms = round(samples.size / 16)
         output = []
