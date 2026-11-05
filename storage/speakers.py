@@ -207,6 +207,31 @@ class SpeakerStore:
             return True
 
     # ------------------------------------------------------------ matching
+    def get_auto_matching_profiles(self) -> list[dict]:
+        """Snapshot eligible CAM++ profiles for optional cross-meeting recognition.
+
+        This is read-only. Short clips and embeddings from incompatible
+        models are excluded. Returning a snapshot avoids holding the store
+        lock during audio inference.
+        """
+        with self._lock:
+            profiles = []
+            for speaker in self._speakers.values():
+                vectors = [
+                    dict(vector)
+                    for vector in speaker["vectors"]
+                    if vector.get("embedding_model", "camplus") == "camplus"
+                    and not vector.get("short", False)
+                    and float(vector.get("duration_s", 0)) >= 2.0
+                ]
+                if vectors:
+                    profiles.append({
+                        "id": speaker["id"],
+                        "name": speaker["name"],
+                        "vectors": vectors,
+                    })
+            return profiles
+
     def get_for_matching(self, speaker_ids: list[str]) -> list[dict]:
         """Return full speaker records with embeddings for participant matching."""
         with self._lock:
