@@ -7,13 +7,10 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
-import hashlib
 import json
 import math
 import os
 from pathlib import Path
-import shutil
-import sys
 
 from tools.ami_shadow10_prepare import SELECTED
 from tools.phase1b_diarization_benchmark import (
@@ -99,8 +96,13 @@ def summarize(reports: list[dict], root: Path) -> dict:
         "confusion_time": r["metrics"]["confusion_time"],
         "reference_speaker_seconds": r["metrics"]["reference_speaker_seconds"],
         "single_meeting_der_below_20_percent": r["metrics"]["der"] < 0.20,
-        "inference_seconds_including_load": r["diagnostics"].get(
+        "reported_wall_seconds": r["diagnostics"].get(
             "wall_seconds_including_load"
+        ),
+        "timing_scope": (
+            "preloaded_model_inference" if r["diagnostics"].get(
+                "model_preloaded_for_cohort"
+            ) else "standalone_model_load_plus_inference"
         ),
     } for r in ordered]
     return {
@@ -122,6 +124,7 @@ def summarize(reports: list[dict], root: Path) -> dict:
         ),
         "per_meeting": rows,
         "automatic_model_promotion": False,
+        "remote_model_weights_exact_revision_pinned": False,
         "not_validated": [
             "streaming latency", "word error rate",
             "cross-meeting voiceprint identification",
@@ -212,6 +215,7 @@ def execute(root: Path, run_dir: Path, *, reuse_report: Path | None = None,
                 root, meeting, "pyannote", device="cuda",
                 injected_pipeline=pipeline
             )
+            report["diagnostics"]["model_preloaded_for_cohort"] = True
             validate_report(report, root, meeting)
             _write_exclusive(output, report)
             completed[meeting] = report
