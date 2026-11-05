@@ -46,17 +46,25 @@ class SpeakerStore:
             try:
                 data = pickle.loads(self._file.read_bytes())
                 self._speakers = data.get("speakers", {}) or {}
-            except Exception:
-                self._speakers = {}
+            except Exception as exc:
+                raise RuntimeError(
+                    "Speaker library could not be read; refusing to erase existing identity records"
+                ) from exc
         else:
             self._speakers = {}
 
     def _save(self) -> None:
-        tmp = self._file.with_name("speakers.pkl.tmp")
-        tmp.write_bytes(
-            pickle.dumps({"speakers": self._speakers}, protocol=pickle.HIGHEST_PROTOCOL)
-        )
-        os.replace(tmp, self._file)
+        tmp = self._file.with_name("speakers-" + uuid.uuid4().hex + ".tmp")
+        try:
+            tmp.write_bytes(
+                pickle.dumps(
+                    {"speakers": self._speakers},
+                    protocol=pickle.HIGHEST_PROTOCOL,
+                )
+            )
+            os.replace(tmp, self._file)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     @staticmethod
     def _vector_meta(v: dict) -> dict:
@@ -124,27 +132,56 @@ class SpeakerStore:
             if s is None:
                 return None
             now = _now_iso()
-            added: list[dict] = []
+            prepared: list[dict] = []
             for v in vectors:
-                vec = {
+                try:
+                    emb = np.asarray(v["emb"], dtype=np.float32).reshape(-1)
+                    duration = float(v.get("duration_s", 0.0))
+                except (KeyError, TypeError, ValueError, OverflowError) as exc:
+                    raise ValueError("Invalid speaker embedding") from exc
+                norm = float(np.linalg.norm(emb))
+                if (not 32 <= emb.size <= 4096 or not np.isfinite(emb).all()
+                        or not np.isfinite(norm) or norm <= 1e-8
+                        or not np.isfinite(duration) or duration < 0):
+                    raise ValueError("Invalid speaker embedding dimensions or values")
+                model = v.get("embedding_model") or "camplus"
+                if model not in ("camplus", "ecapa"):
+                    raise ValueError("Unknown embedding-model provenance")
+                verified = v.get("human_verified") is True
+                meeting_id = v.get("meeting_id")
+                segment_ids = list(v.get("segment_ids") or [])
+                if verified and (
+                    v.get("verification_source") != "manual_profile_correction"
+                    or not isinstance(meeting_id, str) or not meeting_id
+                    or not segment_ids or duration <= 0
+                ):
+                    raise ValueError("Verified enrollment requires manual source provenance")
+                prepared.append({
                     "id": uuid.uuid4().hex,
-                    "emb": np.asarray(v["emb"], dtype=np.float32).reshape(-1),
-                    "embedding_model": str(v.get("embedding_model") or "camplus"),
-                    "human_verified": bool(v.get("human_verified", False)),
-                    "verification_source": v.get("verification_source"),
-                    "duration_s": float(v.get("duration_s", 0.0)),
+                    "emb": np.ascontiguousarray(emb / norm),
+                    "embedding_model": model,
+                    "human_verified": verified,
+                    "verification_source": (
+                        "manual_profile_correction" if verified else None
+                    ),
+                    "duration_s": duration,
                     "source": v.get("source", "recording"),
-                    "meeting_id": v.get("meeting_id"),
-                    "segment_ids": list(v.get("segment_ids") or []),
+                    "meeting_id": meeting_id,
+                    "segment_ids": segment_ids,
                     "text": v.get("text"),
                     "created_at": now,
                     "short": bool(v.get("short", False)),
-                }
-                s["vectors"].append(vec)
-                added.append(self._vector_meta(vec))
+                })
+            prior_updated_at = s["updated_at"]
+            s["vectors"].extend(prepared)
             s["updated_at"] = now
-            self._save()
-            return added
+            try:
+                self._save()
+            except Exception:
+                del s["vectors"][-len(prepared):]
+                s["updated_at"] = prior_updated_at
+                raise
+            return [self._vector_meta(row) for row in prepared]
 
     def delete_vector(self, speaker_id: str, vector_id: str) -> bool:
         with self._lock:
