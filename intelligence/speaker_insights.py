@@ -7,6 +7,8 @@ verified facts or verified human identities.
 from __future__ import annotations
 
 import re
+import hashlib
+import json
 
 FIELDS = ("viewpoints", "decisions", "actions", "questions")
 MAX_PROMPT_CHARS = 6000
@@ -34,6 +36,19 @@ def choose_speaker_turns(segments: list[dict], speaker_id: int) -> tuple[str, li
     if len({s["id"] for s in selected}) != len(selected):
         raise ValueError("Duplicate transcript segment IDs prevent source verification")
     return label, selected
+
+
+def speaker_source_hash(turns: list[dict]) -> str:
+    """Detect text, time, label and attribution changes even without revision bump."""
+    fingerprint = [{
+        "id": s["id"], "speaker_id": s["speaker_id"],
+        "speaker": s.get("speaker") or "",
+        "start_ms": s["start_ms"], "end_ms": s["end_ms"],
+        "text": s["text"], "revision": s.get("revision", 0),
+    } for s in turns]
+    return hashlib.sha256(
+        json.dumps(fingerprint, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
 
 
 def split_speaker_turns(segments: list[dict], max_chars: int = MAX_PROMPT_CHARS) -> list[list[dict]]:
@@ -150,6 +165,7 @@ def analyze_speaker(segments: list[dict], speaker_id: int, gateway) -> dict:
         "speaker_id": speaker_id, "speaker_name": name,
         "segment_count": len(selected),
         "segment_ids": [s["id"] for s in selected],
+        "source_fingerprint": speaker_source_hash(selected),
         "summary": "\n\n".join(summary_parts)[:20000],
         "summary_source_ids": summary_ids,
         **{kind: [entry for part in parts for entry in part[kind]][:100]
