@@ -814,15 +814,6 @@ onBeforeUnmount(() => stopInternal())
         </div>
       </nav>
       <div class="meeting-primary">
-        <section v-if="error" class="meeting-action-notice" role="alert">
-              <div class="notice-symbol"><AppIcon name="alert" :size="19" /></div>
-              <div class="notice-copy"><strong>Recording needs attention</strong><p>{{ error }}</p></div>
-              <div class="notice-actions">
-                <button type="button" @click="selectMeetingTool('settings')">Review settings</button>
-                <button type="button" @click="selectMeetingTool('recordings')">Open recordings</button>
-                <button type="button" class="notice-dismiss" aria-label="Dismiss alert" @click="error = ''"><AppIcon name="x" :size="15" /></button>
-              </div>
-            </section>
     <main ref="transcriptEl" class="transcript" @scroll="onTranscriptScroll">
       <div v-if="segments.length === 0 && !partialText" class="empty-state">
         <div class="empty-icon"><AppIcon name="mic" :size="26" /></div>
@@ -1136,6 +1127,21 @@ onBeforeUnmount(() => stopInternal())
         </div>
       </div>
     </div>
+
+    <Transition name="meeting-alert">
+      <aside v-if="error" class="meeting-floating-alert" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="meeting-floating-alert-icon"><AppIcon name="alert" :size="18" /></div>
+        <div class="meeting-floating-alert-body">
+          <strong>Recording needs attention</strong>
+          <p>{{ error }}</p>
+          <div class="meeting-floating-alert-actions">
+            <button type="button" @click="selectMeetingTool('settings')">Settings</button>
+            <button type="button" @click="selectMeetingTool('recordings')">Recordings</button>
+          </div>
+        </div>
+        <button type="button" class="meeting-floating-alert-dismiss" aria-label="Dismiss recording notification" @click="error = ''"><AppIcon name="x" :size="16" /></button>
+      </aside>
+    </Transition>
 
     <Transition name="toast">
       <div v-if="toast" class="toast">
