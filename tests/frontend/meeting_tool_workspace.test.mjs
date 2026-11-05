@@ -44,7 +44,7 @@ test('review has three tabs and opens overview by default', () => {
   assert.match(source, /<IntelligencePanel v-if="activeReviewTool === 'overview'" compact/)
   assert.match(source, /v-else-if="activeReviewTool === 'correction'"/)
   assert.match(source, /openIdentityEvidence[\s\S]*?activeReviewTool\.value = 'speakers'/)
-  assert.match(source, /<Phase2IdentityReviewPanel v-if="identityReviewSegmentId !== null"/)
+  assert.match(source, /<SpeakerContributionPanel v-if="selectedSpeakerId !== null"/)
   assert.match(source, /<OfflineSpeakerPanel v-if="showIndependentSpeakerAnalysis"/)
 })
 
@@ -53,7 +53,7 @@ test('existing transcription and recording workflows are retained', () => {
     'buildTranscriptParagraphs','expandContentFirstSegments',
     'saveMeeting()','recording ? stop() : start()','loadRecordings()',
     'applySpeechSettings()','copyTranscript','editSegmentById',
-    'openIdentityEvidence','Phase2IdentityReviewPanel',
+    'openIdentityEvidence','SpeakerContributionPanel',
   ]) assert.ok(source.includes(name), 'Missing workflow ' + name)
 })
 
