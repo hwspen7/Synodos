@@ -10,8 +10,85 @@ accuracy. A manual speaker override remains authoritative.
 """
 from __future__ import annotations
 
+import math
 from collections import Counter
 from collections.abc import Iterable, Mapping
+
+
+def _global_overlap_assignment(
+    raw_labels: list[int],
+    stable_ids: list[int],
+    overlap: Counter[tuple[int, int]],
+) -> dict[int, int]:
+    """Maximize the total historical-label agreement across ALL raw clusters.
+
+    A greedy pick can spend an old speaker ID on a slightly better local
+    match and force a different, strongly continuing voice into a new ID.
+    Exact minimum-cost assignment resolves this globally. Each raw cluster
+    also has a zero-score dummy column, so weak/nonexistent matches do not
+    acquire historical identities.
+    """
+    if not raw_labels or not stable_ids:
+        return {}
+    n, old_count = len(raw_labels), len(stable_ids)
+    m = old_count + n
+    max_weight = max(overlap.values(), default=0)
+    if max_weight <= 0:
+        return {}
+
+    # Rectangular Hungarian assignment, integer costs and stable tie order.
+    u = [0] * (n + 1)
+    v = [0] * (m + 1)
+    p = [0] * (m + 1)
+    way = [0] * (m + 1)
+    for i in range(1, n + 1):
+        p[0] = i
+        j0 = 0
+        minv = [float("inf")] * (m + 1)
+        used = [False] * (m + 1)
+        while True:
+            used[j0] = True
+            i0 = p[j0]
+            delta = float("inf")
+            j1 = 0
+            for j in range(1, m + 1):
+                if used[j]:
+                    continue
+                weight = (
+                    overlap.get((raw_labels[i0 - 1], stable_ids[j - 1]), 0)
+                    if j <= old_count else 0
+                )
+                cost = max_weight - weight
+                cur = cost - u[i0] - v[j]
+                if cur < minv[j]:
+                    minv[j] = cur
+                    way[j] = j0
+                if minv[j] < delta:
+                    delta = minv[j]
+                    j1 = j
+            if not math.isfinite(delta):
+                raise RuntimeError("No finite speaker assignment")
+            for j in range(m + 1):
+                if used[j]:
+                    u[p[j]] += delta
+                    v[j] -= delta
+                else:
+                    minv[j] -= delta
+            j0 = j1
+            if p[j0] == 0:
+                break
+        while True:
+            j1 = way[j0]
+            p[j0] = p[j1]
+            j0 = j1
+            if j0 == 0:
+                break
+    assigned = {}
+    for j in range(1, old_count + 1):
+        i = p[j]
+        if i and overlap.get((raw_labels[i - 1], stable_ids[j - 1]), 0) > 0:
+            assigned[raw_labels[i - 1]] = stable_ids[j - 1]
+    return assigned
 
 
 def stabilized_cluster_ids(
@@ -19,26 +96,26 @@ def stabilized_cluster_ids(
     participant_labels: Iterable[int],
     old_map: Mapping[int, int] | None = None,
 ) -> dict[int, int]:
-    """Map raw cluster labels to prior stable IDs using global overlap.
+    """Keep globally consistent positive display IDs after reclustering.
 
-    Unlike sorted-raw greedy matching, a tiny split-off raw cluster cannot
-    steal a stable ID away from the larger continuing speaker cluster.
-    Previously allocated IDs are never recycled while historical segments
-    still refer to them.
+    Raw cluster IDs are local model labels, not human identities. Historical
+    segment agreement is optimized globally; manual participant labels
+    remain reserved, old mappings are used only for previously unseen
+    raw clusters, and retired numbers are never reassigned.
     """
     items = list(records)
     participant_set = {int(x) for x in participant_labels if int(x) > 0}
     raw_labels = sorted({
         int(s["cluster"]) for s in items
-        if isinstance(s.get("cluster"), int) and int(s["cluster"]) >= 0
+        if type(s.get("cluster")) is int and int(s["cluster"]) >= 0
     })
     reserved = set(participant_set)
     known = {
         int(s["speaker_id"]) for s in items
-        if isinstance(s.get("speaker_id"), int) and int(s["speaker_id"]) > 0
+        if type(s.get("speaker_id")) is int and int(s["speaker_id"]) > 0
     }
     if old_map:
-        known.update(int(x) for x in old_map.values() if int(x) > 0)
+        known.update(int(x) for x in old_map.values() if type(x) is int and x > 0)
     reserved.update(known)
 
     overlap: Counter[tuple[int, int]] = Counter()
@@ -50,25 +127,18 @@ def stabilized_cluster_ids(
                 and stable not in participant_set
                 and not item.get("speaker_override")):
             overlap[(raw, stable)] += 1
-    # Largest continuing clusters claim their historical identity before
-    # small split-offs. Deterministic tie breaking prevents random map flips.
-    ordered = sorted(
-        overlap.items(),
-        key=lambda item: (-item[1], item[0][1], item[0][0]),
-    )
-    assigned = {}
-    occupied = set(participant_set)
-    for (raw, stable), count in ordered:
-        if count > 0 and raw not in assigned and stable not in occupied:
-            assigned[raw] = stable
-            occupied.add(stable)
 
-    # A raw ID can survive a turn where its old segments are absent.
-    # Reuse the old mapping only if it cannot conflict with present anchors.
+    stable_ids = sorted({
+        stable for _, stable in overlap
+        if stable not in participant_set
+    })
+    assigned = _global_overlap_assignment(raw_labels, stable_ids, overlap)
+    occupied = set(participant_set) | set(assigned.values())
+
     if old_map:
         for raw in raw_labels:
             prior = old_map.get(raw)
-            if (raw not in assigned and isinstance(prior, int)
+            if (raw not in assigned and type(prior) is int
                     and prior > 0 and prior not in occupied):
                 assigned[raw] = prior
                 occupied.add(prior)
@@ -80,7 +150,6 @@ def stabilized_cluster_ids(
             occupied.add(next_id)
             next_id += 1
     return assigned
-
 
 def collect_mature_labels(
     records: Iterable[Mapping[str, object]],
