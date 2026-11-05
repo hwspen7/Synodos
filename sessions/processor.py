@@ -239,6 +239,7 @@ class SessionProcessor(threading.Thread):
         )
         self._participants: list[dict] = []
         self._auto_profile_mode = False
+        self._auto_match_cache: dict[int, tuple[Optional[str], float]] = {}
         self.auto_match_saved = bool(auto_match_saved)
         self._participant_label_map: dict[str, int] = {}
         # Handle transcripts and speaker assignments.
@@ -790,6 +791,7 @@ class SessionProcessor(threading.Thread):
         Auto-discovered IDs are not written into meeting participant settings.
         """
         self._auto_profile_mode = False
+        self._auto_match_cache.clear()
         if not self.speaker_store:
             self._participants = []
             return
@@ -1676,7 +1678,12 @@ class SessionProcessor(threading.Thread):
                 # A lone short probe must not create or hijack an identity.
                 seg["cluster"] = UNIDENTIFIED_CLUSTER
                 continue
-            participant_id, sim = self._match_participant(seg["emb"])
+            if self._auto_profile_mode and seg["id"] in self._auto_match_cache:
+                participant_id, sim = self._auto_match_cache[seg["id"]]
+            else:
+                participant_id, sim = self._match_participant(seg["emb"])
+                if self._auto_profile_mode:
+                    self._auto_match_cache[seg["id"]] = (participant_id, sim)
             if participant_id is not None and sim >= (
                 max(self.spk_threshold, float(os.getenv(
                     "MEETING_AUTO_SPEAKER_SIMILARITY", "0.78",
