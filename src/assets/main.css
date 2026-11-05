@@ -1,31 +1,31 @@
 /* ==========================================================================
-   Meeting of Pioneers - warm orange design theme
+   Meeting of Pioneers - violet and orange design system
    ========================================================================== */
 :root {
   color-scheme: light;
-  --mop-bg: #f6f7f9;
+  --mop-bg: #f8f7fb;
   --mop-surface: #ffffff;
-  --mop-paper: #fffdf9;
-  --mop-paper-rgb: 255, 253, 249;
-  --mop-login-bg: #f7f4ef;
-  --mop-text: #201a16;
-  --mop-text-strong: #231914;
-  --mop-text-card: #251a15;
-  --mop-text-muted: #5f5148;
-  --mop-text-soft: #6f5542;
-  --mop-ink-rgb: 32, 26, 22;
-  --mop-primary: #da751d;
-  --mop-primary-strong: #b85d10;
-  --mop-primary-rgb: 218, 117, 29;
-  --mop-accent: #c2410c;
-  --mop-secondary: #167c80;
-  --mop-secondary-rgb: 22, 124, 128;
+  --mop-paper: #fcfafd;
+  --mop-paper-rgb: 252, 250, 253;
+  --mop-login-bg: #f8f6fc;
+  --mop-text: #24202b;
+  --mop-text-strong: #1c1725;
+  --mop-text-card: #21192e;
+  --mop-text-muted: #696170;
+  --mop-text-soft: #807487;
+  --mop-ink-rgb: 36, 30, 45;
+  --mop-primary: #68389a;
+  --mop-primary-strong: #55277f;
+  --mop-primary-rgb: 104, 56, 154;
+  --mop-accent: #fd621b;
+  --mop-secondary: #e95d24;
+  --mop-secondary-rgb: 233, 93, 36;
   --mop-success: #2e7d32;
   --mop-danger: #b3261e;
   --mop-border: rgba(var(--mop-ink-rgb), 0.12);
   --mop-border-strong: rgba(var(--mop-ink-rgb), 0.2);
-  --mop-shadow: 0 18px 50px rgba(91, 54, 21, 0.1);
-  --mop-shadow-soft: 0 4px 18px rgba(91, 54, 21, 0.07);
+  --mop-shadow: 0 18px 50px rgba(53, 30, 82, 0.09);
+  --mop-shadow-soft: 0 4px 18px rgba(53, 30, 82, 0.055);
   --mop-radius: 10px;
   --mop-radius-lg: 14px;
 }
@@ -75,7 +75,7 @@ button {
   height: 58px;
   padding: 0 28px;
   border-bottom: 1px solid var(--mop-border);
-  background: rgba(255, 253, 249, 0.86);
+  background: rgba(252, 250, 253, 0.92);
   backdrop-filter: blur(14px);
 }
 
