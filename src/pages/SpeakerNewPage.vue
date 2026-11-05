@@ -54,10 +54,7 @@ function finish(): void {
   <div class="speaker-new page-shell">
     <div class="speaker-head">
       <div class="speaker-head-left">
-        <button class="btn btn-ghost btn-sm" @click="router.push('/speakers')">
-          <AppIcon name="arrow-left" :size="16" />
-          Back to Speakers
-        </button>
+        <RouterLink class="page-inline-back" to="/speakers"><AppIcon name="arrow-left" :size="15" /> Speaker library</RouterLink>
         <div>
           <h1 class="page-title">Create Speaker</h1>
           <p class="page-sub">Enroll voiceprints from recordings or saved meeting segments.</p>
