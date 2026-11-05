@@ -185,15 +185,40 @@ def review_update(table, item_id, revision, status):
 
 
 def replace_chunks(source_kind, source_id, revision, chunks):
-    if source_kind not in ('meeting','media'):
+    """Commit source-bound chunks only while the indexed revision is current.
+
+    An asynchronous embedding job may finish after a human transcript edit.
+    Lock the same meeting_records row used by PostgresMeetingStore.save_state
+    BEFORE deleting any previous index. A stale job must never delete newer
+    chunks or make edited text searchable as if it were current.
+    """
+    if source_kind not in ('meeting', 'media'):
         raise ValueError('Unknown source kind')
+    if type(revision) is not int or revision < 0:
+        raise ValueError('Invalid source revision')
+    if not isinstance(chunks, list) or len(chunks) > 20000:
+        raise ValueError('Invalid knowledge chunk batch')
     with connection() as conn:
-        conn.execute('DELETE FROM ai_knowledge WHERE source_kind=%s AND source_id=%s',(source_kind,source_id))
-        for i,c in enumerate(chunks):
+        if source_kind == 'meeting':
+            row = conn.execute(
+                'SELECT revision FROM meeting_records WHERE id=%s FOR UPDATE',
+                (source_id,),
+            ).fetchone()
+            if row is None or int(row[0]) != revision:
+                raise ValueError(
+                    'Saved meeting changed while indexing; requeue on the current revision'
+                )
+        conn.execute(
+            'DELETE FROM ai_knowledge WHERE source_kind=%s AND source_id=%s',
+            (source_kind, source_id),
+        )
+        for i, c in enumerate(chunks):
             conn.execute('''INSERT INTO ai_knowledge(id,source_kind,source_id,source_revision,chunk_index,text_content,evidence,embedding,embedding_model)
                 VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
-                (uuid.uuid4(),source_kind,source_id,int(revision),i,c['text'], _json(c['evidence']),
-                 _json(c['embedding']) if c.get('embedding') is not None else None,c.get('embedding_model')))
+                (uuid.uuid4(), source_kind, source_id, revision, i,
+                 c['text'], _json(c['evidence']),
+                 _json(c['embedding']) if c.get('embedding') is not None else None,
+                 c.get('embedding_model')))
 
 
 def knowledge_candidates(query, limit=250):
