@@ -13,7 +13,7 @@ from phase07.evidence import referenced_hits
 
 MAX_QUOTES = 5
 MAX_QUOTE_CHARS = 600
-MIN_QUOTE_CHARS = 8
+MIN_QUOTE_CHARS = 12
 
 
 def evidence_prompt(question: str, hits: list[dict]) -> str:
