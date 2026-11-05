@@ -1,0 +1,32 @@
+name: Hybrid Whisper and Qwen ASR regression
+
+on:
+  push:
+    branches:
+      - feature/meeting-knowledge-quality
+    paths:
+      - 'speech/hybrid.py'
+      - 'speech/qwen_bridge.py'
+      - 'speech/qwen_worker.py'
+      - 'speech/engine.py'
+      - 'speech/config.py'
+      - 'tests/multilingual/test_hybrid_asr.py'
+      - 'tests/multilingual/test_qwen_bridge.py'
+      - '.github/workflows/hybrid-asr.yml'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  regression:
+    name: Hybrid language routing and isolated bridge
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install "numpy>=1.26"
+      - run: python -m unittest tests.multilingual.test_hybrid_asr tests.multilingual.test_qwen_bridge tests.multilingual.test_adapters tests.multilingual.test_compatibility -v
+      - run: python -m compileall -q speech/hybrid.py speech/qwen_bridge.py speech/qwen_worker.py speech/config.py speech/engine.py
