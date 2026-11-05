@@ -1288,6 +1288,31 @@ class SessionProcessor(threading.Thread):
                 updated = True
                 metrics.increment("speaker_turn_split_rejected")
                 continue
+            # Content-first mode has already published the full ASR caption.
+            # Splitting the original record now would rewrite its text (and
+            # timestamps) under the same segment ID, violating the confirmed
+            # caption stability contract. Keep acoustic turn evidence separate;
+            # the independent Nemotron caption-cue projection can annotate
+            # speaker changes without replacing canonical speech content.
+            if (len(pieces) > 1 and os.getenv(
+                    "MEETING_CONTENT_FIRST_FUSION", "0"
+            ).strip().lower() in ("1", "true", "yes")):
+                self._ecapa_shadow_audio.pop(sid, None)
+                original["speaker_turn_candidate_intervals_ms"] = [
+                    {"start_ms": int(piece["start"]),
+                     "end_ms": int(piece["end"])}
+                    for piece in pieces
+                ]
+                original["speaker_uncertain"] = True
+                original["speaker_evidence_status"] = (
+                    "multi_turn_acoustic_evidence_only"
+                )
+                original["emb"] = None  # Mixed voices cannot define one identity.
+                original["cluster"] = -3
+                self._enqueue_translation(original)
+                updated = True
+                metrics.increment("speaker_async_content_first_retained")
+                continue
             if len(pieces) > 1:
                 # The original utterance may contain multiple speakers.
                 # Never feed its unsplit audio to the ECAPA shadow worker.
