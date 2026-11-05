@@ -1,4 +1,4 @@
-"""Pure, strict Phase 3/4 release contracts. No production mutations."""
+"""Pure, strict Meeting knowledge release contracts. No production mutations."""
 from __future__ import annotations
 
 import hashlib
@@ -7,10 +7,12 @@ import math
 import re
 from pathlib import Path
 
-SYNTHETIC_SCHEMA = "meeting-phase34-local-eval-v1"
-REAL_SCHEMA = "meeting-phase34-real-audio-qa-v1"
-FREEZE_SCHEMA = "meeting-phase34-synthetic-baseline-v1"
-RELEASE_SCHEMA = "meeting-phase34-release-decision-v1"
+SYNTHETIC_SCHEMA = "meeting-knowledge-synthetic-evaluation"
+# Accept frozen historical local reports without emitting their old format.
+LEGACY_SYNTHETIC_SCHEMA = "meeting-phase34-local-eval-v1"
+REAL_SCHEMA = "meeting-knowledge-real-audio-qa"
+FREEZE_SCHEMA = "meeting-knowledge-baseline-freeze"
+RELEASE_SCHEMA = "meeting-knowledge-release-decision"
 SUPPORTED_ASR_LANGUAGES = frozenset(("en", "zh", "fr", "es", "ar", "id", "ja", "ru", "de", "hi"))
 MEETING_ID = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 CASE_ID = re.compile(r"[A-Za-z0-9_-]{1,96}\Z")
@@ -42,7 +44,7 @@ def write_new(path, data):
 
 
 def strict_synthetic(report, mode):
-    if report.get("schema") != SYNTHETIC_SCHEMA or report.get("mode") != mode:
+    if report.get("schema") not in (SYNTHETIC_SCHEMA, LEGACY_SYNTHETIC_SCHEMA) or report.get("mode") != mode:
         raise ValueError("Incorrect synthetic report schema or mode")
     if report.get("passed") is not True or report.get("real_ollama") is not True:
         raise ValueError("Synthetic local Ollama acceptance not passed")
@@ -83,7 +85,7 @@ def strict_synthetic(report, mode):
 
 def validate_manifest(data):
     """Require real audio annotation, not constructed text fixtures."""
-    if data.get("schema") != "meeting-phase34-real-audio-gold-v1":
+    if data.get("schema") != "meeting-audio-review-gold":
         raise ValueError("Unknown real-audio gold manifest schema")
     if data.get("corpus_type") != "real_recorded_meetings":
         raise ValueError("Only real recorded meetings are admissible")
@@ -300,7 +302,7 @@ def real_summary(cases, *, mode, timings, text_model, embed_model):
 
 def release_decision(freeze, real_lexical=None, real_hybrid=None,
                      phase12=None, ci=None, expected_commit=None):
-    """Keep Phase 3/4 status separate from full product release status."""
+    """Keep Meeting knowledge status separate from full product release status."""
     def real_ok(item, mode):
         return (isinstance(item, dict) and item.get("schema") == REAL_SCHEMA and
                 item.get("mode") == mode and item.get("pass") is True and
@@ -348,7 +350,7 @@ def release_decision(freeze, real_lexical=None, real_hybrid=None,
         "schema": RELEASE_SCHEMA, "source_commit": expected_commit,
         "code_and_database_ci_pass": ci_ok,
         "local_synthetic_model_pass": synthetic,
-        "phase34_real_meeting_release_pass": bool(synthetic and real),
+        "knowledge_release_pass": bool(synthetic and real),
         "overall_product_release_pass": all(gates.values()),
         "gates": gates,
         "automatic_merge_or_tag": False,

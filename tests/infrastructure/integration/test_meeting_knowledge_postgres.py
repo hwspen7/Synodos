@@ -1,4 +1,4 @@
-"""Disposable PostgreSQL Phase 3/4 integration regression.
+"""Disposable PostgreSQL Meeting knowledge integration regression.
 
 This suite uses actual PostgreSQL tables and revision locks, but no real
 embedding or chat model. Live Ollama acceptance is a separate release gate.
@@ -16,7 +16,7 @@ from sessions.manual_review import apply_review
 
 @unittest.skipUnless(os.environ.get("TEST_DATABASE_URL"),
                      "TEST_DATABASE_URL required for PostgreSQL integration")
-class Phase34PostgresTests(unittest.TestCase):
+class MeetingKnowledgePostgresTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import psycopg
@@ -54,7 +54,7 @@ class Phase34PostgresTests(unittest.TestCase):
         mid = "test_phase34_" + uuid.uuid4().hex[:20]
         self.created.append(mid)
         self.meetings.save_state({
-            "id": mid, "title": "Phase 3/4 isolated integration",
+            "id": mid, "title": "Meeting knowledge isolated integration",
             "sample_rate": 16000,
             "segments": [{
                 "id": 1, "start_sample": 0, "end_sample": 160000,

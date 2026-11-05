@@ -1,6 +1,6 @@
-# Phase 3/4 real-meeting release closure
+# Meeting knowledge real-meeting release closure
 
-This code adds an independent release gate to branch `upgrade/phase1-phase2-integrity-20261104` and the successful 42-question local Saluki 27B synthetic acceptance. It does **not** replace Phase 1/2 gates, change models, solve overlap diarization, or assert unverified real-meeting success.
+This code adds an independent release gate to branch `feature/meeting-knowledge-quality` and the successful 42-question local Saluki 27B synthetic acceptance. It does **not** replace Phase 1/2 gates, change models, solve overlap diarization, or assert unverified real-meeting success.
 
 ## Required assets
 
@@ -10,13 +10,13 @@ The separately verified short-clip ASR policy remains **exactly ten languages**:
 
 ## Gold manifest
 
-Create `E:\AI-Cache\MeetingResults\phase34_real_gold.json` with schema `meeting-phase34-real-audio-gold-v1` after listening to the recordings. Do not manufacture facts from an ASR hypothesis. At least three distinct actual recorded meetings, 20 independently audio-reviewed answerable questions and six negative questions are required. A contradiction case and a cross-meeting isolation case must be included. `audio_sha256` is the SHA256 of each original recording, not its transcript. The runner checks the corresponding private `audio_file` bytes against that hash before evaluating; the original file is never transmitted. Each answerable case names exact saved transcript segment IDs and an independently reviewed audio time interval. A missing word in the ASR must fail the answer, even if the model refuses correctly.
+Create `E:\AI-Cache\MeetingResults\meeting_audio_review_gold.json` with schema `meeting-audio-review-gold` after listening to the recordings. Do not manufacture facts from an ASR hypothesis. At least three distinct actual recorded meetings, 20 independently audio-reviewed answerable questions and six negative questions are required. A contradiction case and a cross-meeting isolation case must be included. `audio_sha256` is the SHA256 of each original recording, not its transcript. The runner checks the corresponding private `audio_file` bytes against that hash before evaluating; the original file is never transmitted. Each answerable case names exact saved transcript segment IDs and an independently reviewed audio time interval. A missing word in the ASR must fail the answer, even if the model refuses correctly.
 
 **Structure of a single meeting and two example case types** (illustrative, deliberately incomplete, will not pass the minimum cohort gate):
 
 ```json
 {
-  "schema": "meeting-phase34-real-audio-gold-v1",
+  "schema": "meeting-audio-review-gold",
   "corpus_type": "real_recorded_meetings",
   "gold_source": "independent_human_audio_review",
   "reviewer_id": "reviewer-identifier",
@@ -61,26 +61,26 @@ Gold annotations and source media must remain private. Do not commit them to Git
 
 ## One-command execution
 
-Run from the project root after pulling the latest Phase 3/4 branch:
+Run from the project root after pulling the latest Meeting knowledge branch:
 
 ```powershell
 cd E:\Meeting-Fixed10-Test
-git fetch origin upgrade/phase1-phase2-integrity-20261104
-git switch upgrade/phase1-phase2-integrity-20261104
-git pull --ff-only origin upgrade/phase1-phase2-integrity-20261104
+git fetch origin feature/meeting-knowledge-quality
+git switch feature/meeting-knowledge-quality
+git pull --ff-only origin feature/meeting-knowledge-quality
 # The current shell must already have DATABASE_URL for the meeting_test database.
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\Invoke-Phase34-Real-Closure.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\Invoke-Meeting-Quality-Checks.ps1
 ```
 
 The launcher freezes both successful synthetic reports, then evaluates real meeting cases in Lexical and Hybrid mode. By default it uses the **existing** saved index and does not reindex or alter meeting data. Use `-ReindexTestMeetings` only if the three or more reviewed meetings have not yet been indexed, and only in `meeting_test`. Supply `-Phase12Gate` and `-HostedCI` with independently produced, exact-commit status JSONs for the overall release decision.
 
 The 42-case synthetic baseline is copied into a uniquely named immutable evidence folder, and SHA256 hashes are checked during the final decision. Each real-mode result includes Recall@8, citation attribution, exact answer phrase, negative abstention and p50/p95, with question IDs hashed and without raw transcript quotations. The real gate requires Recall@8 at least 90%, correct positive answers at least 85%, attribution at least 95%, valid refusals at least 95%, no cross-meeting leaks and p95 no greater than 15 seconds.
 
-A real-audio RAG pass does not override the independently measured AMI inclusive DER 21.77% against the 20% threshold, missing subtitle-word verification, or disjoint human-verified speaker identity testing. The final report deliberately separates `local_synthetic_model_pass`, `phase34_real_meeting_release_pass`, `code_and_database_ci_pass`, and `overall_product_release_pass`. No automatic model promotion, tag, merge, or production deployment is performed.
+A real-audio RAG pass does not override the independently measured AMI inclusive DER 21.77% against the 20% threshold, missing subtitle-word verification, or disjoint human-verified speaker identity testing. The final report deliberately separates `local_synthetic_model_pass`, `knowledge_release_pass`, `code_and_database_ci_pass`, and `overall_product_release_pass`. No automatic model promotion, tag, merge, or production deployment is performed.
 
 ## CI
 
-`tests.release.test_phase34_release_contract` is deterministic, verifies fail-closed contracts, and uses no GPU, database, credentials, real media or user data. Run it in GitHub-hosted validation along with the existing complete suite. Local Saluki weights, annotated audio, human judgment and performance must be assessed on the user's machine, not simulated by hosted CI.
+`tests.release.test_meeting_knowledge_quality` is deterministic, verifies fail-closed contracts, and uses no GPU, database, credentials, real media or user data. Run it in GitHub-hosted validation along with the existing complete suite. Local Saluki weights, annotated audio, human judgment and performance must be assessed on the user's machine, not simulated by hosted CI.
 
 ## Audio review export helper
 
@@ -88,15 +88,15 @@ To prepare the real gold review sheet from three *already saved* real meetings i
 
 ```powershell
 $PY = "E:\Meeting-Fixed10-Test\.venv\Scripts\python.exe"
-& $PY -m tools.phase34_gold_review_export `
+& $PY -m tools.meeting_audio_review_export `
   --meeting-id REAL_01 --meeting-id REAL_02 --meeting-id REAL_03 `
   --audio-path "E:\AI-Cache\recordings\REAL_01.wav" `
   --audio-path "E:\AI-Cache\recordings\REAL_02.wav" `
   --audio-path "E:\AI-Cache\recordings\REAL_03.wav" `
-  --csv "E:\AI-Cache\MeetingResults\phase34_human_review.csv" `
-  --manifest "E:\AI-Cache\MeetingResults\phase34_real_gold.json"
+  --csv "E:\AI-Cache\MeetingResults\meeting_audio_review.csv" `
+  --manifest "E:\AI-Cache\MeetingResults\meeting_audio_review_gold.json"
 ```
 
 Listen to the actual corresponding audio, review the exported timestamps and speaker/content alignment, explicitly set `audio_reviewed: true` for verified recordings, fill in the real `reviewer_id`, and annotate at least 26 suitable questions in `cases`. Only then run the closure script.
 
-The patch also installs `.github/workflows/phase34-release-contract.yml`, a dedicated GitHub Actions check. GitHub CI asserts deterministic contracts only. It does not access recordings or Ollama and must not be treated as the final product acceptance gate. Commit and push the installed files to the feature branch when ready for hosted checks.
+The patch also installs `.github/workflows/meeting-knowledge-quality.yml`, a dedicated GitHub Actions check. GitHub CI asserts deterministic contracts only. It does not access recordings or Ollama and must not be treated as the final product acceptance gate. Commit and push the installed files to the feature branch when ready for hosted checks.

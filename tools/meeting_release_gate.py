@@ -7,7 +7,7 @@ from pathlib import Path
 import shutil
 import sys
 
-from tools.phase34_release_contract import (
+from tools.meeting_knowledge_contract import (
     FREEZE_SCHEMA, load_json, release_decision, sha256_file,
     strict_synthetic, write_new,
 )
@@ -68,10 +68,10 @@ def decide(args):
         set(checked) == {"lexical", "hybrid"} and all(checked.values())
     )
     result["local_synthetic_model_pass"] &= result["gates"]["frozen_input_sha256_intact"]
-    result["phase34_real_meeting_release_pass"] &= result["gates"]["frozen_input_sha256_intact"]
+    result["knowledge_release_pass"] &= result["gates"]["frozen_input_sha256_intact"]
     result["overall_product_release_pass"] = all(result["gates"].values())
     write_new(args.output, result)
-    print("PHASE 3/4 REAL RELEASE:", "PASS" if result["phase34_real_meeting_release_pass"] else "NOT_ACCEPTED")
+    print("MEETING KNOWLEDGE REAL RELEASE:", "PASS" if result["knowledge_release_pass"] else "NOT_ACCEPTED")
     print("OVERALL PRODUCT RELEASE:", "PASS" if result["overall_product_release_pass"] else "BLOCKED")
     print("REPORT:", args.output)
     return 0 if result["overall_product_release_pass"] else 1
@@ -93,7 +93,7 @@ def main(argv=None):
     try:
         return freeze(args) if args.action == "freeze" else decide(args)
     except Exception as exc:
-        print("PHASE 3/4 RELEASE NOT_ACCEPTED:", str(exc), file=sys.stderr)
+        print("MEETING KNOWLEDGE RELEASE NOT_ACCEPTED:", str(exc), file=sys.stderr)
         return 2
 
 

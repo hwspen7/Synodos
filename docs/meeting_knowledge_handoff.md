@@ -1,4 +1,4 @@
-# Phase 1/2 hardening and Phase 3/4 development handoff
+# Phase 1/2 hardening and Meeting knowledge development handoff
 
 ## Scope of this change
 
@@ -81,7 +81,7 @@ In the user's `phase12-local` checkout, preserve existing untracked
 
 ```powershell
 cd E:\Meeting-Fixed10-Test
-git fetch origin upgrade/phase1-phase2-integrity-20261104
+git fetch origin feature/meeting-knowledge-quality
 git merge --ff-only FETCH_HEAD
 $PY = "E:\Meeting-Fixed10-Test\.venv\Scripts\python.exe"
 
@@ -125,5 +125,5 @@ Never run the AI worker on the low-latency ASR event loop.
   by passing deterministic code tests.
 
 **Decision:** Phase 1/2 implementation hardening can be code-frozen and
-Phase 3/4 *development* can proceed, but Phase 1/2 acoustic + human evidence
-remains blocked. The overall Phase 3/4 feature-release gate is also open.
+Meeting knowledge *development* can proceed, but Phase 1/2 acoustic + human evidence
+remains blocked. The overall Meeting knowledge feature-release gate is also open.

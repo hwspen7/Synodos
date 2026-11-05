@@ -12,12 +12,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tools import phase34_full_acceptance as acceptance
+from tools import meeting_knowledge_synthetic as acceptance
 
 
 @unittest.skipUnless(os.environ.get("TEST_DATABASE_URL"),
                      "TEST_DATABASE_URL required for PostgreSQL integration")
-class Phase34RunnerPostgresTests(unittest.TestCase):
+class MeetingKnowledgeRunnerPostgresTests(unittest.TestCase):
     def test_full_42_case_runner_and_cleanup(self):
         import psycopg
 
@@ -79,7 +79,7 @@ class Phase34RunnerPostgresTests(unittest.TestCase):
                     "MEETING_AI_ENABLED": "1",
                 }
                 with patch.dict(os.environ, environ), patch(
-                    "tools.phase34_full_acceptance.guard_environment"
+                    "tools.meeting_knowledge_synthetic.guard_environment"
                 ), patch(
                     "intelligence.config.load_config", return_value=config
                 ), patch(
@@ -99,7 +99,7 @@ class Phase34RunnerPostgresTests(unittest.TestCase):
                 with psycopg.connect(url) as conn:
                     leaked = conn.execute(
                         "SELECT COUNT(*) FROM meeting_records "
-                        "WHERE id LIKE 'phase34_eval_%'"
+                        "WHERE id LIKE 'knowledge_eval_%'"
                     ).fetchone()[0]
                 self.assertEqual(leaked, 0)
 

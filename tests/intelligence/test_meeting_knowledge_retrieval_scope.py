@@ -1,4 +1,4 @@
-"""Phase 3/4 multilingual retrieval, scope and citation safety gates."""
+"""Meeting knowledge multilingual retrieval, scope and citation safety gates."""
 import asyncio
 import unittest
 from types import SimpleNamespace

@@ -1,4 +1,4 @@
-# Run both actual local Ollama Phase 3/4 acceptance modes.
+# Run both actual local Ollama Meeting knowledge acceptance modes.
 # Uses existing environment credentials; never prints DATABASE_URL or password.
 param(
     [string]$Python = "E:\Meeting-Fixed10-Test\.venv\Scripts\python.exe",
@@ -47,11 +47,11 @@ if (-not $env:MEETING_AI_EMBED_MODEL) {
     $env:MEETING_AI_EMBED_MODEL = "qwen3-embedding:0.6b"
 }
 
-Write-Host "Phase 3/4 local acceptance (lexical mode)"
+Write-Host "Meeting knowledge local acceptance (lexical mode)"
 Write-Host "Text model: $env:MEETING_AI_TEXT_MODEL"
 $env:MEETING_AI_EMBEDDINGS = "0"
-$LexicalReport = Join-Path $ReportRoot "phase34_lexical.json"
-& $Python -m tools.phase34_full_acceptance --mode lexical --output $LexicalReport
+$LexicalReport = Join-Path $ReportRoot "meeting_knowledge_lexical.json"
+& $Python -m tools.meeting_knowledge_synthetic --mode lexical --output $LexicalReport
 $LexicalExit = $LASTEXITCODE
 
 $HybridExit = 0
@@ -62,10 +62,10 @@ if (-not $LexicalOnly) {
         $HybridExit = 2
     }
     else {
-        Write-Host "Phase 3/4 local acceptance (hybrid mode)"
+        Write-Host "Meeting knowledge local acceptance (hybrid mode)"
         $env:MEETING_AI_EMBEDDINGS = "1"
-        $HybridReport = Join-Path $ReportRoot "phase34_hybrid.json"
-        & $Python -m tools.phase34_full_acceptance --mode hybrid --output $HybridReport
+        $HybridReport = Join-Path $ReportRoot "meeting_knowledge_hybrid.json"
+        & $Python -m tools.meeting_knowledge_synthetic --mode hybrid --output $HybridReport
         $HybridExit = $LASTEXITCODE
     }
 }
@@ -75,6 +75,6 @@ Write-Host "Hybrid acceptance exit code: $HybridExit"
 Write-Host "Reports: $ReportRoot"
 
 if ($LexicalExit -ne 0 -or $HybridExit -ne 0) {
-    throw "Phase 3/4 local acceptance was not fully passed. Inspect the saved reports."
+    throw "Meeting knowledge local acceptance was not fully passed. Inspect the saved reports."
 }
-Write-Host "PHASE 3/4 LOCAL SYNTHETIC ACCEPTANCE: PASS"
+Write-Host "MEETING KNOWLEDGE LOCAL SYNTHETIC ACCEPTANCE: PASS"

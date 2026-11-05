@@ -9,11 +9,11 @@ import csv
 from pathlib import Path
 import sys
 
-from tools.phase34_release_contract import sha256_file, write_new
+from tools.meeting_knowledge_contract import sha256_file, write_new
 
 
 def export_review(args):
-    from tools.phase34_full_acceptance import guard_environment
+    from tools.meeting_knowledge_synthetic import guard_environment
     guard_environment()
     from intelligence import store
 
@@ -43,7 +43,7 @@ def export_review(args):
                          "speaker": s["speaker"], "language": s["language"],
                          "asr_text_not_audio_gold": s["text"],
                          "manual_audio_check": "UNREVIEWED"})
-    draft = {"schema": "meeting-phase34-real-audio-gold-v1",
+    draft = {"schema": "meeting-audio-review-gold",
              "corpus_type": "real_recorded_meetings",
              "gold_source": "independent_human_audio_review",
              "reviewer_id": "", "meetings": meetings, "cases": []}

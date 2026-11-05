@@ -1,10 +1,10 @@
 """Static checks for reproducible local twelve-language acceptance fixtures."""
 import unittest
 
-from tools.phase34_full_acceptance import fixtures, percentile
+from tools.meeting_knowledge_synthetic import fixtures, percentile
 
 
-class Phase34AcceptanceHarnessTests(unittest.TestCase):
+class MeetingKnowledgeAcceptanceHarnessTests(unittest.TestCase):
     def test_suite_covers_three_meetings_and_twelve_languages(self):
         meetings, questions, negatives = fixtures()
         self.assertEqual(set(meetings), {"atlas", "beacon", "cobalt"})

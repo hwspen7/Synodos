@@ -1,4 +1,4 @@
-"""Real local Phase 3/4 evidence-QA acceptance against a disposable test corpus.
+"""Real local Meeting knowledge evidence-QA acceptance against a disposable test corpus.
 
 Requires the user's existing PostgreSQL meeting_test and local Ollama models.
 Creates three isolated synthetic meetings, indexes them, runs >=20 answerable
@@ -184,7 +184,7 @@ def run(args):
     started = time.monotonic()
     try:
         for label, lines in meetings.items():
-            mid = "phase34_eval_" + uuid.uuid4().hex[:20]
+            mid = "knowledge_eval_" + uuid.uuid4().hex[:20]
             ids[label] = mid
             state = {
                 "id": mid, "title": "Phase 34 synthetic " + label,
@@ -308,7 +308,7 @@ def run(args):
               counts["answerable_pass"] == counts["answerable_total"] and
               counts["abstention_pass"] == counts["abstention_total"])
     report = {
-        "schema": "meeting-phase34-local-eval-v1",
+        "schema": "meeting-knowledge-synthetic-evaluation",
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "corpus_type": "isolated_synthetic_three_meetings_12_language_probes",
         "real_ollama": True,
@@ -328,7 +328,7 @@ def run(args):
     dest = Path(args.output)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(report, ensure_ascii=True, indent=2), encoding="utf-8")
-    print("PHASE 3/4 LOCAL ACCEPTANCE:", "PASS" if passed else "FAIL")
+    print("MEETING KNOWLEDGE LOCAL ACCEPTANCE:", "PASS" if passed else "FAIL")
     print("REPORT:", dest)
     print("COUNTS:", json.dumps(counts))
     return 0 if passed else 1
@@ -344,7 +344,7 @@ def main():
     try:
         return run(args)
     except Exception as exc:
-        print("PHASE 3/4 ACCEPTANCE FAILED:", str(exc),
+        print("MEETING KNOWLEDGE ACCEPTANCE FAILED:", str(exc),
               file=sys.stderr)
         return 2
 

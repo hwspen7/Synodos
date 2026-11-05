@@ -14,7 +14,7 @@ import time
 import uuid
 from pathlib import Path
 
-from tools.phase34_release_contract import (
+from tools.meeting_knowledge_contract import (
     load_json, real_summary, score_answerable, score_negative,
     sha256_file, validate_manifest, write_new,
 )
@@ -51,7 +51,7 @@ def negative_witness_gate(case, meeting_state):
 def evaluate(args):
     # The existing synthetic runner checks DB name, active realtime sessions,
     # PostgreSQL configuration and local Ollama availability.
-    from tools.phase34_full_acceptance import guard_environment
+    from tools.meeting_knowledge_synthetic import guard_environment
     guard_environment()
     from intelligence.config import load_config
     from intelligence.model_gateway import ModelGateway
@@ -145,7 +145,7 @@ def evaluate(args):
         "private_questions_in_report": False,
     })
     write_new(args.output, report)
-    print("REAL AUDIO PHASE 3/4:", "PASS" if report["pass"] else "NOT_ACCEPTED")
+    print("REAL MEETING KNOWLEDGE:", "PASS" if report["pass"] else "NOT_ACCEPTED")
     print("REPORT:", args.output)
     return 0 if report["pass"] else 1
 
@@ -162,7 +162,7 @@ def main(argv=None):
             raise ValueError("Output already exists; immutable acceptance reports only")
         return evaluate(a)
     except Exception as exc:
-        print("REAL AUDIO PHASE 3/4 NOT_ACCEPTED:", str(exc), file=sys.stderr)
+        print("REAL MEETING KNOWLEDGE NOT_ACCEPTED:", str(exc), file=sys.stderr)
         return 2
 
 

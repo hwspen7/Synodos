@@ -4,8 +4,8 @@ from __future__ import annotations
 import copy
 import unittest
 
-from tools.phase34_release_contract import (
-    FREEZE_SCHEMA, strict_synthetic, validate_manifest, score_answerable,
+from tools.meeting_knowledge_contract import (
+    FREEZE_SCHEMA, LEGACY_SYNTHETIC_SCHEMA, strict_synthetic, validate_manifest, score_answerable,
     score_negative, real_summary, release_decision,
 )
 
@@ -14,7 +14,7 @@ H = "b" * 64
 
 def make_synthetic(mode):
     return {
-        "schema": "meeting-phase34-local-eval-v1", "mode": mode,
+        "schema": "meeting-knowledge-synthetic-evaluation", "mode": mode,
         "passed": True, "real_ollama": True,
         "real_audio_gold_coverage": False, "human_semantic_truth_review": False,
         "text_model": "Saluki-27B", "embedding_model": "qwen3-embedding:0.6b" if mode == "hybrid" else None,
@@ -41,7 +41,7 @@ def make_manifest():
                    **({"foreign_meeting_id": "m1", "foreign_expected_text": "foreign verified fact"} if i == 0 else
                        {"contradiction_segment_ids": [11, 12]} if i == 1 else {}))
               for i in range(6)]
-    return {"schema": "meeting-phase34-real-audio-gold-v1",
+    return {"schema": "meeting-audio-review-gold",
             "corpus_type": "real_recorded_meetings",
             "gold_source": "independent_human_audio_review",
             "reviewer_id": "human-reviewer-1", "meetings": meetings, "cases": cases}
@@ -51,6 +51,11 @@ class SyntheticFreezeContract(unittest.TestCase):
     def test_accepted_current_reports(self):
         strict_synthetic(make_synthetic("lexical"), "lexical")
         strict_synthetic(make_synthetic("hybrid"), "hybrid")
+
+    def test_historical_reports_remain_valid(self):
+        report = make_synthetic("lexical")
+        report["schema"] = LEGACY_SYNTHETIC_SCHEMA
+        self.assertTrue(strict_synthetic(report, "lexical"))
 
     def test_reject_per_case_fake_pass(self):
         x = make_synthetic("lexical")
@@ -163,13 +168,13 @@ class RealAnswerScoringContract(unittest.TestCase):
 
 class RealAudioWitnessContract(unittest.TestCase):
     def test_missing_transcribed_gold_is_not_accepted(self):
-        from tools.phase34_real_acceptance import source_gate
+        from tools.meeting_knowledge_benchmark import source_gate
         case = make_manifest()["cases"][0]
         self.assertFalse(source_gate(case, [{"id": 1, "start_ms": 0,
                                             "end_ms": 200, "text": "incorrect ASR"}]))
 
     def test_cross_scope_requires_foreign_only_fact(self):
-        from tools.phase34_real_acceptance import negative_witness_gate
+        from tools.meeting_knowledge_benchmark import negative_witness_gate
         case = make_manifest()["cases"][20]
         state = {"m0": (1, [{"id": 1, "text": "unrelated"}]),
                  "m1": (1, [{"id": 2, "text": "foreign verified fact"}]),
@@ -185,7 +190,7 @@ class ReleaseGateContract(unittest.TestCase):
                   "reports": {"lexical": {}, "hybrid": {}}}
         d = release_decision(freeze, expected_commit="a" * 40)
         self.assertTrue(d["local_synthetic_model_pass"])
-        self.assertFalse(d["phase34_real_meeting_release_pass"])
+        self.assertFalse(d["knowledge_release_pass"])
         self.assertFalse(d["overall_product_release_pass"])
 
 
