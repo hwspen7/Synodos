@@ -151,8 +151,18 @@ def execute(root: Path, run_dir: Path, *, reuse_report: Path | None = None,
         raise ValueError("Only private Fixed195 AMI inputs are supported")
     if os.name == "nt" and root.drive.upper() != "E:":
         raise ValueError("Run from the E: benchmark worktree")
+    missing = []
     for meeting, _ in SELECTED:
-        pinned_case(root, meeting)  # preflight entire cohort before model loading
+        try:
+            pinned_case(root, meeting)  # complete preflight before GPU work
+        except FileNotFoundError:
+            missing.append(meeting)
+    if missing:
+        raise FileNotFoundError(
+            "Missing frozen AMI recordings or labels: "
+            + ", ".join(missing)
+            + ". Prepare with: python -m tools.ami_shadow10_prepare"
+        )
 
     approved_parent = (root / "phase1b").resolve()
     run_dir = run_dir.resolve()
