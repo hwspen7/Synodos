@@ -1,0 +1,56 @@
+name: Speaker Contributions
+
+on:
+  push:
+    branches:
+      - feature/meeting-knowledge-quality
+    paths:
+      - "intelligence/speaker_insights.py"
+      - "intelligence/worker.py"
+      - "intelligence/contracts.py"
+      - "intelligence/store.py"
+      - "api/intelligence.py"
+      - "src/pages/MeetingPage.vue"
+      - "src/components/SpeakerContributionPanel.vue"
+      - "src/assets/meeting-tool-layout.css"
+      - "tests/backend/test_speaker_insights.py"
+      - "tests/frontend/speaker_contributions.test.mjs"
+      - ".github/workflows/speaker-contributions.yml"
+  pull_request:
+    paths:
+      - "intelligence/**"
+      - "api/intelligence.py"
+      - "src/pages/MeetingPage.vue"
+      - "src/components/SpeakerContributionPanel.vue"
+      - "tests/backend/test_speaker_insights.py"
+      - "tests/frontend/speaker_contributions.test.mjs"
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Speaker attribution and evidence unit tests
+        run: python -m unittest tests.backend.test_speaker_insights -v
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10"
+      - run: pnpm install --frozen-lockfile
+      - name: Speaker review and existing frontend contracts
+        run: |
+          node --test tests/frontend/speaker_contributions.test.mjs
+          node --test tests/frontend/meeting_tool_workspace.test.mjs
+          node --test tests/frontend/review_simplification.test.mjs
+          node --test tests/frontend/meeting_fixed_frame.test.mjs
+      - name: Full frontend type-check and build
+        run: pnpm build
