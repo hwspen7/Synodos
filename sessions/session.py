@@ -32,6 +32,7 @@ class Session:
         hotword_ids: Optional[list[str]] = None,
         spk_threshold: Optional[float] = None,
         participants_explicit: bool = False,
+        auto_match_saved: bool = True,
         hotwords_explicit: bool = False,
         spk_threshold_explicit: bool = False,
     ):
@@ -68,6 +69,7 @@ class Session:
             hotword_ids=hotword_ids,
             spk_threshold=spk_threshold,
             participants_explicit=participants_explicit,
+            auto_match_saved=auto_match_saved,
             hotwords_explicit=hotwords_explicit,
             spk_threshold_explicit=spk_threshold_explicit,
         )
