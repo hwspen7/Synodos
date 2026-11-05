@@ -53,7 +53,7 @@ def verified_excerpt_answer(raw: Any, hits: list[dict]) -> dict:
             continue
         source = hits[n - 1]
         source_text = source.get("text")
-        if not isinstance(source_text, str) or quote not in source_text:
+        if not isinstance(source_text, str) or quote not in source_text[:2400]:
             continue
         if (n, quote) in seen:
             continue
