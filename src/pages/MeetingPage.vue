@@ -255,7 +255,7 @@ async function loadMeetingConfig(): Promise<void> {
   try {
     const { meeting } = await meetingsApi.get(props.id)
     selectedParticipantIds.value = meeting.ui_settings?.participant_ids ?? meeting.participant_ids ?? []
-    autoMatchSaved.value = meeting.ui_settings?.auto_match_saved ?? true
+    autoMatchSaved.value = meeting.ui_settings?.auto_match_saved ?? meeting.auto_match_saved ?? true
     selectedHotwordIds.value = meeting.ui_settings?.hotword_ids ?? meeting.hotword_ids ?? []
     spkThreshold.value = meeting.ui_settings?.spk_threshold ?? meeting.spk_threshold ?? 0.3
     const restored = restoredSpeechChoices(
