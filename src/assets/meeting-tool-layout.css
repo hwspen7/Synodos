@@ -382,3 +382,22 @@
   padding-top:16px;
   margin-top:4px;
 }
+
+
+/* Compact two-column speaker selector keeps the selected person's analysis in view. */
+.meeting-route .meeting-selected-tool .review-speaker-list{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;
+}
+.meeting-route .meeting-selected-tool .review-speaker-list button{
+  padding:9px;min-height:49px;gap:7px;
+}
+.meeting-route .meeting-selected-tool .review-speaker-avatar{
+  width:27px;height:27px;border-radius:7px;
+}
+.meeting-route .meeting-selected-tool .review-speaker-avatar svg{width:14px;height:14px}
+.meeting-route .meeting-selected-tool .review-speaker-details strong{font-size:11px}
+.meeting-route .meeting-selected-tool .review-speaker-details small{font-size:9px}
+.meeting-route .meeting-selected-tool .review-speaker-list button > svg:last-child{display:none}
+@media(max-width:345px){
+  .meeting-route .meeting-selected-tool .review-speaker-list{grid-template-columns:1fr}
+}
