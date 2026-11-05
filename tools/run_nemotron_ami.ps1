@@ -11,6 +11,7 @@ param(
     [switch]$RecoverVadGaps,
     [switch]$ContentFirst,
     [switch]$PreserveVerifiedText,
+    [switch]$AsrQualityCandidate,
     [switch]$ExportPrivateTranscript,
     [string]$HumanReferenceText = "",
     [string]$ExpectedReferenceSha256 = "",
@@ -29,10 +30,11 @@ $candidates = @(
     $BypassWindowVad.IsPresent,
     $RecoverVadGaps.IsPresent,
     $ContentFirst.IsPresent,
-    $PreserveVerifiedText.IsPresent
+    $PreserveVerifiedText.IsPresent,
+    $AsrQualityCandidate.IsPresent
 ) | Where-Object { $_ }
 if (@($candidates).Count -gt 1) {
-    throw "Choose only ONE candidate: -WordBounds, -BypassWindowVad, -RecoverVadGaps, -ContentFirst, or -PreserveVerifiedText."
+    throw "Choose only ONE candidate: -WordBounds, -BypassWindowVad, -RecoverVadGaps, -ContentFirst, -PreserveVerifiedText or -AsrQualityCandidate."
 }
 
 # Preserve existing E-drive model caches; redirect any unspecified/C-drive
@@ -161,13 +163,16 @@ $env:MEETING_SPEAKER_CLUSTER_STRATEGY = "bootstrap"
 $env:MEETING_SPEAKER_PROBE_MIN_S = "1.2"
 $env:MEETING_MIN_COMMIT_CONTEXT_S = "7.0"
 $env:MEETING_ASR_SPEECH_BACKPRESSURE_GUARD = "0"
-$env:MEETING_ASR_QUALITY_CANDIDATE = "0"
+# Combined coverage mode is one isolated experimental alternative, not a
+# new production default. It also keeps canonical ASR text immutable through
+# the asynchronous speaker pipeline, as the content-first reference does.
+$env:MEETING_ASR_QUALITY_CANDIDATE = if ($AsrQualityCandidate.IsPresent) { "1" } else { "0" }
 $env:MEETING_SPEAKER_QUALITY_CANDIDATE = "0"
 $env:MEETING_WHISPER_GAP_RECOVERY = if ($RecoverVadGaps.IsPresent) { "1" } else { "0" }
 $env:MEETING_WHISPER_WINDOW_VAD_BYPASS = if ($BypassWindowVad.IsPresent) { "1" } else { "0" }
 $env:MEETING_WHISPER_PRESERVE_UNALIGNED_TEXT = if ($PreserveVerifiedText.IsPresent) { "1" } else { "0" }
-$env:MEETING_CONTENT_FIRST_FUSION = if ($ContentFirst.IsPresent) { "1" } else { "0" }
-$env:MEETING_ASR_COVERAGE_RETENTION = "0"
+$env:MEETING_CONTENT_FIRST_FUSION = if ($ContentFirst.IsPresent -or $AsrQualityCandidate.IsPresent) { "1" } else { "0" }
+$env:MEETING_ASR_COVERAGE_RETENTION = if ($AsrQualityCandidate.IsPresent) { "1" } else { "0" }
 $env:MEETING_WHISPER_DUAL_VAD = "0"
 $env:MEETING_CAPTION_WORD_BOUNDS = if ($WordBounds.IsPresent) { "1" } else { "0" }
 
@@ -317,10 +322,10 @@ try {
         Write-Host ("Forced reference ACTUAL published-caption DER: {0:P3}" -f ([double]$d.forced_aligned_caption_der))
         Write-Host ("Forced reference published speaker count: {0}" -f ([int]$d.forced_aligned_caption_metrics.predicted_speaker_count))
         Write-Host ("Word-aligned caption bounds active: {0}" -f $WordBounds.IsPresent)
-        Write-Host ("Inner Whisper window VAD bypassed: {0}" -f $BypassWindowVad.IsPresent)
-        Write-Host ("Bounded VAD-gap ASR retries: {0}" -f $RecoverVadGaps.IsPresent)
-        Write-Host ("Word-conserving speaker projection active: {0}" -f $ContentFirst.IsPresent)
-        Write-Host ("Preserve VAD-supported unaligned ASR text: {0}" -f $PreserveVerifiedText.IsPresent)
+        Write-Host ("Inner Whisper window VAD bypassed: {0}" -f ($BypassWindowVad.IsPresent -or $AsrQualityCandidate.IsPresent))
+        Write-Host ("Bounded VAD-gap ASR retries: {0}" -f ($RecoverVadGaps.IsPresent -or $AsrQualityCandidate.IsPresent))
+        Write-Host ("Word-conserving speaker projection active: {0}" -f ($ContentFirst.IsPresent -or $AsrQualityCandidate.IsPresent))
+        Write-Host ("Preserve VAD-supported unaligned ASR text: {0}" -f ($PreserveVerifiedText.IsPresent -or $AsrQualityCandidate.IsPresent))
         Write-Host ("Verified speaker-switch display splits: {0}" -f $d.display_speaker_cue_splits)
         if ($null -ne $d.forced_aligned_display_projection_metrics) {
             Write-Host ("UI-projected speaker cue DER (NOT canonical caption DER): {0:P3}" -f ([double]$d.forced_aligned_display_projection_metrics.der))
