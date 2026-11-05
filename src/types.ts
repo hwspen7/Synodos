@@ -185,6 +185,9 @@ export interface SpeakerVector {
   created_at: string
   /* Audio processing and UI rendering. */
   short: boolean
+  embedding_model?: string
+  human_verified?: boolean
+  verification_source?: string | null
 }
 
 export interface Speaker {
@@ -222,6 +225,11 @@ export interface MeetingSegment {
   language?: string
   translation?: string
   revision?: number
+  review_count?: number
+  manually_corrected?: boolean
+  speaker_profile_id?: string | null
+  speaker_status?: string
+  speaker_evidence_status?: string
 }
 
 export interface HealthInfo {
