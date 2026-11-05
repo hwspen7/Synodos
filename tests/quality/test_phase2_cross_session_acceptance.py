@@ -64,6 +64,40 @@ class Phase2CrossSessionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Duplicate source clips"):
             validate_trials(sample)
 
+    def test_reused_clip_cannot_change_its_meeting_or_human_label(self):
+        sample = trials("provenance")
+        sample["trials"][1]["clip_a"] = sample["trials"][0]["clip_a"]
+        sample["trials"][1]["speaker_a"] = "different-person"
+        with self.assertRaisesRegex(ValueError, "Source clip changes"):
+            validate_trials(sample)
+
+    def test_threshold_requires_distinct_voice_clips_not_only_many_pairs(self):
+        # A seven-clip speaker can generate >=20 apparent genuine pairs,
+        # but these are only seven underlying voice recordings.
+        rows = []
+        for i in range(7):
+            for j in range(i + 1, 7):
+                rows.append({
+                    "id": f"genuine_{i}_{j}",
+                    "session_a": f"session-{i}", "session_b": f"session-{j}",
+                    "speaker_a": "person-A", "speaker_b": "person-A",
+                    "clip_a": f"a{i}", "clip_b": f"a{j}",
+                    "embedding_model": "camplus", "human_labeled": True,
+                    "same_person": True, "cosine": 0.9,
+                })
+        for i in range(7):
+            for j in range(3):
+                rows.append({
+                    "id": f"impostor_{i}_{j}",
+                    "session_a": f"session-{i}", "session_b": f"other-{j}",
+                    "speaker_a": "person-A", "speaker_b": "person-B",
+                    "clip_a": f"a{i}", "clip_b": f"b{j}",
+                    "embedding_model": "camplus", "human_labeled": True,
+                    "same_person": False, "cosine": 0.1,
+                })
+        with self.assertRaisesRegex(ValueError, "distinct original voice clips"):
+            validate_trials({"schema": SCHEMA, "trials": rows})
+
     def test_impostor_mislabeled_as_genuine_is_rejected(self):
         sample = trials("bad")
         sample["trials"][1]["same_person"] = True
