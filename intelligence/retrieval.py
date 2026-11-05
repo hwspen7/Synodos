@@ -74,18 +74,20 @@ def lexical_score(query, text):
     return sum(1 for word in words if word in corpus) / len(words)
 
 
-def rank(query, candidates, embedding=None, limit=8):
+def rank(query, candidates, embedding=None, limit=8, embedding_model=None):
     """Exact top-k scoring over an iterable, using O(k) result memory."""
     if type(limit) is not int or not 1 <= limit <= 30:
         raise ValueError("Retrieval limit must be 1-30")
     best = []
     for index, row in enumerate(candidates):
         lexical = lexical_score(query, row["text"])
-        semantic = max(0.0, _cosine(embedding, row.get("embedding")))
-        if embedding is not None and row.get("embedding"):
-            score = 0.35 * lexical + 0.65 * semantic
-        else:
-            score = lexical
+        usable_vector = (
+            embedding is not None and bool(row.get("embedding")) and
+            (embedding_model is None or
+             row.get("embedding_model") == embedding_model)
+        )
+        semantic = max(0.0, _cosine(embedding, row.get("embedding"))) if usable_vector else 0.0
+        score = 0.35 * lexical + 0.65 * semantic if usable_vector else lexical
         if score <= 0 or not math.isfinite(score):
             continue
         # Earlier source rows win exact-score ties reproducibly.
@@ -113,4 +115,5 @@ def search(query, gateway=None, limit=8, meeting_ids=None):
         ),
         embedding,
         limit,
+        getattr(gateway.cfg, "embed_model", None) if embedding is not None else None,
     )
