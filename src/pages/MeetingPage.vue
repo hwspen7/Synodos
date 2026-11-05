@@ -749,9 +749,22 @@ onBeforeUnmount(() => stopInternal())
             <span v-if="recording">Captured {{ capturedSeconds.toFixed(1) }}s · Received {{ deliveredSeconds.toFixed(1) }}s</span>
             <span v-else>{{ transcriptMeta.segments }} transcript segments</span>
           </div>
+          <div class="meeting-header-context" aria-label="Meeting details">
+            <span><strong>Language</strong> {{ language === 'auto' ? 'Auto' : language.toUpperCase() }}</span>
+            <span><strong>Translation</strong> {{ translationTarget || 'Off' }}</span>
+            <span v-if="durableSeconds !== null"><strong>Audio</strong> {{ durableSeconds.toFixed(1) }}s saved</span>
+          </div>
         </div>
       </div>
       <div class="compact-meeting-toolbar" aria-label="Meeting actions">
+        <details class="workspace-export-menu">
+        <summary><AppIcon name="download" :size="15" /> Export <span aria-hidden="true">⌄</span></summary>
+        <div class="workspace-export-options">
+          <button type="button" @click="exportMeeting('md')">Download transcript (.md)</button>
+          <button type="button" @click="exportMeeting('json')">Download structured data (.json)</button>
+          <button type="button" :disabled="paragraphs.length === 0" @click="copyTranscript">Copy transcript</button>
+        </div>
+      </details>
         <div class="toolbar-secondary-actions">
           <button class="btn btn-ghost toolbar-save" :disabled="saving" @click="saveMeeting()">
             <AppIcon name="save" :size="16" /> {{ saving ? 'Saving...' : 'Save' }}
@@ -763,22 +776,6 @@ onBeforeUnmount(() => stopInternal())
         </button>
       </div>
     </header>
-    <section class="meeting-workspace-summary" aria-label="Meeting overview">
-      <div class="workspace-summary-label"><span class="summary-live-dot" :class="{ active: recording }"></span> {{ recording ? 'Live transcription' : 'Meeting overview' }}</div>
-      <div class="workspace-summary-detail">
-        <span><strong>Language</strong> {{ language === 'auto' ? 'Auto detect' : language.toUpperCase() }}</span>
-        <span><strong>Translation</strong> {{ translationTarget || 'Off' }}</span>
-        <span v-if="durableSeconds !== null"><strong>Audio</strong> {{ durableSeconds.toFixed(1) }}s stored</span>
-      </div>
-      <details class="workspace-export-menu">
-        <summary><AppIcon name="download" :size="15" /> Export <span aria-hidden="true">⌄</span></summary>
-        <div class="workspace-export-options">
-          <button type="button" @click="exportMeeting('md')">Download transcript (.md)</button>
-          <button type="button" @click="exportMeeting('json')">Download structured data (.json)</button>
-          <button type="button" :disabled="paragraphs.length === 0" @click="copyTranscript">Copy transcript</button>
-        </div>
-      </details>
-    </section>
     <p v-if="settingsPending && !recording" class="hint-text warn-text" role="status">Settings changed. Apply to save them, or start recording to use these values.</p>
     <p v-if="selectedWithoutVoiceprints.length" class="hint-text warn-text" role="status">
       {{ selectedWithoutVoiceprints.length }} selected participant(s) have no voiceprints. Automatic identification is not available for these people.
