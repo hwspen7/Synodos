@@ -286,4 +286,18 @@ onBeforeUnmount(resetPoll)
 }
 .context-item p { margin: 8px 0; overflow-wrap: anywhere; }
 .context-error { font-size: .85rem; color: #bd4c3f; }
+
+/* Product-level review card */
+.context-review{border-color:#e8e6e2;background:#fff;border-radius:14px;padding:20px;margin:0 0 15px;box-shadow:none}
+.context-head{gap:17px}
+.context-head h3{font-size:15px;font-weight:770;color:#292c31;letter-spacing:-.02em}
+.context-hint{opacity:1;color:#77787f;font-size:11px;line-height:1.65}
+.context-actions{gap:8px;align-items:flex-end}
+.context-mode{font-size:11px;font-weight:640;color:#6e7178}
+.context-mode select{min-width:148px;min-height:39px;border:1px solid #e0dfdc;border-radius:9px;padding:7px 10px;background:#fff;color:#30333a}
+.context-results{gap:11px}
+.context-summary{color:#696b71;background:#faf8f5;padding:10px 12px;border-radius:9px}
+.context-item{background:#fff;border:1px solid #e7e5e1;border-radius:11px;padding:15px}
+.context-item p{line-height:1.65}
+
 </style>
