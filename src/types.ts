@@ -164,6 +164,7 @@ export interface MeetingDetail {
   created_at?: string
   updated_at?: string
   participant_ids: string[]
+  auto_match_saved?: boolean
   hotword_ids: string[]
   spk_threshold: number
   ui_settings?: {
