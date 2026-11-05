@@ -84,6 +84,7 @@ def verify_utterances(
     sample_rate: int = 16000,
     preserve_disputed_text: bool = False,
     prefer_word_bounds: bool = False,
+    allow_short_vad_supported: bool = False,
 ) -> tuple[Utterance, ...]:
     """Reject unsupported chunks and omit words positioned in nonspeech areas.
 
@@ -95,7 +96,9 @@ def verify_utterances(
     disagrees with already-verified segment acoustic support. It discards
     unreliable word timestamps instead of inventing word-level precision.
     Segment-level evidence checks and decoding diagnostic rejection remain
-    mandatory. The production default is unchanged pending real A/B testing.
+    mandatory. Under a separate quality-candidate profile, a 100-159 ms
+    speech-supported reply can survive if most of its duration is VAD-positive.
+    The original reference profile is unchanged pending real A/B testing.
     """
     if duration_ms <= 0:
         return ()
@@ -115,7 +118,20 @@ def verify_utterances(
         end = min(end, duration_ms)
         duration = end - start
         evidence = voice_ms(start, end, intervals)
-        if evidence < 160 or evidence / duration < (0.35 if duration >= 2500 else 0.25):
+        # A short reply can be shorter than the default 160 ms voice floor.
+        # Only the opt-in candidate relaxes that floor, and it requires
+        # stronger VAD coverage than an ordinary model segment. Do not
+        # bypass _unreliable(), minimum model duration or silence checks.
+        short_reply = (
+            allow_short_vad_supported
+            and 100 <= duration <= 450
+            and evidence >= 100
+            and evidence / duration >= 0.60
+        )
+        if not short_reply and (
+            evidence < 160
+            or evidence / duration < (0.35 if duration >= 2500 else 0.25)
+        ):
             continue
         source_words = tuple(getattr(piece, "words", None) or ())
         words = _word_items(piece, duration_ms)
