@@ -42,6 +42,8 @@ export const meetingsApi = {
     request<{ segment_id: number; candidate: {
       status: string; profile_id: string | null; similarity: number | null;
       margin: number | null; score_kind?: string; embedding_model?: string;
+      enrollment_human_verified?: boolean; evidence_level?: string;
+      automatic_identity_update?: boolean; human_review_required?: boolean;
     } }>(`/meetings/${encodeURIComponent(id)}/segments/${segmentId}/identity-candidate`),
   revisions: (id: string, segmentId: number) =>
     request<{ segment_id: number; revision: number; original_asr_text: string;
@@ -101,12 +103,16 @@ export const speakersApi = {
       },
     ),
   /* Audio processing and UI rendering. */
-  addFromMeeting: (id: string, meetingId: string, segmentIds: number[]) =>
+  addFromMeeting: (id: string, meetingId: string, segmentIds: number[],
+    humanVerified = false) =>
     request<{ vectors: SpeakerVector[]; missing: number[]; min_audio_s: number }>(
       `/speakers/${id}/vectors/meeting`,
       {
         method: 'POST',
-        body: JSON.stringify({ meeting_id: meetingId, segment_ids: segmentIds }),
+        body: JSON.stringify({
+          meeting_id: meetingId, segment_ids: segmentIds,
+          human_verified: humanVerified,
+        }),
       },
     ),
   deleteVector: (id: string, vectorId: string) =>
