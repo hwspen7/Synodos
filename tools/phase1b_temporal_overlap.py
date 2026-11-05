@@ -197,6 +197,7 @@ def diagnose(root: Path, folder: Path, *, meetings: tuple[str, ...],
         f"-{os.getpid()}"
     )
     destination.mkdir(exist_ok=False)
+    drifted = []
     for meeting in meetings:
         frozen, wav, case, case_hash = verified[meeting]
         target = destination / f"{meeting}.json"
@@ -234,6 +235,8 @@ def diagnose(root: Path, folder: Path, *, meetings: tuple[str, ...],
         c = result["conditions"]
         fmt = lambda n: f"{n * 100:.2f}%" if n is not None else "N/A"
         status = "MATCH" if result["compatible_with_original_cohort"] else "DRIFT"
+        if status == "DRIFT":
+            drifted.append(meeting)
         print(f"{meeting}: baseline {fmt(frozen['metrics']['der'])} | "
               f"rerun {fmt(result['overall']['der'])} ({status}) | "
               f"miss-solo {c['single']['missed_speaker_seconds']:.1f}s | "
@@ -241,6 +244,12 @@ def diagnose(root: Path, folder: Path, *, meetings: tuple[str, ...],
               f"overlap full recall {fmt(c['overlap']['all_correct_overlap_fraction'])}")
     print("Private time-aligned reports:", destination)
     print("No production configuration changed.")
+    if drifted:
+        raise RuntimeError(
+            "Recomputed model results differ from saved baseline on "
+            + ", ".join(drifted)
+            + ". Reports preserved but cross-condition conclusions are NOT accepted."
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
