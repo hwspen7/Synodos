@@ -758,6 +758,7 @@ onBeforeUnmount(() => stopInternal())
           </div>
           <div class="meeting-header-context" aria-label="Meeting details">
             <span><strong>Language</strong> {{ language === 'auto' ? 'Auto' : language.toUpperCase() }}</span>
+            <span class="identity-mode-label"><strong>Voice identities</strong> {{ selectedParticipantIds.length ? selectedParticipantIds.length + ' selected' : 'Auto library match' }}</span>
             <span><strong>Translation</strong> {{ translationTarget || 'Off' }}</span>
             <span v-if="durableSeconds !== null"><strong>Audio</strong> {{ durableSeconds.toFixed(1) }}s saved</span>
           </div>
@@ -785,7 +786,7 @@ onBeforeUnmount(() => stopInternal())
     </header>
     <p v-if="settingsPending && !recording" class="hint-text warn-text" role="status">Settings changed. Apply to save them, or start recording to use these values.</p>
     <p v-if="selectedWithoutVoiceprints.length" class="hint-text warn-text" role="status">
-      {{ selectedWithoutVoiceprints.length }} selected participant(s) have no voiceprints. Automatic identification is not available for these people.
+      {{ selectedWithoutVoiceprints.length }} selected participant(s) have no usable voiceprints. Enroll clean voice samples before relying on identification.
       <RouterLink to="/speakers">Manage voiceprints</RouterLink>
     </p>
     <p v-if="untranslatedCount > 0" class="hint-text warn-text" role="status">
@@ -960,7 +961,7 @@ onBeforeUnmount(() => stopInternal())
                       <div class="config-group-title"><span class="config-step">03</span><div><h3>People & vocabulary</h3><p>Improve attribution and specialized words.</p></div></div>
                       <button type="button" class="config-resource" @click="showParticipants = true">
                         <span class="config-resource-icon"><AppIcon name="users" :size="18" /></span>
-                        <span><strong>Participants</strong><small>{{ selectedParticipantIds.length }} selected · Match people to voiceprints</small></span><span class="resource-chevron">›</span>
+                        <span><strong>Participants</strong><small>{{ selectedParticipantIds.length ? selectedParticipantIds.length + ' selected · Match registered voices' : 'Auto-match eligible voices from your saved library' }}</small></span><span class="resource-chevron">›</span>
                       </button>
                       <button type="button" class="config-resource" @click="showHotwords = true">
                         <span class="config-resource-icon"><AppIcon name="flame" :size="18" /></span>
@@ -1015,8 +1016,11 @@ onBeforeUnmount(() => stopInternal())
       <div class="dialog dialog-wide">
         <h3>Meeting Participants</h3>
         <p class="dialog-sub">
-          Select enrolled participants. Each segment is matched against their voiceprints.
-          Matched segments use participant names. Unmatched segments are clustered.
+          Select participants to limit matching to the people you expect. If none are
+          selected, the system checks eligible saved CAM++ voiceprints in your
+          local library with a stricter similarity and ambiguity threshold.
+          Uncertain speech remains anonymous. Automatic matching can be
+          disabled by setting MEETING_AUTO_SPEAKER_MATCH=0 on the server.
         </p>
         <div class="participant-list">
           <label
