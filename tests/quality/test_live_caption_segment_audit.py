@@ -1,6 +1,7 @@
 """Regression tests for opt-in, private live-caption segment audits."""
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -246,6 +247,22 @@ class LiveCaptionSegmentAuditTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "benchmark/fixed195"):
                 write_private_segment_audit(Path(temp) / "outside.json", {})
+
+    def test_unicode_audit_exports_as_ascii_safe_json_for_powershell_51(self):
+        root = Path("benchmark/fixed195")
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temp:
+            path = Path(temp) / "unicode-review.json"
+            text = "\u4f60\u597d\uff0c\u6211\u662f\u5c0f\u660e"
+            write_private_segment_audit(
+                path, {"final_segments": [{"text": text}]}
+            )
+            raw = path.read_bytes()
+            # An ANSI-default shell must never corrupt JSON structure.
+            ascii_json = raw.decode("ascii")
+            self.assertIn("\\u4f60\\u597d", ascii_json)
+            parsed = json.loads(ascii_json)
+            self.assertEqual(parsed["final_segments"][0]["text"], text)
 
     def test_export_is_exclusive_and_within_gitignored_directory(self):
         root = Path("benchmark/fixed195")

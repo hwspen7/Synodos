@@ -199,7 +199,10 @@ def write_private_segment_audit(path: Path, audit: Mapping) -> None:
             "benchmark/fixed195 (gitignored)"
         )
     target.parent.mkdir(parents=True, exist_ok=True)
+    # ASCII-safe JSON remains faithful to Unicode after parsing, and is
+    # readable by Windows PowerShell 5.1 even when Get-Content is used without
+    # -Encoding UTF8. Legacy bare UTF-8 reports require explicit UTF8 decoding.
     # Exclusive create ensures a later replay cannot overwrite earlier evidence.
     with target.open("x", encoding="utf-8") as stream:
-        json.dump(audit, stream, ensure_ascii=False, indent=2)
+        json.dump(audit, stream, ensure_ascii=True, indent=2)
         stream.write("\n")
