@@ -251,4 +251,15 @@ async function saveManualIdentity(): Promise<void> {
 .initial-text { padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; }
 .phase2-error { color: #b93e27; overflow-wrap: anywhere; }
 .phase2-event { border-top: 1px solid var(--border, #ddd); padding: 8px 0; font-size: 12px; display: grid; gap: 4px; }
+
+/* Evidence and correction form */
+.phase2-evidence{margin:0 0 15px;padding:20px;border:1px solid #e8e6e2;border-radius:14px;background:#fff}
+.phase2-evidence h3{font-size:15px;font-weight:770;color:#2d2f34;letter-spacing:-.02em}
+.phase2-evidence h4{font-size:12px;font-weight:750;color:#3f4248;margin:22px 0 10px}
+.phase2-evidence .quiet{color:#777981;line-height:1.7;font-size:11px}
+.review-field{font-size:11px;color:#676a70;font-weight:650;gap:8px;margin:15px 0 9px}
+.review-field textarea,.review-field select{padding:11px;border:1px solid #e2dfdb;border-radius:10px;background:#fff;color:#292b30}
+.initial-text{background:#faf9f6;border-radius:9px;padding:12px}
+.phase2-event{border-color:#efede9;padding:12px 0}
+
 </style>
