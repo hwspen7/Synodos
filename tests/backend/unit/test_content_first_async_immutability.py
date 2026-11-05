@@ -87,6 +87,23 @@ class ContentFirstAsyncSpeakerTests(unittest.TestCase):
                 {"start_ms": 1320, "end_ms": 2260},
             ],
         )
+        # The next published snapshot must retain the original ID, words,
+        # timestamps and text even after the speaker worker completes.
+        events = []
+        worker._put = events.append
+        with patch.dict(
+            "os.environ", {"MEETING_CONTENT_FIRST_FUSION": "1"}
+        ):
+            worker._recluster()
+            self.assertTrue(worker._rebuild_and_push())
+        updates = [item for item in events if item.get("type") == "transcript"]
+        self.assertEqual(len(updates), 1)
+        self.assertEqual(len(updates[0]["segments"]), 1)
+        published = updates[0]["segments"][0]
+        self.assertEqual(published["id"], 1)
+        self.assertEqual(published["text"], "Hello there. Hi again.")
+        self.assertEqual((published["start_ms"], published["end_ms"]),
+                         (0, 2400))
 
     def test_normal_acoustic_split_remains_available_for_comparison(self):
         worker = self._processor()
