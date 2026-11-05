@@ -46,15 +46,24 @@ class JobRequest(BaseModel):
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1,max_length=2000)
     limit: int = Field(default=8,ge=1,le=30)
+    meeting_ids: list[str] | None = None
 
 
 class AnswerRequest(BaseModel):
     question: str = Field(min_length=2,max_length=2000)
+    meeting_ids: list[str] | None = None
 
 
 class ReviewRequest(BaseModel):
     revision: int = Field(ge=1)
     status: str
+
+
+def _scope(meeting_ids):
+    try:
+        return retrieval.validate_meeting_ids(meeting_ids)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get('/capabilities')
@@ -113,6 +122,10 @@ async def submit_job(payload:JobRequest):
             raise HTTPException(400, 'Invalid contextual correction options')
         if offset < 0 or not 1 <= limit <= 48:
             raise HTTPException(400, 'Review offset or limit out of bounds')
+    if payload.kind in ('ask', 'ask_evidence'):
+        scope = _scope(payload.payload.get('meeting_ids'))
+        if scope is not None:
+            payload.payload['meeting_ids'] = scope
     try:
         if mid:
             await asyncio.to_thread(store.meeting_segments,mid)
@@ -128,6 +141,24 @@ async def get_job(job_id:str):
     result=await asyncio.to_thread(store.job_status,_uuid(job_id))
     if not result:
         raise HTTPException(404,'Job not found')
+    # Completed quote jobs are historical snapshots. Never display old
+    # transcript excerpts as current after a manual correction/deletion.
+    if (result['kind'] in ('ask', 'ask_evidence')
+            and result['status'] == 'completed'
+            and isinstance(result.get('result'), dict)):
+        sources = result['result'].get('sources') or []
+        if sources and not await asyncio.to_thread(
+            store.evidence_revisions_current, sources
+        ):
+            result['result'] = {
+                'status': 'stale_source',
+                'answer': 'Source transcript changed. Run this question again.',
+                'sources': [],
+                'quotes': [],
+                'factual_entailment_verified': False,
+                'automatic_action_allowed': False,
+                'review_required': True,
+            }
     return result
 
 
@@ -173,22 +204,33 @@ async def search(payload:SearchRequest):
     cfg=_enabled()
     from intelligence.model_gateway import ModelGateway
     gateway=ModelGateway(cfg) if cfg.enable_embeddings else None
-    hits=await asyncio.to_thread(retrieval.search,payload.query,gateway,payload.limit)
+    hits=await asyncio.to_thread(
+        retrieval.search, payload.query, gateway, payload.limit,
+        _scope(payload.meeting_ids)
+    )
     return {'results':[dict(x,embedding=None) for x in hits]}
 
 
 @router.post('/ask')
 async def ask(payload:AnswerRequest):
     _enabled()
-    jid=await asyncio.to_thread(store.enqueue,'ask_evidence',None,{'question':payload.question})
+    data = {'question': payload.question}
+    scoped = _scope(payload.meeting_ids)
+    if scoped is not None:
+        data['meeting_ids'] = scoped
+    jid=await asyncio.to_thread(store.enqueue,'ask_evidence',None,data)
     return {'job_id':jid,'status':'queued'}
 
 @router.post('/ask/evidence')
 async def ask_evidence(payload: AnswerRequest):
     """Queue a quote-only, source-validated answer; never trust LLM prose."""
     _enabled()
+    data = {'question': payload.question}
+    scoped = _scope(payload.meeting_ids)
+    if scoped is not None:
+        data['meeting_ids'] = scoped
     jid = await asyncio.to_thread(
-        store.enqueue, 'ask_evidence', None, {'question': payload.question}
+        store.enqueue, 'ask_evidence', None, data
     )
     return {
         'job_id': jid, 'status': 'queued',
