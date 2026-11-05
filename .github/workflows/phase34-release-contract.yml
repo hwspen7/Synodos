@@ -1,0 +1,37 @@
+name: Phase 3-4 release contract
+
+on:
+  pull_request:
+  push:
+    branches:
+      - upgrade/phase1-phase2-integrity-20261104
+  workflow_dispatch:
+
+jobs:
+  phase34_release_contract:
+    name: Phase 3-4 deterministic release invariants
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate strict release contracts
+        run: python -m unittest tests.release.test_phase34_release_contract -v
+      - name: Compile new release tools
+        run: >-
+          python -m compileall -q
+          tools/phase34_release_contract.py
+          tools/phase34_release_gate.py
+          tools/phase34_real_acceptance.py
+          tools/phase34_gold_review_export.py
+      - name: Assert no secrets or fabricated GPU acceptance in hosted CI
+        run: |
+          python - <<'PY'
+          from tools.phase34_release_contract import release_decision
+          assert not release_decision({"schema":"meeting-phase34-synthetic-baseline-v1","pass": True,"reports":{"lexical":{},"hybrid":{}}})["overall_product_release_pass"]
+          PY
