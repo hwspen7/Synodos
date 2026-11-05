@@ -169,8 +169,14 @@ class ContentFirstProjectionTests(unittest.TestCase):
         state = engine.snapshot_state()
         self.assertEqual(len(state["segments"]), 1)
         cues = state["segments"][0]["caption_cues"]
-        self.assertEqual([c["speaker_id"] for c in cues], [1, 2])
-        self.assertEqual("".join(c["text"] for c in cues), source["text"])
+        # 550 ms and 450 ms of isolated acoustic activity cannot establish
+        # two persistent speaker identities. Earlier tests assumed raw
+        # Nemotron channel numbers were reliable display speaker IDs.
+        # Preserve the full editable ASR caption instead of inventing
+        # identities from these short turn fragments.
+        self.assertEqual(cues, [])
+        self.assertEqual(state["segments"][0]["text"], source["text"])
+        self.assertEqual(state["segments"][0]["words"], source["words"])
 
 
 if __name__ == "__main__":
