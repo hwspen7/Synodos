@@ -45,17 +45,27 @@ def source_hash(text):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 
-def build_chunks(segments, max_chars=1300):
+def build_chunks(segments, max_chars=1300, *, coalesce=True):
     """Bound every knowledge chunk without truncating long caption segments.
 
     Preserve source segment ID and timestamps in every piece, even when one
     human-reviewed caption exceeds the embedding model's input window.
-    A split piece is still just source text, not a new transcript segment.
+    With coalesce=False, independently rank utterances rather than forcing
+    a whole short meeting into one source hit. Both modes remain bounded.
     """
     if type(max_chars) is not int or not 8 <= max_chars <= 8000:
         raise ValueError('Knowledge chunk bound must be 8-8000 characters')
+    if type(coalesce) is not bool:
+        raise ValueError('Knowledge chunk coalescing must be boolean')
     chunks, current, length = [], [], 0
     for seg in segments:
+        # Evidence QA must not force an entire meeting into one citation
+        # candidate. When coalesce=False each saved turn gets its own
+        # retrievable segment/timestamp. Keep the existing coalesced mode
+        # for callers that need larger context windows.
+        if not coalesce and current:
+            chunks.append(_chunk(current))
+            current, length = [], 0
         sid = int(seg['id'])
         remaining = str(seg.get('text') or '').strip()
         if not remaining:
