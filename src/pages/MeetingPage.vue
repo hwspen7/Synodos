@@ -34,6 +34,7 @@ const WS_BASE = (import.meta.env.VITE_WS_URL as string | undefined) ?? ''
 const language = ref('auto')
 const translationTarget = ref('')
 const recordAudio = ref(true)
+const autoMatchSaved = ref(true)
 const partialText = ref('')
 const partialLanguage = ref('')
 const audioAnalysis = ref('')
@@ -164,6 +165,7 @@ function settingsPayload() {
     record_audio: recordAudio.value, vad_threshold: vadThreshold.value,
     rec_threshold: recThreshold.value,
     participant_ids: [...selectedParticipantIds.value].sort(),
+    auto_match_saved: autoMatchSaved.value,
     hotword_ids: [...selectedHotwordIds.value].sort(),
     spk_threshold: spkThreshold.value,
   }
@@ -199,6 +201,7 @@ function wsUrl(): string {
     translate_to: translationTarget.value,
     record_audio: String(recordAudio.value),
     participants: selectedParticipantIds.value.join(','),
+    auto_match_saved: String(autoMatchSaved.value),
     hotwords: selectedHotwordIds.value.join(','),
     spk_threshold: String(spkThreshold.value),
   })
@@ -252,6 +255,7 @@ async function loadMeetingConfig(): Promise<void> {
   try {
     const { meeting } = await meetingsApi.get(props.id)
     selectedParticipantIds.value = meeting.ui_settings?.participant_ids ?? meeting.participant_ids ?? []
+    autoMatchSaved.value = meeting.ui_settings?.auto_match_saved ?? true
     selectedHotwordIds.value = meeting.ui_settings?.hotword_ids ?? meeting.hotword_ids ?? []
     spkThreshold.value = meeting.ui_settings?.spk_threshold ?? meeting.spk_threshold ?? 0.3
     const restored = restoredSpeechChoices(
@@ -758,7 +762,7 @@ onBeforeUnmount(() => stopInternal())
           </div>
           <div class="meeting-header-context" aria-label="Meeting details">
             <span><strong>Language</strong> {{ language === 'auto' ? 'Auto' : language.toUpperCase() }}</span>
-            <span class="identity-mode-label"><strong>Voice identities</strong> {{ selectedParticipantIds.length ? selectedParticipantIds.length + ' selected' : 'Auto library match' }}</span>
+            <span class="identity-mode-label"><strong>Voice identities</strong> {{ selectedParticipantIds.length ? selectedParticipantIds.length + ' selected' : autoMatchSaved ? 'Auto library match' : 'Off' }}</span>
             <span><strong>Translation</strong> {{ translationTarget || 'Off' }}</span>
             <span v-if="durableSeconds !== null"><strong>Audio</strong> {{ durableSeconds.toFixed(1) }}s saved</span>
           </div>
@@ -959,9 +963,13 @@ onBeforeUnmount(() => stopInternal())
                     </section>
                     <section class="config-group" aria-label="Recognition resources">
                       <div class="config-group-title"><span class="config-step">03</span><div><h3>People & vocabulary</h3><p>Improve attribution and specialized words.</p></div></div>
-                      <button type="button" class="config-resource" @click="showParticipants = true">
+                      <label class="config-checkbox">
+            <input v-model="autoMatchSaved" type="checkbox" :disabled="recording || status === 'connecting' || status === 'stopping'" />
+            <span><strong>Recognize saved voices automatically</strong><small>When no participants are selected, compare speech against eligible voices in your local library. Uncertain matches stay anonymous.</small></span>
+          </label>
+          <button type="button" class="config-resource" @click="showParticipants = true">
                         <span class="config-resource-icon"><AppIcon name="users" :size="18" /></span>
-                        <span><strong>Participants</strong><small>{{ selectedParticipantIds.length ? selectedParticipantIds.length + ' selected · Match registered voices' : 'Auto-match eligible voices from your saved library' }}</small></span><span class="resource-chevron">›</span>
+                        <span><strong>Participants</strong><small>{{ selectedParticipantIds.length ? selectedParticipantIds.length + ' selected · Match registered voices' : autoMatchSaved ? 'Auto-match eligible voices from your saved library' : 'Automatic identity matching disabled' }}</small></span><span class="resource-chevron">›</span>
                       </button>
                       <button type="button" class="config-resource" @click="showHotwords = true">
                         <span class="config-resource-icon"><AppIcon name="flame" :size="18" /></span>
