@@ -60,6 +60,7 @@ E-drive by the complete runner, if they were not already placed on E.
 | Component | New entry point |
 | --- | --- |
 | Five Phase 1A ablations | `tools/run_phase1a_ablation.ps1` |
+| Combined ASR coverage baseline/candidate | `tools/run_asr_coverage_pair.ps1` and `tools/phase1a_quality_pair.py` |
 | Original-protocol DER and human-text paired ablation score | `tools/phase1a_compare.py` |
 | pyannote / DiariZen adapters | `speech/phase1b_diarization_models.py` |
 | One independent frozen meeting score | `tools/phase1b_diarization_benchmark.py` |
@@ -105,6 +106,57 @@ Upstream references:
 `https://huggingface.co/pyannote/speaker-diarization-community-1`,
 `https://github.com/BUTSpeechFIT/DiariZen`,
 `https://github.com/QwenLM/Qwen3-ASR`.
+
+## Phase 1A combined anti-omission paired experiment
+
+The normal reference profile still defaults to OFF for unverified coverage
+switches. Set `MEETING_ASR_QUALITY_CANDIDATE=1` only in an isolated research
+replay, or use the new one-command runner. The candidate combines:
+
+- Preserve original, VAD-supported segment text when individual word
+  timestamps are incomplete, without inventing word-level timing.
+- Skip the **second** Faster-Whisper VAD both for automatic window-level
+  language detection and for an explicitly selected language. The outer
+  Silero VAD and model hallucination checks remain in force.
+- Permit short (100–159 ms) model replies only when at least 100 ms and
+  60% of their segment duration are VAD-supported. No fallback to
+  uncensored text or bypass of unreliable model diagnostics.
+- Retry bounded VAD-positive gaps of at least 350 ms (previously 900 ms)
+  with at most three additional decodes per inference cycle (previously
+  two), using context padding and duplicate-overlap rejection.
+- Retain uncovered detected speech for bounded additional opportunities
+  and preserve published canonical caption text via content-first mode.
+
+For a directly comparable A/B run, use the same frozen 240-second microphone
+audio, same `only_words` RTTM, same text reference and same model weights.
+The script creates **new immutable output tags** and automatically compares
+the two actual recorded inference outputs.
+
+```powershell
+cd E:\Meeting-Fixed10-Test
+$PY = "E:\Meeting-Fixed10-Test\.venv\Scripts\python.exe"
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\tools\run_asr_coverage_pair.ps1 `
+  -PythonExe $PY -Port 8012
+```
+
+The baseline enables content-first speaker evidence only. The candidate
+enables that same content-first evidence **plus** the ASR coverage bundle.
+The private `phase1a_quality_pair_<id>.json` records CER, WER,
+reference-character deletions, uncaptioned speech time, independent
+acoustic DER, *canonical* published caption DER, confirmed text revisions,
+and whether the internal VAD was bypassed and recovery attempted.
+A lower number on one metric is not acceptance if other metrics worsen.
+The comparison never promotes the candidate to the default.
+
+**Limits:** this does not recover audio absent from the outer VAD.
+In the Nov 4 repeat, 7.5 s of original reference speaker-time had
+no recorded VAD and 15.9 s had VAD but no raw model timestamp.
+The latter is a clear candidate for bypass/retry testing, but neither
+duration alone proves intelligible words were lost. A shorter retry can
+increase hallucination, insertion errors, GPU work and caption latency.
+Review original audio and verify full 10-language/held-out checks before
+changing any production default.
 
 ## Prepare and validate the ten paired AMI recordings
 
