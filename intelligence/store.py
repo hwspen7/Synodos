@@ -233,6 +233,54 @@ def knowledge_candidates(query, limit=250):
              'evidence':r[4], 'embedding':r[5]} for r in rows]
 
 
+
+def iter_knowledge_candidates(*, meeting_ids=None, include_embeddings=False,
+                              batch_size=256):
+    """Yield all current revisions with O(batch_size) memory.
+
+    Unlike the old recent-250 query, a relevant older meeting remains
+    retrievable. When embeddings are enabled this is an exact linear scan,
+    not a pgvector index. Caller must exhaust or close the iterator.
+    """
+    if meeting_ids is not None:
+        if not isinstance(meeting_ids, list) or not meeting_ids:
+            raise ValueError("Invalid meeting scope")
+        if any(not isinstance(mid, str) for mid in meeting_ids):
+            raise ValueError("Invalid meeting scope")
+    if type(batch_size) is not int or not 1 <= batch_size <= 2048:
+        raise ValueError("Invalid retrieval batch size")
+    embedding_col = "k.embedding" if include_embeddings else "NULL::jsonb"
+    conditions = [
+        "(k.source_kind='media' OR "
+        "(k.source_kind='meeting' AND m.revision=k.source_revision))"
+    ]
+    params = []
+    if meeting_ids is not None:
+        conditions.append("k.source_kind='meeting' AND k.source_id=ANY(%s::text[])")
+        params.append(meeting_ids)
+    sql = (
+        "SELECT k.source_kind,k.source_id,k.source_revision,"
+        "k.text_content,k.evidence," + embedding_col +
+        " FROM ai_knowledge k LEFT JOIN meeting_records m "
+        "ON k.source_kind='meeting' AND m.id=k.source_id "
+        "WHERE " + " AND ".join(conditions) +
+        " ORDER BY k.source_kind,k.source_id,k.chunk_index"
+    )
+    with connection() as conn:
+        with conn.cursor(name="ai_retrieval_" + uuid.uuid4().hex) as cursor:
+            cursor.execute(sql, params)
+            while True:
+                rows = cursor.fetchmany(batch_size)
+                if not rows:
+                    break
+                for r in rows:
+                    yield {
+                        'source_kind': r[0], 'source_id': r[1],
+                        'revision': r[2], 'text': r[3],
+                        'evidence': r[4], 'embedding': r[5],
+                    }
+
+
 def media_record(file_id, file_name, content_type, path, digest, size):
     with connection() as conn:
         conn.execute('INSERT INTO ai_media(id,file_name,content_type,local_path,sha256,size_bytes) VALUES (%s,%s,%s,%s,%s,%s)',
