@@ -312,7 +312,10 @@ class ShortMixedUtteranceTests(unittest.TestCase):
         done = Future()
         done.set_result(pieces)
         processor._speaker_tasks[1] = done
-        self.assertTrue(processor._collect_speakers())
+        # Explicitly exercise the legacy, destructive partition mode.
+        # The live default is now content-first and keeps one source caption.
+        with patch.dict("os.environ", {"MEETING_CONTENT_FIRST_FUSION": "0"}):
+            self.assertTrue(processor._collect_speakers())
         self.assertEqual(processor._acoustic_turn_splits, 1)
         self.assertEqual(len(processor.segments), 2)
         self.assertEqual(
