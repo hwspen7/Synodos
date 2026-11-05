@@ -37,10 +37,41 @@ $modules = @(
 )
 Write-Host "Meeting Phase 1+2 Code Integrity"
 Write-Host ("Checking {0} independent test modules..." -f $modules.Count)
-& $PythonExe -m unittest @modules -q *> $log
-$testCode = $LASTEXITCODE
-if ($testCode -ne 0) {
-    Write-Host "Result: FAIL"
+# On Windows PowerShell 5.1, native stderr redirected via *> can be
+# promoted to a NativeCommandError when ErrorActionPreference is Stop.
+# unittest intentionally logs rejected speaker partitions to stderr even
+# when every assertion passes. Only the child process exit code is authoritative.
+$stdoutLog = Join-Path $private "phase12_integrity_$id.stdout.tmp"
+$stderrLog = Join-Path $private "phase12_integrity_$id.stderr.tmp"
+$testCode = $null
+try {
+    $arguments = @("-m", "unittest") + $modules + @("-q")
+    $process = Start-Process -FilePath $PythonExe -ArgumentList $arguments `
+        -Wait -PassThru -NoNewWindow `
+        -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
+    $testCode = $process.ExitCode
+} finally {
+    # Keep complete diagnostic data on the private benchmark drive, but
+    # never print full unittest output or structured model evidence.
+    $writer = [System.IO.StreamWriter]::new($log, $false, [System.Text.UTF8Encoding]::new($false))
+    try {
+        foreach ($entry in @(
+            @{ Path = $stderrLog; Label = "Python stderr (unittest diagnostics)" },
+            @{ Path = $stdoutLog; Label = "Python stdout" }
+        )) {
+            $writer.WriteLine("=== " + $entry.Label + " ===")
+            if (Test-Path -LiteralPath $entry.Path -PathType Leaf) {
+                $writer.Write((Get-Content -LiteralPath $entry.Path -Raw))
+                $writer.WriteLine()
+            }
+        }
+    } finally {
+        $writer.Dispose()
+        Remove-Item -LiteralPath $stdoutLog, $stderrLog -Force -ErrorAction SilentlyContinue
+    }
+}
+if ($null -eq $testCode -or $testCode -ne 0) {
+    Write-Host "Result: FAIL (Python exit code: $testCode)"
     Write-Host "Last diagnostic lines:"
     Get-Content -LiteralPath $log -Tail 35
     throw "Phase 1/2 deterministic tests failed. Full private log: $log"
