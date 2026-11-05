@@ -151,8 +151,9 @@ async function poll(): Promise<void> {
     const state = await fetchJson<TaskStatus>(`/api/intelligence/jobs/${encodeURIComponent(jobId)}`)
     if (state.status === 'failed' || state.status === 'cancelled') {
       pendingId.value = null
-      error.value = state.error || 'Analysis did not complete. Try again.'
+      const failure = state.error || 'Analysis did not complete. Try again.'
       await refresh()
+      error.value = failure
       return
     }
     if (state.status === 'completed') {
