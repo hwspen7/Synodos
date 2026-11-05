@@ -72,7 +72,7 @@ git pull --ff-only origin feature/meeting-knowledge-quality
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\Invoke-Meeting-Quality-Checks.ps1
 ```
 
-The launcher freezes both successful synthetic reports, then evaluates real meeting cases in Lexical and Hybrid mode. By default it uses the **existing** saved index and does not reindex or alter meeting data. Use `-ReindexTestMeetings` only if the three or more reviewed meetings have not yet been indexed, and only in `meeting_test`. Supply `-Phase12Gate` and `-HostedCI` with independently produced, exact-commit status JSONs for the overall release decision.
+The launcher freezes both successful synthetic reports, then evaluates real meeting cases in Lexical and Hybrid mode. By default it uses the **existing** saved index and does not reindex or alter meeting data. Use `-ReindexTestMeetings` only if the three or more reviewed meetings have not yet been indexed, and only in `meeting_test`. Supply `-AudioIdentityGate` and `-HostedCI` with independently produced, exact-commit status JSONs for the overall release decision.
 
 The 42-case synthetic baseline is copied into a uniquely named immutable evidence folder, and SHA256 hashes are checked during the final decision. Each real-mode result includes Recall@8, citation attribution, exact answer phrase, negative abstention and p50/p95, with question IDs hashed and without raw transcript quotations. The real gate requires Recall@8 at least 90%, correct positive answers at least 85%, attribution at least 95%, valid refusals at least 95%, no cross-meeting leaks and p95 no greater than 15 seconds.
 

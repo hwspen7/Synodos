@@ -301,7 +301,7 @@ def real_summary(cases, *, mode, timings, text_model, embed_model):
 
 
 def release_decision(freeze, real_lexical=None, real_hybrid=None,
-                     phase12=None, ci=None, expected_commit=None):
+                     audio_identity=None, ci=None, expected_commit=None):
     """Keep Meeting knowledge status separate from full product release status."""
     def real_ok(item, mode):
         return (isinstance(item, dict) and item.get("schema") == REAL_SCHEMA and
@@ -330,11 +330,11 @@ def release_decision(freeze, real_lexical=None, real_hybrid=None,
     )
     real = (matched_models and real_ok(real_lexical, "lexical") and
             real_ok(real_hybrid, "hybrid"))
-    phase12_ok = (isinstance(phase12, dict) and
-                  phase12.get("source_commit") == expected_commit and
-                  phase12.get("pass") is True and
-                  bool(phase12.get("gates")) and
-                  all(x is True for x in phase12["gates"].values()))
+    audio_identity_ok = (isinstance(audio_identity, dict) and
+                  audio_identity.get("source_commit") == expected_commit and
+                  audio_identity.get("pass") is True and
+                  bool(audio_identity.get("gates")) and
+                  all(x is True for x in audio_identity["gates"].values()))
     ci_ok = (isinstance(ci, dict) and ci.get("all_required_checks_green") is True and
              isinstance(expected_commit, str) and len(expected_commit) == 40 and
              ci.get("commit_sha") == expected_commit)
@@ -343,7 +343,7 @@ def release_decision(freeze, real_lexical=None, real_hybrid=None,
         "real_audio_qa_lexical": real_ok(real_lexical, "lexical"),
         "real_audio_qa_hybrid": real_ok(real_hybrid, "hybrid"),
         "same_human_gold_and_models_and_commit": bool(matched_models),
-        "phase12_independent_audio_and_identity": phase12_ok,
+        "independent_audio_and_identity_review": audio_identity_ok,
         "hosted_ci_exact_commit": ci_ok,
     }
     return {

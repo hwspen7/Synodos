@@ -50,10 +50,10 @@ def decide(args):
     freeze_data = load_json(args.baseline)
     real_lexical = load_json(args.real_lexical) if args.real_lexical and args.real_lexical.exists() else None
     real_hybrid = load_json(args.real_hybrid) if args.real_hybrid and args.real_hybrid.exists() else None
-    phase12 = load_json(args.phase12) if args.phase12 and args.phase12.exists() else None
+    audio_identity = load_json(args.audio_identity) if args.audio_identity and args.audio_identity.exists() else None
     ci = load_json(args.ci) if args.ci and args.ci.exists() else None
     result = release_decision(freeze_data, real_lexical, real_hybrid,
-                              phase12, ci, args.commit)
+                              audio_identity, ci, args.commit)
     # Freeze source consistency and reject replacing earlier input reports.
     checked = {}
     for mode, row in (freeze_data.get("reports") or {}).items():
@@ -85,7 +85,7 @@ def main(argv=None):
     a.add_argument("--hybrid", type=Path, required=True)
     a.add_argument("--output", type=Path, required=True)
     b = sub.add_parser("decide")
-    for name in ("baseline", "real-lexical", "real-hybrid", "phase12", "ci"):
+    for name in ("baseline", "real-lexical", "real-hybrid", "audio-identity", "ci"):
         b.add_argument("--" + name, type=Path, required=(name == "baseline"))
     b.add_argument("--commit", required=True)
     b.add_argument("--output", type=Path, required=True)

@@ -5,7 +5,7 @@ param(
     [string]$Python = "E:\Meeting-Fixed10-Test\.venv\Scripts\python.exe",
     [string]$ReportRoot = "E:\AI-Cache\MeetingResults",
     [string]$GoldManifest = "E:\AI-Cache\MeetingResults\meeting_audio_review_gold.json",
-    [string]$Phase12Gate = "",
+    [string]$AudioIdentityGate = "",
     [string]$HostedCI = "",
     [switch]$ReindexTestMeetings
 )
@@ -77,7 +77,7 @@ $decision = Join-Path $ReportRoot "meeting_release_decision_$tag.json"
 $argsList = @("-m", "tools.meeting_release_gate", "decide", "--baseline", $baseline,
               "--real-lexical", $realLex, "--real-hybrid", $realHyb,
               "--commit", $env:MEETING_SOURCE_COMMIT, "--output", $decision)
-if ($Phase12Gate) { $argsList += @("--phase12", $Phase12Gate) }
+if ($AudioIdentityGate) { $argsList += @("--audio-identity", $AudioIdentityGate) }
 if ($HostedCI) { $argsList += @("--ci", $HostedCI) }
 & $Python @argsList
 if ($LASTEXITCODE -ne 0) { throw "Release NOT_ACCEPTED. Decision report: $decision" }
