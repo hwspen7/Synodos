@@ -108,22 +108,99 @@ def compare_pair(baseline: dict, candidate: dict) -> dict:
     }
 
 
+
+def format_summary(report: dict) -> str:
+    """Print the paired screening results, not a multi-page JSON document."""
+    if report.get("schema") != SCHEMA:
+        raise ValueError("Not a paired ASR coverage report")
+    a, b = report["baseline"], report["quality_candidate"]
+
+    def cell(metric: str, *, percent: bool = True) -> str:
+        before, after = a[metric], b[metric]
+        factor = 100 if percent else 1
+        unit = "%" if percent else " s"
+        change = (after - before) * factor
+        return (f"{metric.replace('_', ' ').title():<31}"
+                f"{before * factor:>8.2f}{unit:<3} "
+                f"-> {after * factor:>8.2f}{unit:<3} "
+                f"({change:+.2f}{unit})")
+
+    rows = [
+        "Meeting Phase 1A - Paired ASR Coverage Summary",
+        "Meeting: TS3003b | baseline -> coverage candidate",
+        "-" * 76,
+        cell("cer"),
+        cell("wer"),
+        cell("character_deletion_rate"),
+        cell("independent_der"),
+        cell("published_caption_der"),
+        cell("uncaptioned_reference_seconds", percent=False),
+        "-" * 76,
+        f"Confirmed caption rewrites:   {a['confirmed_text_changes']} -> "
+        f"{b['confirmed_text_changes']}",
+        f"Gap recovery attempts:        {a['recovery_attempted']} -> "
+        f"{b['recovery_attempted']}",
+        f"Gap recovery confirmations:   {a['recovery_confirmed']} -> "
+        f"{b['recovery_confirmed']}",
+        f"Inner VAD bypass cycles:      {a['inner_window_vad_bypass_cycles']} -> "
+        f"{b['inner_window_vad_bypass_cycles']}",
+        f"No-regression screen:         "
+        f"{'PASS' if report['same_audio_nonregression_screen'] else 'FAIL'}",
+        f"Coverage improvement screen:  "
+        f"{'PASS' if report['same_audio_coverage_improvement_screen'] else 'FAIL'}",
+        f"Reference human verified:     "
+        f"{'YES' if report['human_review_complete'] else 'NO'}",
+        "Release status: NOT APPROVED (one fixed meeting; independent review required)",
+    ]
+    return "\n".join(rows)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--root", type=Path, required=True)
-    p.add_argument("--baseline-tag", required=True)
-    p.add_argument("--candidate-tag", required=True)
-    p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--root", type=Path)
+    p.add_argument("--baseline-tag")
+    p.add_argument("--candidate-tag")
+    p.add_argument("--output", type=Path)
+    p.add_argument("--report", type=Path,
+                   help="Summarize a completed private paired report")
+    p.add_argument("--latest", action="store_true",
+                   help="Summarize the newest completed private paired report")
     args = p.parse_args(argv)
-    root = args.root.resolve(strict=True)
     private = Path("benchmark/fixed195").resolve()
+    root = (args.root or Path("benchmark/fixed195/ami_shadow10")).resolve()
+
+    if not root.is_relative_to(private):
+        p.error("Read only private benchmark/fixed195 reports")
+
+    if args.latest or args.report is not None:
+        if args.latest and args.report is not None:
+            p.error("Choose exactly one of --latest or --report")
+        if args.latest:
+            matches = [
+                item for item in root.glob("phase1a_quality_pair_*.json")
+                if item.is_file() and item.resolve().is_relative_to(private)
+            ]
+            if not matches:
+                p.error("No completed paired report exists yet")
+            source = max(matches, key=lambda x: (x.stat().st_mtime_ns, x.name))
+        else:
+            source = args.report.resolve(strict=True)
+            if not source.is_relative_to(private):
+                p.error("The paired report must be under benchmark/fixed195")
+        data = json.loads(source.read_text(encoding="utf-8"))
+        print(format_summary(data))
+        print(f"Saved details: {source}")
+        return 0
+
+    if not args.baseline_tag or not args.candidate_tag or args.output is None:
+        p.error("Require --baseline-tag, --candidate-tag and --output")
     out = args.output.resolve()
-    if (not root.is_relative_to(private) or not out.is_relative_to(private)
-            or out.exists() or out.suffix != ".json"
+    if (not out.is_relative_to(private) or out.exists() or out.suffix != ".json"
             or any(not tag or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
                                   for c in tag) for tag in (
                                       args.baseline_tag, args.candidate_tag))):
         p.error("Use a private frozen root, safe tags and a NEW private JSON output")
+
     def fetch(tag: str) -> dict:
         names = {
             "acoustic": f"audit_TS3003b_nemotron_{tag}.json",
@@ -134,13 +211,14 @@ def main(argv: list[str] | None = None) -> int:
             key: json.loads((root / filename).read_text(encoding="utf-8"))
             for key, filename in names.items()
         }
+
     result = compare_pair(fetch(args.baseline_tag), fetch(args.candidate_tag))
-    if not out.parent.is_dir():
-        out.parent.mkdir(parents=True, exist_ok=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("x", encoding="utf-8") as stream:
         json.dump(result, stream, indent=2)
         stream.write("\n")
-    print(json.dumps(result, indent=2))
+    print(format_summary(result))
+    print(f"Saved details: {out}")
     return 0
 
 
