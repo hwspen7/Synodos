@@ -85,7 +85,8 @@ class ModelGateway:
             raise AIModelError('Invalid model profile')
         return os.getenv('MEETING_AI_MODEL_' + task.upper(), self.cfg.text_model)
 
-    def chat(self, system, prompt, *, model=None, json_mode=False, image_bytes=None):
+    def chat(self, system, prompt, *, model=None, json_mode=False,
+             image_bytes=None, evidence_only=False):
         model = model or self.cfg.text_model
         if not model:
             raise AIModelError('No local text model configured')
@@ -103,11 +104,42 @@ class ModelGateway:
             body = {'model': model, 'stream': False, 'messages': [
                 {'role': 'system', 'content': system}, user],
                 'options': options, 'keep_alive': '10m'}
-            think = _optional_think()
-            if think is not None:
-                body['think'] = think
-            if json_mode:
-                body['format'] = 'json'
+            if evidence_only:
+                # Quotes are a bounded selection task, not free-form reasoning.
+                # Some models consume the entire output budget thinking, and
+                # that must not make a source-backed answer non-deterministic.
+                if not json_mode or image_bytes is not None:
+                    raise AIModelError('Evidence-only mode requires text JSON')
+                options['num_predict'] = min(options['num_predict'], 1024)
+                body['think'] = False
+                body['format'] = {
+                    'type': 'object',
+                    'properties': {
+                        'quotes': {
+                            'type': 'array', 'maxItems': 5,
+                            'items': {
+                                'type': 'object',
+                                'properties': {
+                                    'source_number': {'type': 'integer'},
+                                    'quote': {
+                                        'type': 'string',
+                                        'minLength': 12, 'maxLength': 600,
+                                    },
+                                },
+                                'required': ['source_number', 'quote'],
+                                'additionalProperties': False,
+                            },
+                        },
+                    },
+                    'required': ['quotes'],
+                    'additionalProperties': False,
+                }
+            else:
+                think = _optional_think()
+                if think is not None:
+                    body['think'] = think
+                if json_mode:
+                    body['format'] = 'json'
             out = _request(self.cfg, '/api/chat', body)
             if out.get('done_reason') == 'length':
                 raise AIModelError('Model reached output token limit; increase MEETING_AI_OLLAMA_NUM_PREDICT')
@@ -127,8 +159,9 @@ class ModelGateway:
             raise AIModelError('Model response is empty')
         return result.strip()
 
-    def structured(self, system, prompt, model=None):
-        raw = self.chat(system, prompt, json_mode=True, model=model)
+    def structured(self, system, prompt, model=None, *, evidence_only=False):
+        raw = self.chat(system, prompt, json_mode=True, model=model,
+                        evidence_only=evidence_only)
         try:
             result = json.loads(raw)
         except json.JSONDecodeError as exc:
