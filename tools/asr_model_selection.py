@@ -136,10 +136,27 @@ def engine_for(model: str):
     return QwenEngine(identifier, device="cuda:0", aligner=False)
 
 
-def infer_one(engine, audio, language):
+def infer_one(engine, audio, language, *, with_diagnostics=False):
     answer = engine.recognize(audio, language=language)
-    return " ".join(u.text.strip() for u in answer.utterances if u.text.strip()), (
-        answer.language or "und")
+    result = (" ".join(
+        u.text.strip() for u in answer.utterances if u.text.strip()
+    ), answer.language or "und")
+    if with_diagnostics:
+        return (*result, answer.recovery_diagnostics or {})
+    return result
+
+
+def hybrid_operational_error(audit):
+    """Do not misreport a Whisper fallback as a clean hybrid ASR trial."""
+    if not isinstance(audit, dict) or not audit:
+        return "MissingHybridRoutingAudit"
+    if int(audit.get("qwen_failed", 0)) > 0:
+        return "QwenWorkerRerouteFailed"
+    for key in ("primary_error", "fallback_error",
+                "qwen_error", "whisper_error"):
+        if audit.get(key):
+            return "HybridBackendFailed:" + key
+    return ""
 
 
 def record_predictions(manifest_path: Path, model: str, output: Path,
@@ -166,21 +183,42 @@ def record_predictions(manifest_path: Path, model: str, output: Path,
         chosen_language = case["language"] if language_mode == "known" else "auto"
         started = time.perf_counter()
         error, text, detected = "", "", "und"
+        audit = None
         try:
-            text, detected = infer_one(engine, samples, chosen_language)
+            if model == "hybrid-whisper-qwen17":
+                text, detected, diagnostics = infer_one(
+                    engine, samples, chosen_language, with_diagnostics=True
+                )
+                audit = diagnostics.get("hybrid")
+                error = hybrid_operational_error(audit)
+            else:
+                text, detected = infer_one(engine, samples, chosen_language)
         except Exception as exc:
             error = type(exc).__name__ + ": " + str(exc)[:180]
         seconds = round(time.perf_counter() - started, 4)
-        records.append({
+        observation = {
             "id": case["id"], "audio_sha256": case["audio_sha256"],
             "text": text, "detected_language": detected,
             "latency_seconds": seconds,
             "first_call_includes_model_load":
                 index == 0 and hybrid_preload_s is None,
             "error": error,
-        })
+        }
+        if model == "hybrid-whisper-qwen17":
+            observation["hybrid_routing"] = audit
+        records.append(observation)
+        status = "FAILED" if error else "OK"
+        if model == "hybrid-whisper-qwen17" and isinstance(audit, dict):
+            status += (
+                " QWEN_ATTEMPTS=" + str(audit.get("qwen_attempts", 0))
+                + " QWEN_ACCEPTED=" + str(audit.get("qwen_accepted", 0))
+                + " QWEN_FAILED=" + str(audit.get("qwen_failed", 0))
+            )
         print("ASR", model, index + 1, "of", len(manifest["cases"]),
-              "FAILED" if error else "OK", flush=True)
+              status, flush=True)
+        if model == "hybrid-whisper-qwen17" and error:
+            print("HYBRID TRIAL HALTED AFTER BACKEND FAILURE", flush=True)
+            break
     result = {
         "schema": PREDICTIONS_SCHEMA, "model": model,
         "backend": MODELS[model][0], "model_id": MODELS[model][1],
@@ -189,7 +227,10 @@ def record_predictions(manifest_path: Path, model: str, output: Path,
         "manifest_sha256": sha, "manifest_path": str(manifest_path.resolve()),
         "benchmark_role": manifest["benchmark_role"],
         "observations": records,
-        "any_case_failed": any(record["error"] for record in records),
+        "any_case_failed": (
+            len(records) != len(manifest["cases"])
+            or any(record["error"] for record in records)
+        ),
         "reference_transcript_used_during_inference": False,
         "production_asr_modified": False, "may_auto_promote": False,
     }

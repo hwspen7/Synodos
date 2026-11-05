@@ -85,3 +85,21 @@ its entire model download and CUDA initialization as a misleading
 inference latency while Whisper's startup is already excluded.
 This is not permission to hide cold-start cost. Measure startup
 readiness, VRAM use and per-window latency as separate product gates.
+
+
+## Windows Qwen IPC failure policy
+
+Windows CUDA extensions sometimes write non-UTF8 diagnostic bytes to
+native stdout. A UTF8 text-mode subprocess pipe raised UnicodeDecodeError
+in the reader thread, while Whisper fallback made the benchmark print OK.
+
+The bridge now reads raw bytes and parses only tagged, ASCII-serialized
+JSON frames. Untagged native bytes are ignored, corrupted tagged frames
+fail closed, and a replacement worker uses a separate response queue.
+
+The ASR benchmark separately stores the hybrid_routing audit including
+qwen_attempts, qwen_accepted and qwen_failed. Any backend operational
+exception stops the hybrid trial immediately, retains an intentionally
+incomplete prediction file, and returns a failure status. This prevents
+silent fallback from masquerading as healthy dual-model accuracy. In
+live meetings Whisper still provides text fallback when Qwen fails.

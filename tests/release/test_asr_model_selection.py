@@ -1,17 +1,83 @@
 """Deterministic, no GPU/download/DB ASR selection contract tests."""
 import json
 import unittest
+import numpy as np
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from tools.asr_model_selection import (
     PREDICTIONS_SCHEMA, SCORE_SCHEMA, compare_reports, distance, normalize,
-    p95, score_predictions,
+    p95, score_predictions, hybrid_operational_error, record_predictions,
 )
 
 
 class ASRModelSelectionTests(unittest.TestCase):
+    def test_hybrid_fallback_is_not_clean_benchmark_success(self):
+        self.assertEqual(hybrid_operational_error({
+            "policy": "frozen", "qwen_attempts": 1,
+            "qwen_accepted": 0, "qwen_failed": 1
+        }), "QwenWorkerRerouteFailed")
+        self.assertEqual(hybrid_operational_error({
+            "policy": "frozen", "primary_error": "RuntimeError"
+        }), "HybridBackendFailed:primary_error")
+        self.assertEqual(hybrid_operational_error({
+            "policy": "frozen", "qwen_attempts": 1,
+            "qwen_accepted": 1, "qwen_failed": 0
+        }), "")
+        self.assertEqual(
+            hybrid_operational_error({}), "MissingHybridRoutingAudit"
+        )
+
+    def test_worker_failure_halts_and_persists_incomplete_trial(self):
+        from speech.contracts import Recognition, Utterance
+        from types import SimpleNamespace
+        with TemporaryDirectory() as td:
+            root = Path(td)
+            manifest = {
+                "benchmark_role": "development",
+                "cases": [
+                    {"id": str(i), "language": "fr", "audio_sha256": "a" * 64}
+                    for i in range(4)
+                ],
+            }
+            fake = Recognition(
+                utterances=(Utterance("safe fallback", 0, 200, "fr"),),
+                language="fr", engine="hybrid",
+                recovery_diagnostics={"hybrid": {
+                    "policy": "frozen", "qwen_attempts": 1,
+                    "qwen_accepted": 0, "qwen_failed": 1,
+                }},
+            )
+            engine = SimpleNamespace(
+                recognize=lambda audio, language: fake,
+                _get_model=lambda: None,
+            )
+            with patch("tools.asr_model_selection.require_e_drive",
+                       side_effect=lambda path: path), patch(
+                "tools.asr_model_selection.ROOT", root
+            ), patch("tools.asr_model_selection.load_corpus",
+                     return_value=(manifest, "b" * 64)), patch(
+                "tools.asr_model_selection.load_audio",
+                return_value=np.zeros(16000, dtype=np.float32)
+            ), patch("tools.asr_model_selection.configure_cache"), patch(
+                "tools.asr_model_selection.engine_for", return_value=engine
+            ):
+                destination = root / "trial.json"
+                trial = record_predictions(
+                    root / "manifest.json", "hybrid-whisper-qwen17",
+                    destination, "auto"
+                )
+            self.assertTrue(trial["any_case_failed"])
+            self.assertEqual(len(trial["observations"]), 1)
+            self.assertEqual(
+                trial["observations"][0]["error"], "QwenWorkerRerouteFailed"
+            )
+            self.assertEqual(
+                trial["observations"][0]["text"], "safe fallback"
+            )
+            self.assertTrue(destination.is_file())
+
     def test_hybrid_model_is_an_explicit_candidate(self):
         from tools.asr_model_selection import MODELS, engine_for
         self.assertEqual(MODELS["hybrid-whisper-qwen17"][0], "hybrid")
