@@ -175,6 +175,10 @@ class RealtimeSubtitleContracts(unittest.TestCase):
             ),),
             language="en", speech_detected=True,
         )
+        # The fixture already contains a published sentence. Suppress the
+        # unrelated first transcript-snapshot refresh when checking the ASR
+        # cycle's new-candidate return value.
+        processor._rebuild_and_push = lambda: False
         with patch("sessions.processor.submit_speaker_analysis") as speaker:
             self.assertFalse(processor._cycle(final=False))
         self.assertEqual(len(processor.segments), 1)
