@@ -37,7 +37,8 @@ class ASRModelSelectionTests(unittest.TestCase):
             manifest = {
                 "benchmark_role": "development",
                 "cases": [
-                    {"id": str(i), "language": "fr", "audio_sha256": "a" * 64}
+                    {"id": str(i), "language": "fr", "audio_sha256": "a" * 64,
+                     "audio_path": str(root / (str(i) + ".wav"))}
                     for i in range(4)
                 ],
             }
