@@ -1930,7 +1930,18 @@ class SessionProcessor(threading.Thread):
         if mapper is None or mapper.offset != self._independent_id_offset:
             mapper = StableSpeakerChannels(offset=self._independent_id_offset)
             self._nemotron_channels = mapper
-        return mapper.resolve(channel, evidence_ms)
+        reserved = {
+            label for label in self._participant_label_map.values()
+            if type(label) is int and label > 0
+        }
+        reserved.update(
+            int(segment["speaker_override_id"])
+            for segment in self.segments
+            if segment.get("speaker_override")
+            and type(segment.get("speaker_override_id")) is int
+            and segment["speaker_override_id"] > 0
+        )
+        return mapper.resolve(channel, evidence_ms, reserved_labels=reserved)
 
     def _rebuild_and_push(self) -> bool:
         """Audio transcription and speaker data handling."""
