@@ -36,7 +36,7 @@ test('advanced workflows remain accessible only after an explicit expansion', ()
 test('speaker confirmation and optional second model remain accessible in one section', () => {
   assert.match(meeting, /activeReviewTool\.value = 'speakers'/)
   assert.match(meeting, /@click="inspectSpeaker\(speaker\.firstSegmentId\)"/)
-  assert.match(meeting, /<Phase2IdentityReviewPanel v-if="identityReviewSegmentId !== null"/)
+  assert.match(meeting, /<SpeakerContributionPanel v-if="selectedSpeakerId !== null"/)
   assert.match(meeting, /<OfflineSpeakerPanel v-if="showIndependentSpeakerAnalysis"/)
   assert.match(meeting, /@reviewed="loadSavedTranscript"/)
 })
