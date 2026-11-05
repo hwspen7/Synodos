@@ -58,20 +58,14 @@ const saving = ref(false)
 const speakers = ref<Speaker[]>([])
 const hotwords = ref<HotwordLibrary[]>([])
 const showParticipants = ref(false)
-const showAdvancedControls = ref(false)
 const showDiagnostics = ref(false)
-const showRecordings = ref(false)
 const showAllRecordings = ref(false)
-const showReviewPanel = ref(false)
 type MeetingTool = 'transcript' | 'review' | 'recordings' | 'settings'
 type ReviewTool = 'ai' | 'correction' | 'speakers' | 'identity'
 const activeMeetingTool = ref<MeetingTool>('transcript')
 const activeReviewTool = ref<ReviewTool>('ai')
 function selectMeetingTool(tool: MeetingTool): void {
   activeMeetingTool.value = tool
-  showReviewPanel.value = tool === 'review'
-  showRecordings.value = tool === 'recordings'
-  showAdvancedControls.value = tool === 'settings'
   if (tool === 'recordings') void loadRecordings()
 }
 
@@ -927,7 +921,7 @@ onBeforeUnmount(() => stopInternal())
             </div>
           </template>
           <template v-else-if="activeMeetingTool === 'settings'">
-            <section v-if="showAdvancedControls" class="meeting-config-panel" aria-label="Meeting configuration">
+            <section class="meeting-config-panel" aria-label="Meeting configuration">
                   <div class="config-panel-heading">
                     <div>
                       <span class="transcript-eyebrow">PREFERENCES</span>
@@ -989,7 +983,7 @@ onBeforeUnmount(() => stopInternal())
                 </section>
           </template>
           <template v-else-if="activeMeetingTool === 'recordings'">
-            <section v-if="showRecordings" class="meeting-recordings-panel" aria-label="Saved recordings">
+            <section class="meeting-recordings-panel" aria-label="Saved recordings">
                   <div class="config-panel-heading">
                     <div><span class="transcript-eyebrow">AUDIO LIBRARY</span><h2>Saved recordings</h2><p>Listen to a recording or download the original WAV file.</p></div>
                     <button type="button" class="meeting-back" aria-label="Close recordings" @click="showRecordings = false"><AppIcon name="x" :size="16" /></button>
