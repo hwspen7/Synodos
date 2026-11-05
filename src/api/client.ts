@@ -68,7 +68,7 @@ export const meetingsApi = {
   settings: (id: string, payload: {
     language: string; translate_to: string; record_audio: boolean
     vad_threshold: number; rec_threshold: number
-    participant_ids: string[]; hotword_ids: string[]; spk_threshold: number
+    participant_ids: string[]; auto_match_saved: boolean; hotword_ids: string[]; spk_threshold: number
   }) => request<{ ok: boolean }>(`/meetings/${id}/settings`, {
     method: 'PATCH', body: JSON.stringify(payload),
   }),
