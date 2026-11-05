@@ -77,7 +77,7 @@ interface AskResult {
   sources?: Array<SearchResult>
 }
 
-const props = defineProps<{ meetingId: string; segments: Segment[] }>()
+const props = defineProps<{ meetingId: string; segments: Segment[]; compact?: boolean }>()
 const modes: Array<{ id: Mode; name: string; description: string }> = [
   { id: 'meeting', name: 'Meeting', description: 'Summaries and decisions' },
   { id: 'research', name: 'Research', description: 'Experiments and findings' },
@@ -122,6 +122,7 @@ const loading = ref(true)
 const provider = ref('')
 const modelName = ref('')
 const showAllJobs = ref(false)
+const showAdvanced = ref(false)
 const queuedTranslation = new Set<string>()
 let pollId: ReturnType<typeof setInterval> | null = null
 let refreshPending = false
@@ -180,6 +181,17 @@ const selectedContent = computed<ArtifactContent>(() => selectedArtifact.value?.
 const selectedActionItems = computed(() => selectedContent.value.actions ?? [])
 const selectedDecisionItems = computed(() => selectedContent.value.decisions ?? [])
 const selectedOpenItems = computed(() => selectedContent.value.open_questions ?? [])
+const briefSummary = computed(() =>
+  artifacts.value.find(item => item.kind === 'summary' && !item.stale)
+  ?? artifacts.value.find(item => item.kind === 'summary')
+  ?? null)
+const briefExtraction = computed(() =>
+  artifacts.value.find(item => item.kind === 'extract' && !item.stale)
+  ?? artifacts.value.find(item => item.kind === 'extract')
+  ?? null)
+const briefFindings = computed<ArtifactContent>(() =>
+  briefExtraction.value?.content ?? briefSummary.value?.content ?? {})
+
 const currentAskAnswer = computed(() => (askJob.value?.result as AskResult | null)?.answer ?? '')
 const currentAskSources = computed(() => (askJob.value?.result as AskResult | null)?.sources ?? [])
 
@@ -372,7 +384,78 @@ onBeforeUnmount(() => { if (pollId) clearInterval(pollId) })
 </script>
 
 <template>
-  <section class="intelligence-panel" aria-label="AI intelligence workspace">
+  <section v-if="props.compact" class="review-insights" aria-label="Meeting review overview">
+    <div class="review-insights-header">
+      <div>
+        <h3>Meeting overview</h3>
+        <p>Summary, decisions and next steps from your saved transcript.</p>
+      </div>
+      <button type="button" class="review-insights-refresh" :disabled="refreshing || loading"
+        @click="refresh()" title="Refresh results"><AppIcon name="clock" :size="16" /></button>
+    </div>
+
+    <p v-if="loading" class="review-insights-hint" role="status">Loading meeting insights...</p>
+    <div v-else-if="!aiEnabled" class="review-insights-empty">
+      <strong>AI analysis is unavailable</strong>
+      <p>Enable the local AI worker to generate summaries. Transcript editing and speaker review remain available.</p>
+    </div>
+    <template v-else>
+      <div class="review-insights-actions">
+        <button type="button" class="review-insights-primary"
+          :disabled="!!busyKind || !hasSegments || activeJobs.some(j => j.kind === 'summary')"
+          @click="analyze('summary')">
+          <AppIcon name="file-text" :size="16" />
+          {{ busyKind === 'summary' ? 'Preparing...' : 'Generate summary' }}
+        </button>
+        <button type="button" class="review-insights-secondary"
+          :disabled="!!busyKind || !hasSegments || activeJobs.some(j => j.kind === 'extract')"
+          @click="analyze('extract')">
+          <AppIcon name="list" :size="16" />
+          {{ busyKind === 'extract' ? 'Preparing...' : 'Extract next steps' }}
+        </button>
+      </div>
+      <p v-if="!hasSegments" class="review-insights-hint">Record and save some transcript content to enable analysis.</p>
+      <p v-if="activeJobs.length" class="review-insights-hint" role="status">
+        {{ activeJobs.length }} analysis {{ activeJobs.length === 1 ? 'task is' : 'tasks are' }} processing.
+      </p>
+      <div v-if="error" class="review-insights-error" role="alert">{{ error }}</div>
+      <p v-if="notice" class="review-insights-hint" role="status">{{ notice }}</p>
+
+      <section class="review-insights-section">
+        <h4>Summary</h4>
+        <p v-if="briefSummary?.content.summary" class="review-insights-narrative">{{ briefSummary.content.summary }}</p>
+        <p v-else class="review-insights-empty-text">No summary yet. Generate one to see the key points here.</p>
+        <small v-if="briefSummary?.stale" class="review-insights-stale">Transcript changed since this summary was generated.</small>
+      </section>
+      <section class="review-insights-section">
+        <h4>Decisions <span v-if="briefFindings.decisions?.length">{{ briefFindings.decisions.length }}</span></h4>
+        <ul v-if="briefFindings.decisions?.length" class="review-insights-list">
+          <li v-for="(item, i) in briefFindings.decisions" :key="'decision-' + i">
+            <strong>{{ item.title }}</strong><small v-if="item.source_ids?.length">{{ evidenceText(item.source_ids) }}</small>
+          </li>
+        </ul>
+        <p v-else class="review-insights-empty-text">No decisions extracted.</p>
+      </section>
+      <section class="review-insights-section">
+        <h4>Next steps <span v-if="briefFindings.actions?.length">{{ briefFindings.actions.length }}</span></h4>
+        <ul v-if="briefFindings.actions?.length" class="review-insights-list">
+          <li v-for="(item, i) in briefFindings.actions" :key="'action-' + i">
+            <strong>{{ item.title }}</strong>
+            <small>{{ item.owner || 'No owner assigned' }}<template v-if="item.due_date"> · {{ item.due_date }}</template></small>
+          </li>
+        </ul>
+        <p v-else class="review-insights-empty-text">No action items extracted.</p>
+      </section>
+    </template>
+
+    <button type="button" class="review-insights-advanced"
+      :aria-expanded="showAdvanced" @click="showAdvanced = !showAdvanced">
+      <span>{{ showAdvanced ? 'Hide advanced AI tools' : 'More AI tools' }}</span>
+      <AppIcon :name="showAdvanced ? 'chevron-up' : 'chevron-down'" :size="16" />
+    </button>
+  </section>
+  <section v-if="!props.compact || showAdvanced" class="intelligence-panel"
+    aria-label="AI intelligence workspace">
     <div class="workspace-head">
       <div class="workspace-identity">
         <span class="workspace-emblem" aria-hidden="true"><AppIcon name="file-text" :size="23" /></span>
@@ -847,5 +930,38 @@ onBeforeUnmount(() => { if (pollId) clearInterval(pollId) })
 .action-primary .action-icon{background:#eb7100}
 .action-icon{background:#fff2e5;color:#a45100}
 .workspace-heading,.section-heading{color:#292b30}
+
+
+/* Compact meeting review: a direct output, not a second nested application. */
+.review-insights{display:flex;flex-direction:column;gap:15px;min-width:0;color:#292b30}
+.review-insights-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.review-insights-header h3{margin:0;font-size:16px;letter-spacing:-.025em;font-weight:770}
+.review-insights-header p{margin:6px 0 0;font-size:12px;line-height:1.6;color:#777981}
+.review-insights-refresh{flex:none;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid #e6e4df;border-radius:9px;background:#fff;color:#7d7e84}
+.review-insights-refresh:hover:not(:disabled){background:#fff5ec;color:#9b4800}
+.review-insights-actions{display:flex;flex-wrap:wrap;gap:8px}
+.review-insights-actions button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:39px;padding:9px 12px;border-radius:9px;font-size:12px;font-weight:700;flex:1 1 155px}
+.review-insights-primary{background:#a94f00;border:1px solid #a94f00;color:#fff}
+.review-insights-primary:hover:not(:disabled){background:#894000}
+.review-insights-secondary{background:#fff;border:1px solid #e7e3dc;color:#695648}
+.review-insights-secondary:hover:not(:disabled){background:#fff7f0}
+.review-insights-actions button:disabled{opacity:.52;cursor:not-allowed}
+.review-insights-section{border:1px solid #e9e7e3;border-radius:12px;background:#fff;padding:15px}
+.review-insights-section h4{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px;font-size:13px;color:#282a30;font-weight:770}
+.review-insights-section h4 span{display:flex;align-items:center;justify-content:center;min-width:21px;padding:2px 6px;border-radius:7px;background:#fff1e4;color:#a5530b;font-size:10px}
+.review-insights-narrative{margin:0;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:#3c4047}
+.review-insights-empty-text,.review-insights-hint{font-size:11px;color:#86868c;line-height:1.65;margin:0}
+.review-insights-stale{display:block;margin-top:10px;font-size:11px;color:#a75b1b}
+.review-insights-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:11px}
+.review-insights-list li{display:flex;flex-direction:column;gap:3px;padding:0 0 10px;border-bottom:1px solid #efeeeb}
+.review-insights-list li:last-child{border:0;padding-bottom:0}
+.review-insights-list strong{font-size:12px;font-weight:680;color:#383b42;line-height:1.55}
+.review-insights-list small{font-size:10px;color:#8a8b91;line-height:1.6}
+.review-insights-error{padding:11px 12px;border:1px solid #f0d0bd;background:#fff8f4;border-radius:9px;font-size:11px;line-height:1.6;color:#a34420}
+.review-insights-empty{padding:20px;border:1px dashed #e9dbca;background:#fffbf7;border-radius:12px}
+.review-insights-empty strong{font-size:13px;color:#4b3c32}
+.review-insights-empty p{font-size:11px;line-height:1.6;color:#777981;margin:6px 0 0}
+.review-insights-advanced{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:12px 2px;border:0;border-top:1px solid #ece9e4;background:transparent;color:#8c552b;text-align:left;font-size:11px;font-weight:730}
+.review-insights-advanced:hover{color:#a44e00}
 
 </style>
