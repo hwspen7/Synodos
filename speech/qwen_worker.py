@@ -78,10 +78,14 @@ def main():
                 "error_type": type(exc).__name__,
                 "message": str(exc)[:220],
             }
-        sys.stdout.write(PREFIX + json.dumps(
-            reply, ensure_ascii=False, separators=(",", ":")
-        ) + "\n")
-        sys.stdout.flush()
+        # Protocol frames are guaranteed ASCII even for multilingual
+        # transcripts. Native libraries can print arbitrary code-page
+        # bytes to stdout without corrupting our frame serialization.
+        frame = (PREFIX + json.dumps(
+            reply, ensure_ascii=True, separators=(",", ":")
+        ) + "\n").encode("ascii")
+        sys.stdout.buffer.write(frame)
+        sys.stdout.buffer.flush()
 
 
 if __name__ == "__main__":

@@ -19,7 +19,33 @@ import numpy as np
 from speech.contracts import Recognition, Utterance, Word
 
 PREFIX = "MEETING_QWEN_WORKER_V1:"
+PREFIX_BYTES = PREFIX.encode("ascii")
 MAX_SAMPLES = 16000 * 120
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
+
+def parse_worker_stdout(raw: bytes) -> dict | None:
+    """Decode only tagged ASCII protocol frames, never native log bytes.
+
+    Some Windows CUDA/native libraries write non-UTF8 or code-page bytes
+    directly to stdout. They are untrusted diagnostic noise, not frames.
+    Native output without a newline may precede the worker's frame.
+    """
+    if not isinstance(raw, bytes):
+        raise TypeError("Qwen stdout must be read as binary")
+    marker = raw.find(PREFIX_BYTES)
+    if marker < 0:
+        return None
+    encoded = raw[marker + len(PREFIX_BYTES):].strip()
+    if not encoded or len(encoded) > MAX_RESPONSE_BYTES:
+        return {"id": -1, "ok": False, "error_type": "InvalidFrameSize"}
+    try:
+        response = json.loads(encoded.decode("ascii"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return {"id": -1, "ok": False, "error_type": "InvalidFrameEncoding"}
+    if not isinstance(response, dict) or type(response.get("id")) is not int:
+        return {"id": -1, "ok": False, "error_type": "InvalidFrameStructure"}
+    return response
 
 
 def decode_recognition(payload):
@@ -67,17 +93,22 @@ class QwenWorkerClient:
             raise ValueError("Hybrid worker timeout must be 10-600 seconds")
         atexit.register(self.close)
 
-    def _read_output(self, stream):
+    def _read_output(self, stream, channel):
+        """Drain raw bytes and signal failure on EOF without thread crashes."""
         try:
-            for line in stream:
-                if not line.startswith(PREFIX):
-                    continue
-                try:
-                    self.queue.put(json.loads(line[len(PREFIX):]))
-                except json.JSONDecodeError:
-                    self.queue.put({"id": -1, "ok": False})
+            for raw in stream:
+                result = parse_worker_stdout(raw)
+                if result is not None:
+                    channel.put(result)
+        except (OSError, ValueError) as exc:
+            channel.put({
+                "id": -1, "ok": False,
+                "error_type": type(exc).__name__,
+            })
         finally:
-            self.queue.put(None)
+            # Capture this worker's own queue. A dead worker must never
+            # poison a replacement worker's new response queue.
+            channel.put(None)
 
     def _stop(self):
         process = self.proc
@@ -110,15 +141,18 @@ class QwenWorkerClient:
         path.mkdir(parents=True, exist_ok=True)
         self.log = (path / "qwen_asr_worker.log").open("a", encoding="utf-8")
         self.queue = Queue()
+        worker_env = os.environ.copy()
+        worker_env["PYTHONUTF8"] = "1"
+        worker_env["PYTHONIOENCODING"] = "utf-8"
         self.proc = subprocess.Popen(
             [self.python, "-u", "-m", "speech.qwen_worker"],
             cwd=str(Path(__file__).resolve().parents[1]),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=self.log, text=True, encoding="utf-8", bufsize=1,
-            env=os.environ.copy(),
+            stderr=self.log, bufsize=0, env=worker_env,
         )
+        channel = self.queue
         threading.Thread(
-            target=self._read_output, args=(self.proc.stdout,),
+            target=self._read_output, args=(self.proc.stdout, channel),
             name="qwen-asr-stdout", daemon=True,
         ).start()
 
@@ -132,9 +166,10 @@ class QwenWorkerClient:
             self.sequence += 1
             request_id = self.sequence
             try:
-                self.proc.stdin.write(json.dumps({
+                wire = (json.dumps({
                     "id": request_id, **command,
-                }, separators=(",", ":")) + "\n")
+                }, separators=(",", ":"), ensure_ascii=True) + "\n").encode("ascii")
+                self.proc.stdin.write(wire)
                 self.proc.stdin.flush()
                 response = self.queue.get(timeout=self.timeout)
                 if response is None or response.get("id") != request_id:
