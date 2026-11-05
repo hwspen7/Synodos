@@ -64,7 +64,7 @@ from sessions.translation_tasks import submit_translation
 from sessions.speaker_tasks import submit_speaker_analysis, submit_acoustic_window
 from sessions.speaker_evidence import speaker_evidence
 from sessions.registered_identity import match_saved_voice
-from sessions.stable_speaker_channels import StableSpeakerChannels
+from sessions.corroborated_speaker_channels import CorroboratedSpeakerChannels
 from speech.acoustic_timeline import AcousticTimeline
 from speech.diarization import resolve_diarization_mode
 from speech.turn_integrity import valid_turn_partition
@@ -165,7 +165,7 @@ class SessionProcessor(threading.Thread):
         self._content_first_projection: dict[int, dict] = {}
         self._independent_pcm_origin_samples = 0
         self._independent_id_offset = 0
-        self._nemotron_channels = StableSpeakerChannels()
+        self._nemotron_channels = CorroboratedSpeakerChannels()
         self._transcript_version = 0
         self._last_state_sent = 0.0
         self._last_inferred_absolute_end = -1
@@ -342,7 +342,10 @@ class SessionProcessor(threading.Thread):
                 finally:
                     self._ecapa_shadow.close()
             self._ecapa_shadow_audio.clear()
-            independent = getattr(self, "independent_diarization", None)
+            independent = (
+            None if resolve_diarization_mode(os.getenv("MEETING_DIARIZATION_MODE")) == "single"
+            else getattr(self, "independent_diarization", None)
+        )
             if independent is not None:
                 independent_report = independent.report()
                 closed_payload["independent_diarization"] = independent_report
@@ -383,7 +386,7 @@ class SessionProcessor(threading.Thread):
                             acoustic_origin_ms=origin_ms,
                             speaker_id_offset=self._independent_id_offset,
                             speaker_id_map=getattr(
-                                self, "_nemotron_channels", StableSpeakerChannels()
+                                self, "_nemotron_channels", CorroboratedSpeakerChannels()
                             ).labels,
                         )
                         # Derive the actual display-level voice hypothesis
@@ -412,7 +415,7 @@ class SessionProcessor(threading.Thread):
                                 acoustic_origin_ms=origin_ms,
                                 speaker_id_offset=self._independent_id_offset,
                                 speaker_id_map=getattr(
-                                    self, "_nemotron_channels", StableSpeakerChannels()
+                                    self, "_nemotron_channels", CorroboratedSpeakerChannels()
                                 ).labels,
                             )
                         )
@@ -1918,16 +1921,14 @@ class SessionProcessor(threading.Thread):
             except Exception:
                 logger.warning("Optional ECAPA shadow enqueue failed; CAM++ unchanged")
 
-    def _display_nemotron_channel(self, channel: int, evidence_ms: int) -> int | None:
-        """Allocate stable meeting speaker IDs only for sustained channels.
-
-        A new model session may begin on Nemotron's channel 5. That must
-        become Speaker 1 in an empty meeting, not Speaker 5. The mapping
-        is connection-local and never merges identities across resumes.
-        """
+    def _display_nemotron_channel(
+        self, channel: int, evidence_ms: int, *,
+        segment_id: int, embedding: object = None,
+    ) -> int | None:
+        """Require independent voice evidence before adding a new speaker."""
         mapper = getattr(self, "_nemotron_channels", None)
         if mapper is None or mapper.offset != self._independent_id_offset:
-            mapper = StableSpeakerChannels(offset=self._independent_id_offset)
+            mapper = CorroboratedSpeakerChannels(offset=self._independent_id_offset)
             self._nemotron_channels = mapper
         reserved = {
             label for label in getattr(
@@ -1941,7 +1942,10 @@ class SessionProcessor(threading.Thread):
             and type(segment.get("speaker_override_id")) is int
             and segment["speaker_override_id"] > 0
         )
-        return mapper.resolve(channel, evidence_ms, reserved_labels=reserved)
+        return mapper.observe(
+            channel, segment_id, evidence_ms, embedding,
+            reserved_labels=reserved,
+        )
 
     def _rebuild_and_push(self) -> bool:
         """Audio transcription and speaker data handling."""
@@ -2071,7 +2075,7 @@ class SessionProcessor(threading.Thread):
                                 ),
                                 speaker_id_offset=self._independent_id_offset,
                                 speaker_id_map=getattr(
-                                    self, "_nemotron_channels", StableSpeakerChannels()
+                                    self, "_nemotron_channels", CorroboratedSpeakerChannels()
                                 ).labels,
                             )
                         except (TypeError, ValueError, OverflowError):
@@ -2122,14 +2126,17 @@ class SessionProcessor(threading.Thread):
                         )
                         published = self._display_nemotron_channel(
                             decision.speaker_id, acoustic_support_ms,
+                            segment_id=int(item["id"]),
+                            embedding=source.get("emb"),
                         )
                         if published is None:
-                            # A single short cue is not sufficient evidence
-                            # for allocating a new, persistent speaker ID.
+                            # An uncorroborated acoustic channel is unknown,
+                            # never a new person based on a CAM++ cluster ID.
+                            item["speaker_id"] = -1
+                            item["speaker_name"] = "Unidentified Speaker"
                             item["speaker_status"] = "speaker_birth_pending"
-                            item["speaker_diarization_source"] = (
-                                "nemotron3_provisional"
-                            )
+                            item["speaker_diarization_source"] = "nemotron3_uncertain"
+                            self._independent_published[int(item["id"])] = -1
                             continue
                         item["speaker_id"] = published
                         item["speaker_name"] = f"Speaker {published}"
