@@ -88,4 +88,4 @@ jobs:
       - name: Test PostgreSQL storage, Phase 3 retrieval, and Phase 4 evidence integrity
         env:
           TEST_DATABASE_URL: postgresql://meeting_test:ci_only_password@localhost:5432/meeting_test
-        run: python -m unittest tests.infrastructure.integration.test_postgres_optional tests.infrastructure.integration.test_phase34_postgres -v
+        run: python -m unittest tests.infrastructure.integration.test_postgres_optional tests.infrastructure.integration.test_phase34_postgres tests.infrastructure.integration.test_phase34_runner_postgres -v
