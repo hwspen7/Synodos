@@ -72,6 +72,24 @@ class RetrievalQualityTests(unittest.TestCase):
             meeting_ids=["chosen"], include_embeddings=True
         )
 
+    def test_embedding_vectors_from_other_model_are_never_scored(self):
+        candidates = [{
+            "source_kind": "meeting", "source_id": "stale-model",
+            "text": "Unrelated archived transcript",
+            "embedding": [1, 0], "embedding_model": "other-embedder",
+        }]
+        bad = retrieval.rank(
+            "nebular quintessence", candidates, [1, 0], 8,
+            embedding_model="current-embedder",
+        )
+        self.assertEqual(bad, [])
+        good = retrieval.rank(
+            "nebular quintessence", [
+                dict(candidates[0], embedding_model="current-embedder")
+            ], [1, 0], 8, embedding_model="current-embedder",
+        )
+        self.assertEqual(len(good), 1)
+
     def test_query_with_no_evidence_never_promotes_model_prose(self):
         hits = [{"text": "Project Atlas has no shipping date.",
                  "source_kind": "meeting", "source_id": "m1",
