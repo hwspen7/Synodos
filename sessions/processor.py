@@ -98,6 +98,7 @@ class SessionProcessor(threading.Thread):
         hotword_ids: Optional[list[str]] = None,
         spk_threshold: Optional[float] = None,
         participants_explicit: bool = False,
+        auto_match_saved: bool = True,
         hotwords_explicit: bool = False,
         spk_threshold_explicit: bool = False,
     ):
@@ -238,6 +239,7 @@ class SessionProcessor(threading.Thread):
         )
         self._participants: list[dict] = []
         self._auto_profile_mode = False
+        self.auto_match_saved = bool(auto_match_saved)
         self._participant_label_map: dict[str, int] = {}
         # Handle transcripts and speaker assignments.
         self._unknown_index: dict[int, int] = {}
@@ -562,6 +564,7 @@ class SessionProcessor(threading.Thread):
             "sample_rate": self.settings.sample_rate,
             "merge_gap_s": self.settings.merge_gap_s,
             "participant_ids": list(self.participant_ids),
+            "auto_match_saved": bool(self.auto_match_saved),
             "hotword_ids": list(self.hotword_ids),
             "spk_threshold": float(self.spk_threshold),
             "participant_label_map": dict(self._participant_label_map),
@@ -792,7 +795,9 @@ class SessionProcessor(threading.Thread):
         if self.participant_ids:
             self._participants = self.speaker_store.get_for_matching(self.participant_ids)
             self.participant_ids = [p["id"] for p in self._participants]
-        elif os.getenv("MEETING_AUTO_SPEAKER_MATCH", "1").strip().lower() in ("1", "true", "yes"):
+        elif (self.auto_match_saved and
+              os.getenv("MEETING_AUTO_SPEAKER_MATCH", "1").strip().lower()
+              in ("1", "true", "yes")):
             self._participants = self.speaker_store.get_auto_matching_profiles()
             self._auto_profile_mode = True
         else:
