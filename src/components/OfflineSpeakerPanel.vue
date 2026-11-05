@@ -208,4 +208,15 @@ onBeforeUnmount(endPoll)
 .speaker-turns { max-height: 300px; overflow-y: auto; display: grid; gap: 4px; }
 .speaker-turn { display: flex; gap: 14px; font-size: .85rem; padding: 6px;
   border-bottom: 1px solid var(--border, #ddd); }
+
+/* Secondary speaker-analysis card */
+.speaker-review{margin:0 0 15px;padding:20px;border:1px solid #e8e6e2;border-radius:14px;background:#fff}
+.speaker-review h3{font-size:15px;font-weight:770;color:#2d2e34;letter-spacing:-.02em}
+.speaker-note{opacity:1;color:#77777d;font-size:11px;line-height:1.7;margin:8px 0 13px}
+.speaker-controls{gap:9px}
+.speaker-controls label{flex:1;min-width:180px;font-size:11px;font-weight:650;color:#57595e}
+.speaker-controls select{width:100%;max-width:none;min-height:40px;border:1px solid #deddda;background:#fff;border-radius:9px;padding:8px 10px;color:#30333a}
+.speaker-turns{border:1px solid #edeae6;border-radius:10px;padding:4px 12px}
+.speaker-turn{padding:10px 4px;border-bottom:1px solid #efedeb;color:#595d63;font-size:12px}
+
 </style>
