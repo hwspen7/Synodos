@@ -406,7 +406,49 @@ try {
         }
         'frontend' {
             $Host.UI.RawUI.WindowTitle = 'Meeting - Frontend'
-            & pnpm dev --host 127.0.0.1 --port 5173 --strictPort
+            # The parent launcher may have checked before another Vite
+            # instance bound its port. Re-check in the child process.
+            $listeningPid = Get-ListeningPid 5173
+            if ($null -ne $listeningPid) {
+                Assert-ProjectProcess $listeningPid 'vite' 5173
+                Write-Host "Meeting frontend already running (PID $listeningPid)."
+            } else {
+                # Keep one frontend start attempt at a time across multiple
+                # simultaneous Start-Meeting.cmd windows.
+                $mutex = New-Object System.Threading.Mutex(
+                    $false, 'Local\MeetingOfPioneers_Vite_5173'
+                )
+                $entered = $false
+                try {
+                    $entered = $mutex.WaitOne(0)
+                    if (-not $entered) {
+                        if (-not (Wait-For {
+                            $null -ne (Get-ListeningPid 5173)
+                        } 30 'another frontend start')) {
+                            throw 'Another Meeting frontend is initializing but did not bind port 5173.'
+                        }
+                        $listeningPid = Get-ListeningPid 5173
+                        Assert-ProjectProcess $listeningPid 'vite' 5173
+                        Write-Host "Reusing frontend started by another Meeting window (PID $listeningPid)."
+                    } else {
+                        # A second check closes the race between initial
+                        # preflight and acquiring the single-start mutex.
+                        $listeningPid = Get-ListeningPid 5173
+                        if ($null -ne $listeningPid) {
+                            Assert-ProjectProcess $listeningPid 'vite' 5173
+                            Write-Host "Reusing existing Meeting frontend (PID $listeningPid)."
+                        } else {
+                            & pnpm dev --host 127.0.0.1 --port 5173 --strictPort
+                            if ($LASTEXITCODE -ne 0) {
+                                throw "Vite exited with code $LASTEXITCODE."
+                            }
+                        }
+                    }
+                } finally {
+                    if ($entered) { [void]$mutex.ReleaseMutex() }
+                    $mutex.Dispose()
+                }
+            }
         }
     }
 } catch {

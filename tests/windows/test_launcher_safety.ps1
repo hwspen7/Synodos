@@ -70,4 +70,15 @@ Assert-ProjectProcess 9876 'vite' 5173
 $script:ValidFrontend = $false
 Expect-Denied { Assert-ProjectProcess 9876 'vite' 5173 } 'unrelated frontend'
 
+# Guard against regressions where a child frontend window unconditionally
+# invokes Vite despite a previously bound Meeting frontend port.
+if ($launcher -notmatch [regex]::Escape("$" + "listeningPid = Get-ListeningPid 5173")) {
+    throw 'Frontend child process lacks its own port check.'
+}
+if ($launcher -notmatch 'Local\\MeetingOfPioneers_Vite_5173') {
+    throw 'Frontend child process lacks the cross-process single-start gate.'
+}
+if ($launcher -notmatch 'Another Meeting frontend is initializing') {
+    throw 'Frontend child process lacks a bounded competing-launch wait.'
+}
 Write-Output 'Windows launcher process safety tests passed.'
