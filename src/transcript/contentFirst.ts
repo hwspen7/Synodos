@@ -55,6 +55,8 @@ export function expandContentFirstSegments(
       !Array.isArray(cues) || cues.length < 2 || cues.length > 32 ||
       segment.caption_projection_status !== 'split_verified' ||
       segment.speaker_diarization_source === 'manual_override' ||
+      segment.speaker_diarization_source === 'registered_voiceprint' ||
+      Boolean(segment.matched_profile_id && segment.matched_profile_name) ||
       (useTranslation && !!segment.translation?.trim()) ||
       !hasStableSpeakerCues(cues) ||
       !isExactContentProjection(
