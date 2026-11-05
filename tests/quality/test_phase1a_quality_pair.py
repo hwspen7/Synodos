@@ -4,7 +4,7 @@ from __future__ import annotations
 import copy
 import unittest
 
-from tools.phase1a_quality_pair import compare_pair
+from tools.phase1a_quality_pair import compare_pair, format_summary
 
 
 def evidence(cer=.15, uncapt=26.0, *, bypass=0, retry=0):
@@ -62,6 +62,20 @@ class PairedCoverageTests(unittest.TestCase):
         self.assertTrue(result["candidate_recovery_executed"])
         self.assertFalse(result["production_promotion_authorized"])
         self.assertFalse(result["human_review_complete"])
+
+    def test_summary_is_compact_and_never_dumps_json(self):
+        report = compare_pair(
+            evidence(),
+            evidence(cer=.12, uncapt=18.0, bypass=200, retry=4),
+        )
+        printed = format_summary(report)
+        self.assertIn("15.00%", printed)
+        self.assertIn("12.00%", printed)
+        self.assertIn("Gap recovery attempts:", printed)
+        self.assertIn("Release status: NOT APPROVED", printed)
+        self.assertNotIn("source_audio_sha256", printed)
+        self.assertNotIn('{"schema":', printed)
+        self.assertLess(len(printed.splitlines()), 22)
 
     def test_better_coverage_cannot_hide_worse_cer(self):
         result = compare_pair(
