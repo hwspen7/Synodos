@@ -114,10 +114,7 @@ onMounted(load)
   <div class="hotwords page-shell">
     <div class="speaker-head">
       <div class="speaker-head-left">
-        <button class="btn btn-ghost btn-sm" @click="router.push('/')">
-          <AppIcon name="arrow-left" :size="16" />
-          Back to Home
-        </button>
+        <span class="page-section-kicker">TOOLS / CUSTOM VOCABULARY</span>
         <div>
           <h1 class="page-title">Hotword Libraries</h1>
           <p class="page-sub">Manage libraries of specialized terminology.</p>
