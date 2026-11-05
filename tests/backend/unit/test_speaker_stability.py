@@ -157,6 +157,30 @@ class StabilityUnitContracts(unittest.TestCase):
         self.assertEqual(result[5], 1)
         self.assertEqual(result[42], 2)
 
+    def test_global_assignment_keeps_two_continuing_speakers_instead_of_greedy(self):
+        # Greedy picks raw 0 -> speaker 1 (9), leaving raw 1 without an
+        # identity even though raw 0 -> speaker 2 (8) and raw 1 -> speaker 1
+        # (8) preserve 16 historical assignments in total.
+        rows = (
+            [{"cluster": 0, "speaker_id": 1}] * 9
+            + [{"cluster": 0, "speaker_id": 2}] * 8
+            + [{"cluster": 1, "speaker_id": 1}] * 8
+        )
+        result = stabilized_cluster_ids(rows, (), None)
+        self.assertEqual(result, {0: 2, 1: 1})
+        self.assertEqual(result, stabilized_cluster_ids(rows, (), None))
+
+    def test_manual_participant_anchors_not_claimed_by_acoustic_clusters(self):
+        rows = [
+            {"cluster": 1, "speaker_id": 1, "speaker_override": True},
+            {"cluster": 1, "speaker_id": 2},
+            {"cluster": 2, "speaker_id": 3},
+        ]
+        result = stabilized_cluster_ids(rows, (1,), {1: 1, 2: 3})
+        self.assertEqual(result[1], 2)
+        self.assertEqual(result[2], 3)
+        self.assertEqual(len(set(result.values())), 2)
+
     def test_large_continuing_cluster_beats_small_split_off(self):
         # Old sorted-raw greedy mapping stole stable 1 for the two-clip
         # split-off (raw 0) and rewrote 100 continuing clips (raw 1).
