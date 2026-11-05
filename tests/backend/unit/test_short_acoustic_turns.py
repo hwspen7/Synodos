@@ -85,6 +85,62 @@ class ShortMixedUtteranceTests(unittest.TestCase):
         self.assertEqual(tentative_new_clusters([case], set()), {0})
 
 
+    def test_live_two_speakers_do_not_promote_unsupported_third(self):
+        class ClusterModels:
+            def cluster(self, embeddings):
+                self_size = len(embeddings)
+                self_test_labels = [0, 1, 0, 1, 2]
+                assert self_size == 5
+                return self_test_labels
+
+        def segment(number, speaker, start):
+            return {
+                "id": number, "cluster": -3, "speaker_id": -number,
+                "speaker_name": "Unidentified Speaker",
+                "text": "recognized utterance", "language": "en",
+                "emb": np.array(
+                    [1.0, 0.0] if speaker == "A"
+                    else [0.0, 1.0] if speaker == "B"
+                    else [0.7, 0.7], dtype=np.float32
+                ),
+                "speaker_uncertain": False,
+                "speaker_evidence_status": "turn_voiceprint",
+                "start_sample": start,
+                "end_sample": start + RATE * 2,
+                "timestamp_quality": "window_estimate",
+                "words": [],
+            }
+
+        with patch("sessions.processor.load_settings",
+                   return_value=SpeechSettings(
+                       engine="hybrid",
+                       hybrid_qwen_python="E:/ASR/python.exe"
+                   )):
+            processor = SessionProcessor(
+                "two-voices-plus-one-candidate", AudioBuffer(RATE),
+                Settings(), ClusterModels(), asyncio.Queue(),
+            )
+        processor.segments = [
+            segment(1, "A", 0),
+            segment(2, "B", RATE * 3),
+            segment(3, "A", RATE * 6),
+            segment(4, "B", RATE * 9),
+            segment(5, "C", RATE * 12),
+        ]
+        processor._recluster()
+        self.assertEqual(
+            len({row["speaker_id"] for row in processor.segments
+                 if row["speaker_id"] > 0}), 2
+        )
+        self.assertEqual(
+            processor.segments[4]["speaker_name"],
+            "Unidentified Speaker"
+        )
+        self.assertEqual(
+            [row["text"] for row in processor.segments],
+            ["recognized utterance"] * 5
+        )
+
     @staticmethod
     def sentence(with_words: bool = True) -> dict:
         words = [

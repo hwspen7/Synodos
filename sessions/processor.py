@@ -1512,7 +1512,10 @@ class SessionProcessor(threading.Thread):
             for idx, label in zip(pool, labels):
                 self.segments[idx]["cluster"] = int(label)
 
-        if self._speech_settings.engine == "hybrid":
+        live_hybrid = getattr(
+            getattr(self, "_speech_settings", None), "engine", None
+        ) == "hybrid"
+        if live_hybrid:
             # A single uncorroborated voiceprint must not produce Speaker 3,
             # Speaker 4, etc. Preserve its words as Unidentified Speaker
             # until independent turns or a long word-aligned turn support it.
@@ -1528,7 +1531,7 @@ class SessionProcessor(threading.Thread):
                                   len(tentative))
         self._remap_speakers()
         self._assign_labels(matched)
-        if self._speech_settings.engine == "hybrid":
+        if live_hybrid:
             self._speaker_birth_approved.update(
                 int(seg["speaker_id"]) for seg in self.segments
                 if type(seg.get("speaker_id")) is int and seg["speaker_id"] > 0
