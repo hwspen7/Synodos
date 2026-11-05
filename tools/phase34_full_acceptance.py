@@ -58,6 +58,10 @@ def fixtures():
             "The Atlas interface will retain a purple primary color.",
             "The Atlas test build identifier is BLD84.",
             "Atlas \u4f1a\u8bae\u786e\u8ba4\u4e86\u9ea6\u514b\u98ce\u540c\u6b65\u95ee\u9898\u3002",
+            "The Atlas multilingual validation key is EN-731.",
+            "Atlas \u9879\u76ee\u7684\u9a8c\u8bc1\u7801\u662f ZH-731\u3002",
+            "Le code de verification Atlas est FR-731.",
+            "El codigo de validacion Atlas es ES-731.",
         ],
         "beacon": [
             "The Beacon delivery milestone is December 4, 2026.",
@@ -68,6 +72,10 @@ def fixtures():
             "The Beacon release channel is beta-seven.",
             "The Beacon risk review happens on December 2, 2026.",
             "Beacon \u30c1\u30fc\u30e0\u306f\u4f1a\u8b70\u3092\u78ba\u8a8d\u3057\u307e\u3057\u305f\u3002",
+            "\u0631\u0645\u0632 \u0627\u0644\u062a\u062d\u0642\u0642 \u0644\u0640 Beacon \u0647\u0648 AR-731.",
+            "Kode validasi Beacon adalah ID-731.",
+            "Beacon \u306e\u78ba\u8a8d\u30b3\u30fc\u30c9\u306f JP-731 \u3067\u3059\u3002",
+            "\u041a\u043e\u0434 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438 Beacon: RU-731.",
         ],
         "cobalt": [
             "The Cobalt customer briefing is scheduled for December 11, 2026.",
@@ -78,6 +86,10 @@ def fixtures():
             "The Cobalt backup coordinator is Ana Silva.",
             "Cobalt approved a ten-minute rollback window.",
             "The Cobalt team will use the Delta conference room.",
+            "Der Cobalt Pruefcode ist DE-731.",
+            "\u0915\u094b\u092c\u093e\u0932\u094d\u091f \u0938\u0924\u094d\u092f\u093e\u092a\u0928 \u0915\u094b\u0921 HI-731 \u0939\u0948\u0964",
+            "\u0995\u09cb\u09ac\u09be\u09b2\u09cd\u099f \u09af\u09be\u099a\u09be\u0987 \u0995\u09cb\u09a1 BN-731\u0964",
+            "O codigo de verificacao Cobalt e PT-731.",
         ],
     }
     checks = [
@@ -105,6 +117,19 @@ def fixtures():
         ("cobalt", "Who is the Cobalt backup coordinator?", "Ana Silva"),
         ("cobalt", "What rollback window was approved for Cobalt?", "ten-minute"),
         ("cobalt", "Where does the Cobalt team meet?", "Delta conference room"),
+        # Twelve local-model multilingual quote-selection probes.
+        ("atlas", "What is the Atlas multilingual validation key?", "EN-731"),
+        ("atlas", "Atlas \u9879\u76ee\u7684\u9a8c\u8bc1\u7801\u662f\u591a\u5c11\uff1f", "ZH-731"),
+        ("atlas", "Quel est le code de verification Atlas ?", "FR-731"),
+        ("atlas", "Cual es el codigo de validacion Atlas?", "ES-731"),
+        ("beacon", "\u0645\u0627 \u0647\u0648 \u0631\u0645\u0632 \u0627\u0644\u062a\u062d\u0642\u0642 \u0644\u0640 Beacon\u061f", "AR-731"),
+        ("beacon", "Apa kode validasi Beacon?", "ID-731"),
+        ("beacon", "Beacon \u306e\u78ba\u8a8d\u30b3\u30fc\u30c9\u306f\uff1f", "JP-731"),
+        ("beacon", "\u041a\u0430\u043a\u043e\u0439 \u043a\u043e\u0434 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438 Beacon?", "RU-731"),
+        ("cobalt", "Wie lautet der Cobalt Pruefcode?", "DE-731"),
+        ("cobalt", "\u0915\u094b\u092c\u093e\u0932\u094d\u091f \u0938\u0924\u094d\u092f\u093e\u092a\u0928 \u0915\u094b\u0921 \u0915\u094d\u092f\u093e \u0939\u0948?", "HI-731"),
+        ("cobalt", "\u0995\u09cb\u09ac\u09be\u09b2\u09cd\u099f \u09af\u09be\u099a\u09be\u0987 \u0995\u09cb\u09a1 \u0995\u09bf?", "BN-731"),
+        ("cobalt", "Qual e o codigo de verificacao Cobalt?", "PT-731"),
     ]
     negatives = [
         ("atlas", "What is the Atlas quantum clock frequency?"),
@@ -271,7 +296,7 @@ def run(args):
     report = {
         "schema": "meeting-phase34-local-eval-v1",
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "corpus_type": "isolated_synthetic_three_meetings",
+        "corpus_type": "isolated_synthetic_three_meetings_12_language_probes",
         "real_ollama": True,
         "real_audio_gold_coverage": False,
         "human_semantic_truth_review": False,
