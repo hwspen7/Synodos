@@ -18,6 +18,34 @@ class ContractTests(unittest.TestCase):
         r=build_chunks([{'id':1,'text':'Hello','start_ms':2,'end_ms':11},{'id':2,'text':'world','start_ms':12,'end_ms':20}],10)
         self.assertEqual(len(r),1)
         self.assertEqual(r[0]['evidence']['segment_ids'],[1,2])
+    def test_long_multilingual_caption_is_split_without_content_loss(self):
+        original = ("中文会议记录需要保留所有文字" * 200)
+        chunks = build_chunks([
+            {'id': 42, 'text': original, 'start_ms': 100, 'end_ms': 60000},
+        ], max_chars=120)
+        self.assertGreater(len(chunks), 10)
+        self.assertTrue(all(chunk['evidence']['segment_ids'] == [42]
+                            for chunk in chunks))
+        parts = [chunk['text'].removeprefix('[42] ') for chunk in chunks]
+        self.assertEqual(''.join(parts), original)
+        self.assertTrue(all(len(part) <= 120 for part in parts))
+
+    def test_long_english_captions_keep_boundary_whitespace(self):
+        original = 'a test recording with multiple natural phrase boundaries ' * 15
+        chunks = build_chunks([
+            {'id': 2, 'text': original, 'start_ms': 0, 'end_ms': 40000},
+        ], max_chars=40)
+        recovered = ''.join(chunk['text'].removeprefix('[2] ')
+                            for chunk in chunks)
+        self.assertEqual(recovered, original.strip())
+        self.assertTrue(all(len(chunk['text'].removeprefix('[2] ')) <= 40
+                            for chunk in chunks))
+
+    def test_chunk_bounds_fail_closed(self):
+        for bad in (0, 1, -3, 90000, True, 20.0):
+            with self.assertRaises(ValueError):
+                build_chunks([], max_chars=bad)
+
     def test_hash_deterministic(self):
         self.assertEqual(source_hash('test'),source_hash('test'))
     def test_lexical(self):
