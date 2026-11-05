@@ -7,6 +7,9 @@ export interface ServerReady {
   merge_gap_s: number
   meeting_id?: string
   resumed?: boolean
+  /** Previous meeting speaker IDs are not the new recording's channel count. */
+  speaker_label_offset?: number
+  resumed_segment_count?: number
   title?: string
   participant_ids?: string[]
   auto_match_saved?: boolean
