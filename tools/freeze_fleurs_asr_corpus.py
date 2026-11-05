@@ -171,8 +171,11 @@ def freeze_plan(destination: Path, split: str, count: int,
                 "decoder or revision; no mixed-version data permitted"
             )
         return saved["dataset_revision"], dest_plan
-    from huggingface_hub import HfApi
-    selected_revision = revision or HfApi().dataset_info(DATASET).sha
+    if revision is None:
+        from huggingface_hub import HfApi
+        selected_revision = HfApi().dataset_info(DATASET).sha
+    else:
+        selected_revision = revision
     if not isinstance(selected_revision, str) or not SHA.fullmatch(selected_revision):
         raise ValueError("Pin an exact official dataset revision")
     expected["dataset_revision"] = selected_revision
