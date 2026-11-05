@@ -106,14 +106,24 @@ def process(job, gateway):
         query = str(job['payload'].get('question') or '').strip()
         if len(query) < 2 or len(query) > 2000:
             raise ValueError('Question must contain 2-2000 characters')
-        hits = retrieval.search(query, gateway, limit=8)
+        scope = retrieval.validate_meeting_ids(
+            job['payload'].get('meeting_ids')
+        )
+        hits = retrieval.search(query, gateway, limit=8, meeting_ids=scope)
         if not hits:
             return verified_excerpt_answer(None, [])
         selected = gateway.structured(
             SYSTEM, evidence_prompt(query, hits),
             model=gateway.model_for('ask'), evidence_only=True,
         )
-        return verified_excerpt_answer(selected, hits)
+        answer = verified_excerpt_answer(selected, hits)
+        if answer['sources'] and not store.evidence_revisions_current(
+            answer['sources']
+        ):
+            raise ValueError(
+                'Source meeting changed during inference; retry the question'
+            )
+        return answer
     if kind == 'context_correction':
         from intelligence.context_correction import review
         revision, segments = _context(job)
