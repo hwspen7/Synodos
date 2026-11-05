@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import json
 from urllib.parse import parse_qs, urlparse
 
 import numpy as np
@@ -10,10 +13,51 @@ from api.socket_transport import AudioFrameSequence
 from tools.live_caption_ws_replay import (
     DEFAULT_WS_URL, _clock_wait_seconds, _speaker_switch_age_bucket,
     capture_event, new_capture, pcm_packet, summarize_timing,
+    require_complete_private_export,
 )
 
 
 class LiveCaptionWsReplayTests(unittest.TestCase):
+    def test_failed_private_export_writes_text_free_diagnostics_first(self):
+        with TemporaryDirectory() as td:
+            report = Path(td) / "diagnostic.json"
+            summary = {
+                "server_closed": True,
+                "delivery_matched": False,
+                "flags": ["server_audio_sample_count_mismatch"],
+                "errors": ["Backend stopped before final audio ACK"],
+                "final_confirmed_segments": 3,
+            }
+            with self.assertRaisesRegex(
+                RuntimeError, "audio_delivery_not_confirmed"
+            ):
+                require_complete_private_export(summary, report)
+            saved = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(saved["private_export_status"],
+                             "withheld_incomplete_replay")
+            self.assertIn("flag:server_audio_sample_count_mismatch",
+                          saved["private_export_rejection_reasons"])
+            self.assertEqual(saved["final_confirmed_segments"], 3)
+            self.assertFalse((Path(td) / "transcript.txt").exists())
+
+    def test_complete_private_export_does_not_change_summary(self):
+        summary = {
+            "server_closed": True, "delivery_matched": True,
+            "errors": [], "flags": [],
+        }
+        require_complete_private_export(summary, None)
+        self.assertNotIn("private_export_status", summary)
+
+    def test_failed_export_without_report_still_names_actual_reason(self):
+        summary = {
+            "server_closed": False,
+            "delivery_matched": None,
+            "flags": ["server_did_not_finish"],
+            "errors": [],
+        }
+        with self.assertRaisesRegex(RuntimeError, "server_did_not_finish"):
+            require_complete_private_export(summary, None)
+
     def test_absolute_clock_prevents_31_minute_frame_sleep_accumulation(self):
         # Simulated Windows scheduling incurs 5 ms of wakeup oversleep
         # on EVERY frame. Absolute media deadlines must not accumulate it.

@@ -392,6 +392,36 @@ def new_capture(
     }
 
 
+def require_complete_private_export(summary: dict, output: Path | None) -> None:
+    """Fail closed on transcript export, but never hide the failure report.
+
+    A diagnostic report contains no transcript words by default. It must be
+    persisted before refusing sensitive/accuracy exports so operators can
+    distinguish transport loss, server failure, and pacing defects.
+    """
+    reasons = []
+    if summary.get("server_closed") is not True:
+        reasons.append("server_did_not_finish")
+    if summary.get("delivery_matched") is not True:
+        reasons.append("audio_delivery_not_confirmed")
+    reasons.extend("server_error:" + str(error)[:220]
+                   for error in summary.get("errors", ())[:3])
+    reasons.extend("flag:" + str(flag)[:120]
+                   for flag in summary.get("flags", ())[:12])
+    if not reasons:
+        return
+    summary["private_export_status"] = "withheld_incomplete_replay"
+    summary["private_export_rejection_reasons"] = reasons
+    if output is not None:
+        atomic_json(Path(output), summary)
+    destination = (" Aggregate report: " + str(output)
+                   if output is not None else "")
+    raise RuntimeError(
+        "Private transcript export withheld; replay was not fully validated. "
+        + "Reasons: " + "; ".join(reasons) + "." + destination
+    )
+
+
 async def replay(args) -> dict:
     # Check conflicts before loading the WAV or opening a WebSocket.
     preflight_private_exports(args)
@@ -613,10 +643,8 @@ async def replay(args) -> dict:
             or getattr(args, "segment_audit_output", None)):
         # Explicit opt-in only. The default report remains transcript-free.
         # Never score a truncated/broken session as an accurate meeting.
-        if not (summary["server_closed"] and summary["delivery_matched"]
-                and not summary["errors"] and not summary["flags"]):
-            raise RuntimeError(
-                "Cannot score/export transcript from incomplete audio replay")
+        # Preserve the aggregate diagnostic before failing closed.
+        require_complete_private_export(summary, args.output)
         recognized = finalized_transcript(counters)
         if getattr(args, "reference_text", None):
             reference = args.reference_text.read_text(encoding="utf-8-sig")
