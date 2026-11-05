@@ -10,6 +10,7 @@ def matched(model, profile):
         "embedding_model": model,
         "profile_id": profile,
         "score_kind": "raw_cosine_not_probability",
+        "enrollment_human_verified": True,
     }
 
 
@@ -31,6 +32,25 @@ class ConsensusTests(unittest.TestCase):
         })
         self.assertEqual(record["status"], "model_disagreement")
         self.assertIsNone(record["profile_id"])
+
+    def test_two_unverified_cosine_matches_cannot_claim_verified_consensus(self):
+        a = matched("camplus", "person-A")
+        b = matched("ecapa", "person-A")
+        a["enrollment_human_verified"] = False
+        b["enrollment_human_verified"] = False
+        outcome = reconcile_identity_decisions({"camplus": a, "ecapa": b})
+        self.assertEqual(outcome["status"], "insufficient_evidence")
+        self.assertIsNone(outcome["profile_id"])
+        self.assertEqual(outcome["model_status"]["camplus"], "unverified_enrollment")
+        self.assertFalse(outcome["automatic_identity_update"])
+
+    def test_one_verified_one_unverified_is_not_two_model_consensus(self):
+        a = matched("camplus", "person-A")
+        b = matched("ecapa", "person-A")
+        b["enrollment_human_verified"] = False
+        outcome = reconcile_identity_decisions({"camplus": a, "ecapa": b})
+        self.assertEqual(outcome["status"], "single_model_only")
+        self.assertIsNone(outcome["profile_id"])
 
     def test_single_network_never_counts_as_two_model_consensus(self):
         record = reconcile_identity_decisions({
