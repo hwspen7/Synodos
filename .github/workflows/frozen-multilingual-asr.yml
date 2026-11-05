@@ -22,6 +22,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install "numpy>=1.26"
+      - run: python -m pip install "numpy>=1.26" "soundfile>=0.13" scipy
       - run: python -m unittest tests.release.test_fleurs_asr_corpus -v
       - run: python -m compileall -q tools/freeze_fleurs_asr_corpus.py

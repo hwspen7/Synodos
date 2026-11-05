@@ -112,7 +112,7 @@ only exported JSON predictions.
     $env:PIP_CACHE_DIR = "E:\AI-Cache\Pip"
     $env:HF_HOME = "E:\AI-Cache\MeetingReference\ASRSelection\cache\huggingface"
     & $qpy -m pip install torch==2.7.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cu128
-    & $qpy -m pip install qwen-asr
+    & $qpy -m pip install qwen-asr faster-whisper numpy
     & $qpy -m pip check
     & $qpy -c "import torch; print(torch.__version__,torch.cuda.is_available())"
 
@@ -127,3 +127,8 @@ environment, repair only that experimental environment; do not edit
 Meeting's working GPU stack. The Qwen inference runner imports the
 local project source and does not require installing the full
 Meeting backend into the isolated venv.
+
+QwenEngine also requires faster-whisper for VAD and numpy in the isolated
+runtime. Install these in the experimental venv, not in Meeting's
+production environment. Do not run any automatic package upgrades in the
+production environment.
