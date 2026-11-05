@@ -25,6 +25,7 @@ def reconcile_identity_decisions(
         raise ValueError("Only independent CAM++ and ECAPA matching are supported")
     matched = {}
     observed = {}
+    verified = {}
     for model in MODELS:
         result = decisions.get(model)
         if not isinstance(result, dict):
@@ -46,7 +47,15 @@ def reconcile_identity_decisions(
         if status != "matched" and profile is not None:
             raise ValueError("Unmatched voice cannot have a verified profile")
         if status == "matched":
+            if result.get("enrollment_human_verified") is not True:
+                # A high unverified cosine match cannot become stronger
+                # evidence merely because two networks happen to agree.
+                observed[model] = "unverified_enrollment"
+                continue
+            if result.get("score_kind") != "raw_cosine_not_probability":
+                raise ValueError("Identity candidate score provenance mismatch")
             matched[model] = profile
+            verified[model] = True
         observed[model] = status
 
     if len(matched) == 2:
