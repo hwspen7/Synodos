@@ -295,8 +295,8 @@
 .compact-meeting-toolbar .btn{min-height:40px;border-radius:10px;color:#545860}
 .compact-meeting-toolbar .btn-ghost{background:transparent!important;border-color:transparent!important}
 .compact-meeting-toolbar .btn-ghost:hover,.compact-meeting-toolbar .btn-ghost.active{background:#fff0e2!important;color:#ab5000!important}
-.compact-meeting-toolbar .compact-record-action,.compact-meeting-toolbar .compact-record-action:hover:not(:disabled){background:#eb7100;border-color:#eb7100;color:#fff;box-shadow:0 7px 22px rgba(235,113,0,.14)}
-.compact-meeting-toolbar .compact-record-action:hover:not(:disabled){background:#c15a00;border-color:#c15a00}
+.compact-meeting-toolbar .compact-record-action,.compact-meeting-toolbar .compact-record-action:hover:not(:disabled){background:#b65300;border-color:#b65300;color:#fff;box-shadow:0 7px 22px rgba(235,113,0,.14)}
+.compact-meeting-toolbar .compact-record-action:hover:not(:disabled){background:#994500;border-color:#994500}
 .compact-meeting-toolbar .compact-record-action.danger{background:#cf433b;border-color:#cf433b;color:#fff}
 .meeting-workspace-summary{background:#fff;border:1px solid #e8e7e4;border-radius:12px;padding:12px 17px;margin:18px 0 22px;box-shadow:none}
 .workspace-summary-label{color:#373a40}
@@ -320,8 +320,8 @@
 .resource-chevron{color:#ad9b8e}
 .config-help{background:#fff7ef;color:#765e4d}
 .config-panel-footer{border-top-color:#eae9e6}
-.config-panel-footer .btn-primary{background:#eb7100;border-color:#eb7100;color:#fff}
-.config-panel-footer .btn-primary:hover:not(:disabled){background:#c15b00;border-color:#c15b00}
+.config-panel-footer .btn-primary{background:#b65300;border-color:#b65300;color:#fff}
+.config-panel-footer .btn-primary:hover:not(:disabled){background:#994500;border-color:#994500}
 .config-utilities{border-top-color:#ebe9e4}
 .config-disclosure{color:#6e6f74}
 .recordings-toolbar{border-bottom-color:#eceae6}
