@@ -27,7 +27,10 @@ class StableSpeakerChannels:
             return None
         return self._labels.get(channel)
 
-    def resolve(self, channel: int, evidence_ms: int) -> int | None:
+    def resolve(
+        self, channel: int, evidence_ms: int,
+        reserved_labels: set[int] | None = None,
+    ) -> int | None:
         """Never create identities from brief activity spikes.
 
         Allocation follows the first accepted caption, not model channel
@@ -41,6 +44,13 @@ class StableSpeakerChannels:
             return prior
         if type(evidence_ms) is not int or evidence_ms < self.minimum_birth_ms:
             return None
-        label = self.offset + len(self._labels) + 1
+        reserved = {
+            value for value in (reserved_labels or set())
+            if type(value) is int and value > 0
+        }
+        used = set(self._labels.values()) | reserved
+        label = self.offset + 1
+        while label in used:
+            label += 1
         self._labels[channel] = label
         return label
