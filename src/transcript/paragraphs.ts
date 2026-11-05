@@ -43,8 +43,9 @@ export function buildTranscriptParagraphs(
       ? seg.translation : seg.text
     const last = paragraphs[paragraphs.length - 1]
     const canonicalId = seg.source_segment_id ?? seg.id
-    // A speaker switch, overlap, unknown identity or completed sentence is
-    // a real boundary, regardless of the gap and visible text length.
+    // A genuine speaker switch, overlapping speech or an unknown identity
+    // remains separate. Sentence punctuation alone is not a speaker switch:
+    // multiple sentences from the same voice form one readable paragraph.
     const canMerge = Boolean(
       last && seg.speaker_id > 0 &&
       seg.speaker_id === last.speaker_id &&
