@@ -62,12 +62,12 @@ const showParticipants = ref(false)
 const showDiagnostics = ref(false)
 const showAllRecordings = ref(false)
 type MeetingTool = 'transcript' | 'review' | 'recordings' | 'settings'
-type ReviewTool = 'home' | 'ai' | 'correction' | 'speakers' | 'identity'
+type ReviewTool = 'overview' | 'correction' | 'speakers'
 const activeMeetingTool = ref<MeetingTool>('transcript')
-const activeReviewTool = ref<ReviewTool>('home')
+const activeReviewTool = ref<ReviewTool>('overview')
 function selectMeetingTool(tool: MeetingTool): void {
   activeMeetingTool.value = tool
-  if (tool === 'review') activeReviewTool.value = 'home'
+  if (tool === 'review') activeReviewTool.value = 'overview'
   if (tool === 'recordings') void loadRecordings()
 }
 
@@ -86,6 +86,31 @@ const settingsSaving = ref(false)
 const appliedSettings = ref('')
 const editingSpeakerId = ref<number | null>(null)
 const identityReviewSegmentId = ref<number | null>(null)
+const showIndependentSpeakerAnalysis = ref(false)
+const reviewSpeakers = computed(() => {
+  const byId = new Map<number, { id: number; name: string; segments: number; firstSegmentId: number }>()
+  const ordered = [...segments.value].sort((a, b) => a.start_ms - b.start_ms || a.id - b.id)
+  for (const segment of ordered) {
+    if (!segment.text.trim()) continue
+    const name = segment.speaker_name || (segment.speaker_id > 0
+      ? `Speaker ${segment.speaker_id}` : 'Unidentified Speaker')
+    const previous = byId.get(segment.speaker_id)
+    if (previous) previous.segments += 1
+    else byId.set(segment.speaker_id, {
+      id: segment.speaker_id,
+      name,
+      segments: 1,
+      firstSegmentId: segment.id,
+    })
+  }
+  return [...byId.values()]
+})
+function inspectSpeaker(segmentId: number): void {
+  if (recording.value || status.value === 'stopping') return
+  identityReviewSegmentId.value = segmentId
+  activeReviewTool.value = 'speakers'
+}
+
 const speakerChoice = ref('')
 const speakerSaving = ref(false)
 const selectedWithoutVoiceprints = computed(() => selectedParticipantIds.value
@@ -671,7 +696,7 @@ function openIdentityEvidence(id: number): void {
   if (recording.value || status.value === 'stopping') return
   identityReviewSegmentId.value = id
   selectMeetingTool('review')
-  activeReviewTool.value = 'identity'
+  activeReviewTool.value = 'speakers'
 }
 
 function editSpeakerById(id: number): void {
@@ -807,7 +832,7 @@ onBeforeUnmount(() => stopInternal())
         </button>
         <div class="meeting-tool-nav-title meeting-tool-section-title">TOOLS</div>
         <button type="button" class="meeting-tool-link" :class="{ active: activeMeetingTool === 'review' }" :aria-pressed="activeMeetingTool === 'review'" @click="selectMeetingTool('review')">
-          <AppIcon name="edit" :size="18" /><span>Review & AI</span>
+          <AppIcon name="edit" :size="18" /><span>Review</span>
         </button>
         <button type="button" class="meeting-tool-link" :class="{ active: activeMeetingTool === 'recordings' }" :aria-pressed="activeMeetingTool === 'recordings'" @click="selectMeetingTool('recordings')">
           <AppIcon name="list" :size="18" /><span>Recordings</span>
@@ -899,37 +924,75 @@ onBeforeUnmount(() => stopInternal())
         <header class="meeting-detail-header">
           <div>
             <span class="transcript-eyebrow">{{ activeMeetingTool === 'review' ? 'REVIEW WORKSPACE' : activeMeetingTool === 'settings' ? 'PREFERENCES' : 'AUDIO LIBRARY' }}</span>
-            <h2>{{ activeMeetingTool === 'review' ? 'Review & refine' : activeMeetingTool === 'settings' ? 'Meeting settings' : 'Recordings' }}</h2>
+            <h2>{{ activeMeetingTool === 'review' ? 'Review' : activeMeetingTool === 'settings' ? 'Meeting settings' : 'Recordings' }}</h2>
           </div>
           <button type="button" class="meeting-back" aria-label="Close tool panel" @click="selectMeetingTool('transcript')"><AppIcon name="x" :size="17" /></button>
         </header>
         <div class="meeting-detail-scroll">
           <template v-if="activeMeetingTool === 'review'">
-            <nav class="meeting-review-tools" aria-label="Review categories">
-              <button type="button" :class="{ active: activeReviewTool === 'ai' }" :aria-pressed="activeReviewTool === 'ai'" @click="activeReviewTool = 'ai'"><AppIcon name="file-text" :size="16"/> AI workspace</button>
-              <button type="button" :class="{ active: activeReviewTool === 'correction' }" :aria-pressed="activeReviewTool === 'correction'" @click="activeReviewTool = 'correction'"><AppIcon name="edit" :size="16"/> Corrections</button>
-              <button type="button" :class="{ active: activeReviewTool === 'speakers' }" :aria-pressed="activeReviewTool === 'speakers'" @click="activeReviewTool = 'speakers'"><AppIcon name="users" :size="16"/> Speaker review</button>
-              <button type="button" :class="{ active: activeReviewTool === 'identity' }" :aria-pressed="activeReviewTool === 'identity'" @click="activeReviewTool = 'identity'"><AppIcon name="check" :size="16"/> Identity evidence</button>
+            <nav class="meeting-review-tools" aria-label="Review sections">
+              <button type="button" :class="{ active: activeReviewTool === 'overview' }"
+                :aria-current="activeReviewTool === 'overview' ? 'page' : undefined"
+                @click="activeReviewTool = 'overview'">Overview</button>
+              <button type="button" :class="{ active: activeReviewTool === 'correction' }"
+                :aria-current="activeReviewTool === 'correction' ? 'page' : undefined"
+                @click="activeReviewTool = 'correction'">Corrections</button>
+              <button type="button" :class="{ active: activeReviewTool === 'speakers' }"
+                :aria-current="activeReviewTool === 'speakers' ? 'page' : undefined"
+                @click="activeReviewTool = 'speakers'">Speakers</button>
             </nav>
             <div class="meeting-selected-tool">
-              <div v-if="activeReviewTool === 'home'" class="review-tool-welcome">
-                <div class="review-welcome-symbol"><AppIcon name="file-text" :size="24" /></div>
-                <h3>Choose a review tool</h3>
-                <p>Open only what you need. Your transcript remains visible while you review its content or speaker identities.</p>
-                <button type="button" class="review-welcome-action" @click="activeReviewTool = 'ai'">
-                  <AppIcon name="file-text" :size="16" /> Open AI workspace
-                </button>
+              <IntelligencePanel v-if="activeReviewTool === 'overview'" compact
+                :meeting-id="props.id" :segments="segments" />
+              <div v-else-if="activeReviewTool === 'correction'" class="review-focus-panel">
+                <div class="review-focus-heading">
+                  <h3>Transcript corrections</h3>
+                  <p>Review AI suggestions before applying them. To edit a specific turn, use its Edit control in the transcript.</p>
+                </div>
+                <ContextCorrectionPanel :meeting-id="props.id" :segments="segments"
+                  :recording="recording || status === 'connecting' || status === 'stopping'"
+                  @applied="loadSavedTranscript" />
               </div>
-              <IntelligencePanel v-else-if="activeReviewTool === 'ai'" :meeting-id="props.id" :segments="segments" />
-              <ContextCorrectionPanel v-else-if="activeReviewTool === 'correction'" :meeting-id="props.id" :segments="segments"
-                :recording="recording || status === 'connecting' || status === 'stopping'" @applied="loadSavedTranscript" />
-              <OfflineSpeakerPanel v-else-if="activeReviewTool === 'speakers'" :meeting-id="props.id"
-                :recording="recording || status === 'connecting' || status === 'stopping'" />
-              <Phase2IdentityReviewPanel v-else
-                :meeting-id="props.id" :segment-id="identityReviewSegmentId"
-                :revision="segments.find(segment => segment.id === identityReviewSegmentId)?.revision ?? null"
-                :recording="recording || status === 'connecting' || status === 'stopping'"
-                @reviewed="loadSavedTranscript" />
+              <div v-else class="review-focus-panel">
+                <div class="review-focus-heading">
+                  <h3>Speakers</h3>
+                  <p>Check who spoke and confirm identities. Matching a voice is not proof of identity.</p>
+                </div>
+                <div v-if="!reviewSpeakers.length" class="review-tool-empty">
+                  Speaker details appear after the meeting has a transcript.
+                </div>
+                <div v-else class="review-speaker-list" aria-label="Speakers in this meeting">
+                  <button v-for="speaker in reviewSpeakers" :key="speaker.id" type="button"
+                    :class="{ active: identityReviewSegmentId === speaker.firstSegmentId }"
+                    :disabled="recording || status === 'stopping'"
+                    @click="inspectSpeaker(speaker.firstSegmentId)">
+                    <span class="review-speaker-avatar"><AppIcon name="users" :size="16" /></span>
+                    <span class="review-speaker-details">
+                      <strong>{{ speaker.name }}</strong>
+                      <small>{{ speaker.segments }} transcript {{ speaker.segments === 1 ? 'segment' : 'segments' }}</small>
+                    </span>
+                    <AppIcon name="chevron-right" :size="16" />
+                  </button>
+                </div>
+                <Phase2IdentityReviewPanel v-if="identityReviewSegmentId !== null"
+                  :meeting-id="props.id" :segment-id="identityReviewSegmentId"
+                  :revision="segments.find(segment => segment.id === identityReviewSegmentId)?.revision ?? null"
+                  :recording="recording || status === 'connecting' || status === 'stopping'"
+                  @reviewed="loadSavedTranscript" />
+                <p v-else-if="reviewSpeakers.length" class="review-tool-hint">
+                  Select a speaker above, or use Evidence on a transcript turn to inspect a specific recording segment.
+                </p>
+                <div class="review-advanced-section">
+                  <button type="button" class="review-advanced-toggle"
+                    :aria-expanded="showIndependentSpeakerAnalysis"
+                    @click="showIndependentSpeakerAnalysis = !showIndependentSpeakerAnalysis">
+                    <span>Independent speaker analysis</span>
+                    <AppIcon :name="showIndependentSpeakerAnalysis ? 'chevron-up' : 'chevron-down'" :size="16" />
+                  </button>
+                  <OfflineSpeakerPanel v-if="showIndependentSpeakerAnalysis" :meeting-id="props.id"
+                    :recording="recording || status === 'connecting' || status === 'stopping'" />
+                </div>
+              </div>
             </div>
           </template>
           <template v-else-if="activeMeetingTool === 'settings'">
