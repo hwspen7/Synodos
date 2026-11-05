@@ -44,7 +44,11 @@ class WhisperEngine:
         # model's internal VAD is an independent, experimental A/B variable.
         # A different VAD crop changes decoding context and can increase
         # both missed speech and hallucinations.
-        bypass_internal_vad = os.environ.get(
+        # The high-level quality candidate applies to explicit languages,
+        # too. Otherwise forced-language calls retained the second VAD
+        # even when windowed automatic-language calls bypassed it.
+        quality_candidate = quality_candidate_enabled()
+        bypass_internal_vad = quality_candidate or os.environ.get(
             "MEETING_WHISPER_SKIP_INTERNAL_VAD", "0"
         ).strip().lower() in ("1", "true", "yes")
         kwargs = {
@@ -70,7 +74,6 @@ class WhisperEngine:
         # Preserve acoustically verified segment words when the model's
         # forced word alignment is incomplete. This avoids deleting genuine
         # meeting content merely because word timestamps disagree.
-        quality_candidate = quality_candidate_enabled()
         prefer_word_bounds = os.getenv(
             "MEETING_CAPTION_WORD_BOUNDS", "0"
         ).strip().lower() in ("1", "true", "yes")
@@ -136,6 +139,7 @@ class WhisperEngine:
                     window_kwargs,
                     preserve_disputed_text=preserve_disputed,
                     prefer_word_bounds=prefer_word_bounds,
+                    allow_short_vad_supported=quality_candidate,
                 )
                 primary = recognized.utterances
                 detected = recognized.language
@@ -158,6 +162,7 @@ class WhisperEngine:
                     round(len(samples) * 1000 / 16000), detected,
                     preserve_disputed_text=preserve_disputed,
                     prefer_word_bounds=prefer_word_bounds,
+                    allow_short_vad_supported=quality_candidate,
                 )
                 if trace_enabled:
                     duration_ms = round(len(samples) * 1000 / 16000)
@@ -180,6 +185,8 @@ class WhisperEngine:
                     samples, speech_regions, primary,
                     lambda chunk, **kw: self._get_model().transcribe(chunk, **kw),
                     kwargs, language=language,
+                    max_windows=3 if quality_candidate else 2,
+                    min_uncovered_ms=350 if quality_candidate else 900,
                 )
             else:
                 recovery = {
