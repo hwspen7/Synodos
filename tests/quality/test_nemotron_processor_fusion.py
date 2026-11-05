@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
 from audio.buffer import AudioBuffer
 from core.config import Settings
 from sessions.processor import SessionProcessor
+from speech.config import SpeechSettings
 
 
 class FakeAcoustics:
@@ -26,10 +29,16 @@ def processor_for_test():
         punc_model="mock-punc",
         spk_model="mock-spk",
     )
-    processor = SessionProcessor(
-        "fusion-case", AudioBuffer(16000, max_seconds=30),
-        settings, object(), asyncio.Queue(),
-    )
+    # These tests validate speaker projection, not the ASR executable.
+    # A user's interactive shell may select hybrid ASR without exporting
+    # MEETING_HYBRID_QWEN_PYTHON. Use a fixed mock speech configuration
+    # instead of inheriting unrelated machine-specific environment values.
+    with patch("sessions.processor.load_settings",
+               return_value=SpeechSettings(engine="whisper")):
+        processor = SessionProcessor(
+            "fusion-case", AudioBuffer(16000, max_seconds=30),
+            settings, object(), asyncio.Queue(),
+        )
     processor.segments = [{
         "id": 1,
         "_audio_base_sample": 0,
@@ -47,6 +56,19 @@ def processor_for_test():
 
 
 class LiveFusionTests(unittest.TestCase):
+    def test_speaker_fixture_is_independent_of_hybrid_shell_settings(self):
+        with patch.dict(os.environ, {
+            "MEETING_ASR_ENGINE": "hybrid",
+            "MEETING_HYBRID_QWEN_PYTHON": "",
+        }):
+            processor = processor_for_test()
+        self.assertEqual(processor._speech_settings.engine, "whisper")
+        # The production speech configuration validator must remain strict.
+        with self.assertRaisesRegex(
+            ValueError, "Hybrid ASR requires MEETING_HYBRID_QWEN_PYTHON"
+        ):
+            SpeechSettings(engine="hybrid", hybrid_qwen_python="").validate()
+
     def test_opt_in_multi_speaker_diagnostics_do_not_rewrite_camplus(self):
         processor = processor_for_test()
         processor.segments.append({
