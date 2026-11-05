@@ -112,8 +112,12 @@ async def add_speaker_from_meeting(speaker_id: str, payload: Optional[dict] = No
     segs = state.get("segments") or []
     by_id = {int(s["id"]): s for s in segs}
     sr = int(state.get("sample_rate", 16000))
+    if sr <= 0:
+        raise HTTPException(status_code=400, detail="Invalid saved sample rate")
 
     verified = (payload or {}).get("human_verified") is True
+    if len(segment_ids) != len(set(segment_ids)):
+        raise HTTPException(status_code=400, detail="Duplicate segment ids are not allowed")
     vectors: list[dict] = []
     missing: list[int] = []
     for sid in segment_ids:
@@ -121,20 +125,46 @@ async def add_speaker_from_meeting(speaker_id: str, payload: Optional[dict] = No
         if seg is None:
             missing.append(sid)
             continue
-        if verified and seg.get("speaker_profile_id") != speaker_id:
-            raise HTTPException(
-                status_code=400,
-                detail="Human-verified enrollment requires a saved manual speaker correction to the same profile"
-            )
+        if verified:
+            revisions = seg.get("corrections") or []
+            verified_events = [
+                event for event in revisions
+                if (isinstance(event, dict)
+                    and event.get("source") == "manual_review"
+                    and isinstance(event.get("after"), dict)
+                    and event["after"].get("speaker_profile_id") == speaker_id)
+            ]
+            if (seg.get("speaker_profile_id") != speaker_id
+                    or seg.get("speaker_override") is not True
+                    or seg.get("speaker_status") != "manual_override"
+                    or not verified_events):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Verified enrollment requires a persisted manual identity review for this profile",
+                )
+            if (seg.get("speaker_uncertain") is True
+                    or seg.get("speaker_evidence_status") in (
+                        "multi_turn_acoustic_evidence_only",
+                        "turn_ambiguous", "turn_split_rejected"
+                    )):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Ambiguous or multi-speaker audio cannot become a verified voiceprint",
+                )
         raw_embedding = seg.get("emb")
         if raw_embedding is None:
             missing.append(sid)
             continue
         emb = np.asarray(raw_embedding, dtype=np.float32).reshape(-1)
-        if emb.size == 0 or not np.all(np.isfinite(emb)):
+        magnitude = float(np.linalg.norm(emb))
+        if (not 32 <= emb.size <= 4096 or not np.all(np.isfinite(emb))
+                or not np.isfinite(magnitude) or magnitude <= 1e-8):
             missing.append(sid)
             continue
         duration_s = (int(seg["end_sample"]) - int(seg["start_sample"])) / sr
+        if duration_s <= 0 or (verified and duration_s < settings.min_speaker_audio_s):
+            missing.append(sid)
+            continue
         vectors.append(
             {
                 "emb": emb,
