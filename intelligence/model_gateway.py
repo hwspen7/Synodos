@@ -115,23 +115,16 @@ class ModelGateway:
                 body['format'] = {
                     'type': 'object',
                     'properties': {
-                        'quotes': {
+                        'source_numbers': {
                             'type': 'array', 'maxItems': 5,
                             'items': {
-                                'type': 'object',
-                                'properties': {
-                                    'source_number': {'type': 'integer'},
-                                    'quote': {
-                                        'type': 'string',
-                                        'minLength': 12, 'maxLength': 600,
-                                    },
-                                },
-                                'required': ['source_number', 'quote'],
-                                'additionalProperties': False,
+                                'type': 'integer',
+                                'minimum': 1,
+                                'maximum': 8,
                             },
                         },
                     },
-                    'required': ['quotes'],
+                    'required': ['source_numbers'],
                     'additionalProperties': False,
                 }
             else:
