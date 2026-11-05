@@ -6,6 +6,7 @@ param(
     [string]$ReportRoot = "E:\AI-Cache\MeetingResults",
     [string]$GoldManifest = "E:\AI-Cache\MeetingResults\meeting_audio_review_gold.json",
     [string]$AudioIdentityGate = "",
+    [string]$Endpoint = "",
     [string]$HostedCI = "",
     [switch]$ReindexTestMeetings
 )
@@ -21,7 +22,15 @@ if (-not $repo.StartsWith("E:\", [System.StringComparison]::OrdinalIgnoreCase)) 
 $env:MEETING_STORAGE_BACKEND = "postgres"
 $env:MEETING_AI_ENABLED = "1"
 $env:MEETING_AI_PROVIDER = "ollama"
-$env:MEETING_AI_ENDPOINT = "http://127.0.0.1:11434"
+if (-not $Endpoint) {
+    $Endpoint = if ($env:MEETING_AI_ENDPOINT) { $env:MEETING_AI_ENDPOINT } else { "http://127.0.0.1:11434" }
+}
+try { $Uri = [uri]$Endpoint } catch { throw "Invalid local Ollama endpoint: $Endpoint" }
+if ($Uri.Scheme -ne "http" -or $Uri.Host -notin @("127.0.0.1","localhost","::1") -or
+    $Uri.AbsolutePath -ne "/" -or $Uri.Query -or $Uri.UserInfo) {
+    throw "Only a local Ollama HTTP endpoint without credentials or path is supported."
+}
+$env:MEETING_AI_ENDPOINT = $Endpoint.TrimEnd("/")
 $env:MEETING_AI_EMBED_MODEL = if ($env:MEETING_AI_EMBED_MODEL) { $env:MEETING_AI_EMBED_MODEL } else { "qwen3-embedding:0.6b" }
 $env:MEETING_AI_MEDIA_ROOT = "E:\AI-Cache\MeetingMedia"
 $env:MEETING_SOURCE_COMMIT = (& git rev-parse HEAD).Trim()
@@ -33,12 +42,12 @@ $tag = Get-Date -Format "yyyyMMdd-HHmmss-ffff"
 $baseline = Join-Path $ReportRoot "meeting_knowledge_baseline_$tag.json"
 $lex = Join-Path $ReportRoot "meeting_knowledge_lexical.json"
 $hyb = Join-Path $ReportRoot "meeting_knowledge_hybrid.json"
-# Accept previously generated successful reports without overwriting them.
+# Fail before attempting a freeze when either measured mode is missing.
 if (-not (Test-Path -LiteralPath $lex)) {
-    $lex = Join-Path $ReportRoot 'phase34_lexical.json'
+    throw "LEXICAL NOT_ACCEPTED: report missing at $lex. Run Invoke-Meeting-Knowledge-Acceptance.ps1 -LexicalOnly."
 }
 if (-not (Test-Path -LiteralPath $hyb)) {
-    $hyb = Join-Path $ReportRoot 'phase34_hybrid.json'
+    throw "HYBRID NOT_ACCEPTED: report missing at $hyb. Verify the embedding model is installed and run Invoke-Meeting-Knowledge-Acceptance.ps1 -HybridOnly."
 }
 & $Python -m tools.meeting_release_gate freeze --lexical $lex --hybrid $hyb --output $baseline
 if ($LASTEXITCODE -ne 0) { throw "Synthetic baseline failed strict freeze" }

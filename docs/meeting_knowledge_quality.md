@@ -100,3 +100,46 @@ $PY = "E:\Meeting-Fixed10-Test\.venv\Scripts\python.exe"
 Listen to the actual corresponding audio, review the exported timestamps and speaker/content alignment, explicitly set `audio_reviewed: true` for verified recordings, fill in the real `reviewer_id`, and annotate at least 26 suitable questions in `cases`. Only then run the closure script.
 
 The patch also installs `.github/workflows/meeting-knowledge-quality.yml`, a dedicated GitHub Actions check. GitHub CI asserts deterministic contracts only. It does not access recordings or Ollama and must not be treated as the final product acceptance gate. Commit and push the installed files to the feature branch when ready for hosted checks.
+
+
+## Missing embedding model: local recovery
+
+When the lexical report passes but the Ollama /api/tags listing does not contain
+`qwen3-embedding:0.6b`, Hybrid has **not run**. A missing Hybrid JSON must not be
+copied, renamed, fabricated or treated as PASS. The Knowledge acceptance
+launcher now checks the installed embedder **before** rerunning Lexical and
+supports `-HybridOnly` to preserve a successful lexical report.
+
+Confirm which Ollama server the launcher is reaching:
+
+```powershell
+$endpoint = if ($env:MEETING_AI_ENDPOINT) { $env:MEETING_AI_ENDPOINT } else { "http://127.0.0.1:11434" }
+(Invoke-RestMethod "$endpoint/api/tags").models | Select-Object name
+```
+
+If you operate a separate instance on port 11435, select it with
+`-Endpoint http://127.0.0.1:11435` **only if both** Saluki and the embedding
+model are installed on that instance. The two models must be reachable through
+one configured endpoint for the current ModelGateway.
+
+For an Ollama server whose **server-side** `OLLAMA_MODELS` is already configured
+to an E-drive directory, pull the missing model explicitly:
+
+```powershell
+$env:OLLAMA_HOST = "127.0.0.1:11434"
+ollama pull qwen3-embedding:0.6b
+```
+
+Setting `OLLAMA_MODELS` in a client-only PowerShell window does **not**
+relocate an already-running Ollama server. Verify its actual storage location
+before pulling to avoid using C-drive storage inadvertently.
+
+With the correct endpoint and model available, resume:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\Invoke-Meeting-Knowledge-Acceptance.ps1 -HybridOnly
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\Invoke-Meeting-Quality-Checks.ps1
+```
+
+The second command still requires independently reviewed real meeting audio
+before the final product gate can pass.

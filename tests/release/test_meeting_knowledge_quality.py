@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import copy
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 
 from tools.meeting_knowledge_contract import (
@@ -45,6 +47,37 @@ def make_manifest():
             "corpus_type": "real_recorded_meetings",
             "gold_source": "independent_human_audio_review",
             "reviewer_id": "human-reviewer-1", "meetings": meetings, "cases": cases}
+
+
+class SyntheticPairVerification(unittest.TestCase):
+    def test_rejects_missing_hybrid_report(self):
+        from tools.meeting_release_gate import verify_pair
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "lexical.json").write_text(__import__("json").dumps(make_synthetic("lexical")))
+            with self.assertRaises(FileNotFoundError):
+                verify_pair(root / "lexical.json", root / "hybrid.json")
+
+    def test_rejects_wrong_text_model_between_modes(self):
+        from tools.meeting_release_gate import verify_pair
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            lexical = make_synthetic("lexical")
+            hybrid = make_synthetic("hybrid")
+            hybrid["text_model"] = "Not-the-original-text-model"
+            (root / "lexical.json").write_text(__import__("json").dumps(lexical))
+            (root / "hybrid.json").write_text(__import__("json").dumps(hybrid))
+            with self.assertRaisesRegex(ValueError, "Model changed"):
+                verify_pair(root / "lexical.json", root / "hybrid.json")
+
+    def test_accepts_independently_passing_pair(self):
+        from tools.meeting_release_gate import verify_pair
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "lexical.json").write_text(__import__("json").dumps(make_synthetic("lexical")))
+            (root / "hybrid.json").write_text(__import__("json").dumps(make_synthetic("hybrid")))
+            lexical, hybrid = verify_pair(root / "lexical.json", root / "hybrid.json")
+            self.assertEqual(lexical["text_model"], hybrid["text_model"])
 
 
 class SyntheticFreezeContract(unittest.TestCase):

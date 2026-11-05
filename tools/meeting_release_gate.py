@@ -13,13 +13,27 @@ from tools.meeting_knowledge_contract import (
 )
 
 
-def freeze(args):
-    lexical = load_json(args.lexical)
-    hybrid = load_json(args.hybrid)
+def verify_pair(lexical_path, hybrid_path):
+    """Fail closed unless both real-model reports independently passed."""
+    lexical = load_json(lexical_path)
+    hybrid = load_json(hybrid_path)
     strict_synthetic(lexical, "lexical")
     strict_synthetic(hybrid, "hybrid")
     if lexical["text_model"] != hybrid["text_model"]:
         raise ValueError("Model changed between lexical and hybrid runs")
+    return lexical, hybrid
+
+
+def verify(args):
+    lexical, hybrid = verify_pair(args.lexical, args.hybrid)
+    print("MEETING KNOWLEDGE SYNTHETIC PAIR: PASS")
+    print("Text model:", lexical["text_model"])
+    print("Embedding model:", hybrid["embedding_model"])
+    return 0
+
+
+def freeze(args):
+    lexical, hybrid = verify_pair(args.lexical, args.hybrid)
     if args.output.exists():
         raise ValueError("Baseline already exists. Never overwrite a frozen run")
     copies = {}
@@ -84,6 +98,9 @@ def main(argv=None):
     a.add_argument("--lexical", type=Path, required=True)
     a.add_argument("--hybrid", type=Path, required=True)
     a.add_argument("--output", type=Path, required=True)
+    v = sub.add_parser("verify")
+    v.add_argument("--lexical", type=Path, required=True)
+    v.add_argument("--hybrid", type=Path, required=True)
     b = sub.add_parser("decide")
     for name in ("baseline", "real-lexical", "real-hybrid", "audio-identity", "ci"):
         b.add_argument("--" + name, type=Path, required=(name == "baseline"))
@@ -91,7 +108,11 @@ def main(argv=None):
     b.add_argument("--output", type=Path, required=True)
     args = p.parse_args(argv)
     try:
-        return freeze(args) if args.action == "freeze" else decide(args)
+        if args.action == "freeze":
+            return freeze(args)
+        if args.action == "verify":
+            return verify(args)
+        return decide(args)
     except Exception as exc:
         print("MEETING KNOWLEDGE RELEASE NOT_ACCEPTED:", str(exc), file=sys.stderr)
         return 2
