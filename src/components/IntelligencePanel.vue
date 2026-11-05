@@ -158,7 +158,7 @@ function formatDate(value?: string): string {
 function kindLabel(kind: string): string {
   return ({ summary: 'Meeting notes', extract: 'Action extraction', index_meeting: 'Knowledge index',
     live_translate: 'Translation', translate: 'Translation', ask: 'Knowledge answer',
-    analyze_media: 'Media analysis', index_media: 'Media index' } as Record<string, string>)[kind] ?? kind.replace(/_/g, ' ')
+    analyze_media: 'Media analysis', index_media: 'Media index', ask_evidence: 'Evidence-only answer' } as Record<string, string>)[kind] ?? kind.replace(/_/g, ' ')
 }
 function sourceLabel(hit: SearchResult): string {
   const ms = hit.evidence?.start_ms
@@ -245,10 +245,10 @@ async function ask(): Promise<void> {
   busyKind.value = 'ask'
   clearMessages()
   try {
-    const result = await request<{ job_id: string }>('/ask', jsonPost({ question: question.value.trim() }))
+    const result = await request<{ job_id: string }>('/ask/evidence', jsonPost({ question: question.value.trim() }))
     askJobId.value = result.job_id
-    askJob.value = { id: result.job_id, kind: 'ask', status: 'queued' }
-    notice.value = 'Question submitted. Your answer will appear here when ready.'
+    askJob.value = { id: result.job_id, kind: 'ask_evidence', status: 'queued' }
+    notice.value = 'Evidence query queued. Only exact excerpts from saved source records will be shown.'
     view.value = 'knowledge'
   } catch (e) { error.value = messageFromError(e) }
   finally { busyKind.value = null }
@@ -556,9 +556,9 @@ onBeforeUnmount(() => { if (pollId) clearInterval(pollId) })
             <div v-else class="empty-card compact-empty"><strong>No search results yet</strong><p>Index a meeting, then search for a topic or phrase.</p></div>
           </div>
           <div class="content-card knowledge-card"><div class="card-header"><h3>Ask your knowledge</h3></div>
-            <p class="card-description">Answers are grounded in retrieved sources when available.</p>
+            <p class="card-description">Evidence-only mode. Each returned quote must match an indexed source exactly. This does not independently verify the spoken facts.</p>
             <div class="input-row"><input v-model="question" class="ui-input" type="text" placeholder="What decisions did we make?" aria-label="Ask a knowledge question" @keyup.enter="ask" />
-              <button type="button" class="ui-btn ui-btn-solid" :disabled="!!busyKind || !question.trim()" @click="ask">Ask</button></div>
+              <button type="button" class="ui-btn ui-btn-solid" :disabled="!!busyKind || !question.trim()" @click="ask">Find evidence</button></div>
             <div v-if="askJob" class="answer-card"><span :class="['status-pill', `status-${askJob.status}`]">{{ askJob.status }}</span>
               <p v-if="currentAskAnswer" class="answer-text">{{ currentAskAnswer }}</p>
               <p v-else-if="askJob.error" class="job-error">{{ askJob.error }}</p>
