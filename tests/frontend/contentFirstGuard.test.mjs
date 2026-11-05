@@ -52,3 +52,29 @@ test('rejects overlapping projected cue timestamps', () => {
     cue(1, 0, 1000), cue(1, 900, 1800),
   ]), false)
 })
+
+test('does not publish a brief phantom speaker between stable words', () => {
+  assert.equal(hasStableSpeakerCues([
+    cue(1, 0, 2100, 'since I was a teenager'),
+    cue(2, 2100, 2800, 'or'),
+    cue(1, 2800, 5100, 'pre-teen I loved physics'),
+  ]), false)
+})
+
+test('requires at least 1.5 seconds of evidence on both sides of a change', () => {
+  assert.equal(hasStableSpeakerCues([
+    cue(1, 0, 2000, 'I applied to'),
+    cue(2, 2000, 3500, 'Princeton'),
+  ]), true)
+  assert.equal(hasStableSpeakerCues([
+    cue(1, 0, 2200, 'I applied'),
+    cue(2, 2200, 3100, 'to Princeton'),
+  ]), false)
+})
+
+test('declines fast alternating identity projections', () => {
+  assert.equal(hasStableSpeakerCues([
+    cue(1, 0, 1600), cue(2, 1600, 3200),
+    cue(1, 3200, 4800), cue(2, 4800, 6400),
+  ]), false)
+})
