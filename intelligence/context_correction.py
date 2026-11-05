@@ -174,8 +174,11 @@ def review(
         and not segment.get("manually_corrected", False)
     ]
     suggestions = []
-    for start in range(0, len(reviewable), 12):
-        batch = reviewable[start:start + 12]
+    # Smaller model outputs keep the local LLM's JSON well inside its
+    # bounded generation budget. Original IDs, the two neighboring turns
+    # and the page cursor are preserved across batches.
+    for start in range(0, len(reviewable), 6):
+        batch = reviewable[start:start + 6]
         batch_ids = {int(item["id"]) for item in batch}
         locations = [i for i, item in enumerate(ordered) if int(item["id"]) in batch_ids]
         first_index = min(locations)

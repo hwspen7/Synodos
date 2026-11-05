@@ -51,8 +51,8 @@ class OllamaRuntimeTests(unittest.TestCase):
         self.assertEqual(result, {'summary': 'ok'})
         body, timeout = calls[0]
         self.assertEqual(timeout, 600)
-        self.assertEqual(body['options']['num_ctx'], 8192)
-        self.assertEqual(body['options']['num_predict'], 1536)
+        self.assertEqual(body['options']['num_ctx'], 12288)
+        self.assertEqual(body['options']['num_predict'], 4096)
         self.assertEqual(body['keep_alive'], '10m')
         self.assertEqual(body['format'], 'json')
         self.assertNotIn('think', body)

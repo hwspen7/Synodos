@@ -98,8 +98,8 @@ class ModelGateway:
                 user['images'] = [base64.b64encode(image_bytes).decode('ascii')]
             options = {
                 'temperature': 0.1,
-                'num_ctx': _bounded_int('MEETING_AI_OLLAMA_NUM_CTX', 8192, 2048, 32768),
-                'num_predict': _bounded_int('MEETING_AI_OLLAMA_NUM_PREDICT', 1536, 128, 8192),
+                'num_ctx': _bounded_int('MEETING_AI_OLLAMA_NUM_CTX', 12288, 2048, 32768),
+                'num_predict': _bounded_int('MEETING_AI_OLLAMA_NUM_PREDICT', 4096, 128, 8192),
             }
             body = {'model': model, 'stream': False, 'messages': [
                 {'role': 'system', 'content': system}, user],

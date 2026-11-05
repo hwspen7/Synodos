@@ -57,6 +57,27 @@ def suggestion(sid, original, corrected, category="repetition", confidence=0.91)
 
 
 class ContextCorrectionTests(unittest.TestCase):
+    def test_review_batched_to_six_targets_without_losing_cursor(self):
+        records = [
+            {"id": i + 1, "text": f"Transcript turn {i + 1}.",
+             "speaker": "Speaker 1", "start_ms": i * 1000,
+             "end_ms": i * 1000 + 900, "revision": 0}
+            for i in range(13)
+        ]
+        fake = FakeGateway([{"suggestions": []} for _ in range(3)])
+        data = review(records, fake, offset=0, limit=13)
+        self.assertEqual(len(fake.prompts), 3)
+        self.assertEqual(data["reviewed_segments"], 13)
+        self.assertEqual(data["next_offset"], 13)
+        self.assertTrue(data["complete"])
+        import json
+        each = []
+        for raw in fake.prompts:
+            items = json.loads(raw.split("Original transcript JSON follows:\n", 1)[1])
+            each.append([row["id"] for row in items if row["target"]])
+        self.assertEqual(each, [list(range(1, 7)),
+                                list(range(7, 13)), [13]])
+
     def test_user_repetition_is_a_review_proposal_not_auto_edit(self):
         segments = transcript()
         original = segments[0]["text"]

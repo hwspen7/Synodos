@@ -44,7 +44,7 @@ def load_config() -> AIConfig:
         vision_model=os.getenv('MEETING_AI_VISION_MODEL', ''),
         api_key=os.getenv('MEETING_AI_API_KEY', ''), media_root=base,
         max_upload_bytes=max(1024, min(int(os.getenv('MEETING_AI_MAX_UPLOAD_MB', '30')), 200) * 1024 * 1024),
-        timeout_s=max(10, min(int(os.getenv('MEETING_AI_TIMEOUT_S', '180')), 1800)),
+        timeout_s=max(10, min(int(os.getenv('MEETING_AI_TIMEOUT_S', '360')), 1800)),
         enable_embeddings=_flag('MEETING_AI_EMBEDDINGS'),
         enable_vision=_flag('MEETING_AI_VISION'),
         enable_audio_import=_flag('MEETING_AI_AUDIO_IMPORT'),

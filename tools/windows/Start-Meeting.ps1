@@ -23,6 +23,21 @@ function Set-AiEnvironment {
     $env:MEETING_AI_MODEL_MEETING = $Model
     $env:MEETING_AI_MODEL_SUMMARY = $Model
     $env:MEETING_AI_MODEL_EXTRACT = $Model
+    # Saluki 27B needs enough budget for structured notes/review responses.
+    # User overrides remain authoritative. Keep LLM work deferred while
+    # live microphone sessions are running to protect the real-time ASR GPU.
+    if ([string]::IsNullOrWhiteSpace($env:MEETING_AI_OLLAMA_NUM_CTX)) {
+        $env:MEETING_AI_OLLAMA_NUM_CTX = '12288'
+    }
+    if ([string]::IsNullOrWhiteSpace($env:MEETING_AI_OLLAMA_NUM_PREDICT)) {
+        $env:MEETING_AI_OLLAMA_NUM_PREDICT = '4096'
+    }
+    if ([string]::IsNullOrWhiteSpace($env:MEETING_AI_OLLAMA_THINK)) {
+        $env:MEETING_AI_OLLAMA_THINK = '0'
+    }
+    if ([string]::IsNullOrWhiteSpace($env:MEETING_AI_TIMEOUT_S)) {
+        $env:MEETING_AI_TIMEOUT_S = '360'
+    }
 }
 
 function Set-BackendEnvironment {
@@ -348,7 +363,9 @@ function Start-Launcher {
     if ($workerReusable) {
         $workerStart = (Get-Process -Id ([int]$workers[0].ProcessId)).StartTime.ToUniversalTime()
         foreach ($relPath in @('intelligence\worker.py', 'intelligence\context_correction.py',
-                               'intelligence\contracts.py', 'intelligence\store.py')) {
+                               'intelligence\model_gateway.py', 'intelligence\config.py',
+                               'intelligence\contracts.py', 'intelligence\store.py',
+                               'tools\windows\Start-Meeting.ps1')) {
             $workerSource = Join-Path $RepoRoot $relPath
             if ((Test-Path -LiteralPath $workerSource) -and
                 (Get-Item -LiteralPath $workerSource).LastWriteTimeUtc -gt $workerStart.AddSeconds(1)) {
@@ -357,6 +374,9 @@ function Start-Launcher {
                 break
             }
         }
+    }
+    if ($env:MEETING_FORCE_WORKER_RESTART -eq '1') {
+        $workerReusable = $false
     }
     if ($workerReusable) {
         Write-Host 'Reusing the AI worker started by this launcher.'
