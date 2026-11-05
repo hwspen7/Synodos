@@ -2,7 +2,7 @@
 import IntelligencePanel from '@/components/IntelligencePanel.vue'
 import ContextCorrectionPanel from '@/components/ContextCorrectionPanel.vue'
 import OfflineSpeakerPanel from '@/components/OfflineSpeakerPanel.vue'
-import Phase2IdentityReviewPanel from '@/components/Phase2IdentityReviewPanel.vue'
+import SpeakerContributionPanel from '@/components/SpeakerContributionPanel.vue'
 import Phase07Status from '@/components/Phase07Status.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -86,6 +86,9 @@ const settingsSaving = ref(false)
 const appliedSettings = ref('')
 const editingSpeakerId = ref<number | null>(null)
 const identityReviewSegmentId = ref<number | null>(null)
+const selectedSpeakerId = ref<number | null>(null)
+const speakerDetailTab = ref<'insights' | 'statements' | 'identity'>('insights')
+const highlightedSegmentId = ref<number | null>(null)
 const showIndependentSpeakerAnalysis = ref(false)
 const reviewSpeakers = computed(() => {
   const byId = new Map<number, { id: number; name: string; segments: number; firstSegmentId: number }>()
@@ -106,9 +109,20 @@ const reviewSpeakers = computed(() => {
   return [...byId.values()]
 })
 function inspectSpeaker(segmentId: number): void {
-  if (recording.value || status.value === 'stopping') return
+  const segment = segments.value.find(item => item.id === segmentId)
+  if (!segment) return
   identityReviewSegmentId.value = segmentId
+  selectedSpeakerId.value = segment.speaker_id
+  speakerDetailTab.value = 'insights'
   activeReviewTool.value = 'speakers'
+}
+function jumpToSpeakerStatement(segmentId: number): void {
+  const paragraph = paragraphs.value.find(p => p.segmentIds.includes(segmentId))
+  if (!paragraph) return
+  highlightedSegmentId.value = segmentId
+  const target = [...(transcriptEl.value?.querySelectorAll<HTMLElement>('[data-paragraph-id]') ?? [])]
+    .find(element => element.dataset.paragraphId === String(paragraph.id))
+  target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
 const speakerChoice = ref('')
@@ -694,9 +708,13 @@ function recordingUrl(name: string): string {
 
 function openIdentityEvidence(id: number): void {
   if (recording.value || status.value === 'stopping') return
+  const segment = segments.value.find(item => item.id === id)
+  if (!segment) return
   identityReviewSegmentId.value = id
+  selectedSpeakerId.value = segment.speaker_id
   selectMeetingTool('review')
   activeReviewTool.value = 'speakers'
+  speakerDetailTab.value = 'identity'
 }
 
 function editSpeakerById(id: number): void {
@@ -864,7 +882,9 @@ onBeforeUnmount(() => stopInternal())
           The system may not have transcribed every simultaneous speaker.
           Untranscribed words are never fabricated.
         </p>
-        <article v-for="para in paragraphs" :key="para.id" class="paragraph" :class="{ 'paragraph-unidentified': para.speaker_id <= 0 }">
+        <article v-for="para in paragraphs" :key="para.id" :data-paragraph-id="para.id"
+          class="paragraph" :class="{ 'paragraph-unidentified': para.speaker_id <= 0,
+            'paragraph-highlighted': highlightedSegmentId !== null && para.segmentIds.includes(highlightedSegmentId) }">
           <div class="para-head">
             <span class="speaker-dot" :style="{ background: para.color }"></span>
             <span class="speaker-name">{{ para.speaker_name || `Speaker ${para.speaker_id}` }}</span>
@@ -963,8 +983,7 @@ onBeforeUnmount(() => stopInternal())
                 </div>
                 <div v-else class="review-speaker-list" aria-label="Speakers in this meeting">
                   <button v-for="speaker in reviewSpeakers" :key="speaker.id" type="button"
-                    :class="{ active: identityReviewSegmentId === speaker.firstSegmentId }"
-                    :disabled="recording || status === 'stopping'"
+                    :class="{ active: selectedSpeakerId === speaker.id }"
                     @click="inspectSpeaker(speaker.firstSegmentId)">
                     <span class="review-speaker-avatar"><AppIcon name="users" :size="16" /></span>
                     <span class="review-speaker-details">
@@ -974,13 +993,18 @@ onBeforeUnmount(() => stopInternal())
                     <AppIcon name="chevron-right" :size="16" />
                   </button>
                 </div>
-                <Phase2IdentityReviewPanel v-if="identityReviewSegmentId !== null"
-                  :meeting-id="props.id" :segment-id="identityReviewSegmentId"
-                  :revision="segments.find(segment => segment.id === identityReviewSegmentId)?.revision ?? null"
+                <SpeakerContributionPanel v-if="selectedSpeakerId !== null"
+                  :key="`${props.id}-${selectedSpeakerId}`"
+                  :meeting-id="props.id"
+                  :speaker-id="selectedSpeakerId"
+                  :speaker-name="reviewSpeakers.find(speaker => speaker.id === selectedSpeakerId)?.name ?? 'Speaker'"
+                  :segments="segments"
                   :recording="recording || status === 'connecting' || status === 'stopping'"
-                  @reviewed="loadSavedTranscript" />
+                  :selected-segment-id="identityReviewSegmentId" :tab="speakerDetailTab"
+                  @update:tab="speakerDetailTab = $event"
+                  @reviewed="loadSavedTranscript" @jump-to="jumpToSpeakerStatement" />
                 <p v-else-if="reviewSpeakers.length" class="review-tool-hint">
-                  Select a speaker above, or use Evidence on a transcript turn to inspect a specific recording segment.
+                  Choose a speaker above to see their independent analysis, original statements and identity evidence.
                 </p>
                 <div class="review-advanced-section">
                   <button type="button" class="review-advanced-toggle"
