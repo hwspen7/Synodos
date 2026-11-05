@@ -7,6 +7,7 @@ linear scan of JSONB vectors, not an approximate vector index.
 import heapq
 import math
 import re
+import unicodedata
 
 from intelligence import store
 
@@ -49,7 +50,19 @@ def _cosine(a, b):
 
 def query_terms(query):
     """Include CJK and Hangul bigrams for unspaced meeting transcripts."""
-    tokens = re.findall(r"[^\W_]+", query.casefold(), flags=re.UNICODE)
+    # Python's regex word class excludes combining marks. This splits
+    # Bengali and Devanagari words into isolated letters and makes their
+    # otherwise exact transcript matches unreachable in lexical mode.
+    tokens = []
+    current = []
+    for char in query.casefold():
+        if char.isalnum() or unicodedata.category(char).startswith("M"):
+            current.append(char)
+        elif current:
+            tokens.append("".join(current))
+            current = []
+    if current:
+        tokens.append("".join(current))
     result = []
     for token in tokens:
         if any(
