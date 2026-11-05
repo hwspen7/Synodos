@@ -105,6 +105,27 @@ class EvidenceQATests(unittest.TestCase):
             "ask_evidence", None, {"question": "What did we decide?"}
         )
 
+    def test_legacy_ask_job_is_also_strictly_evidence_only(self):
+        class Gateway:
+            def model_for(self, _mode):
+                return "test-model"
+            def structured(self, *_args, **_kwargs):
+                return {
+                    "answer": "Fabricated direct answer",
+                    "source_numbers": [1],
+                    "quotes": [{
+                        "source_number": 2,
+                        "quote": "The benchmark release has not yet been approved.",
+                    }],
+                }
+        with patch("intelligence.worker.retrieval.search", return_value=HITS):
+            result = process({
+                "id": "job", "kind": "ask",
+                "payload": {"question": "Did we approve the benchmark release?"},
+            }, Gateway())
+        self.assertEqual(result["status"], "verbatim_citations_verified")
+        self.assertNotIn("Fabricated direct answer", result["answer"])
+
     def test_missing_source_fails_closed_without_model_inference(self):
         class Gateway:
             def structured(self, *_args, **_kwargs):
