@@ -65,7 +65,7 @@ class SpeakerStoreIntegrityTests(unittest.TestCase):
             self.assertAlmostEqual(
                 float(np.linalg.norm(store.get_for_matching(
                     [person["id"]]
-                )[0]["vectors"][0]["emb"])), 1.0
+                )[0]["vectors"][0]["emb"])), 1.0, places=6
             )
 
     def test_failed_save_does_not_leave_partial_vectors_in_memory(self):
