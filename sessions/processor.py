@@ -1679,7 +1679,7 @@ class SessionProcessor(threading.Thread):
         )
         matched: dict[int, str] = {}
         pool: list[int] = []
-        available_names = {p["id"]: p["name"] for p in self._participants}
+        available_names = {p["id"]: p["name"] for p in getattr(self, "_participants", [])}
         for i, seg in enumerate(self.segments):
             seg["speaker_match_similarity"] = None
             seg["matched_profile_id"] = None
@@ -1804,7 +1804,6 @@ class SessionProcessor(threading.Thread):
                     best_sim = sim
                     best_pid = p["id"]
         # Opt-in ambiguity guard across distinct enrolled participants.
-        import os
         margin = float(os.getenv("MEETING_PHASE07_SPEAKER_MARGIN", "0"))
         if margin > 0 and self._participants:
             return find_distinct_participant(self._participants, emb, margin)
