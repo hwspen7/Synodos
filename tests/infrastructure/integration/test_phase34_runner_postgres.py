@@ -55,7 +55,7 @@ class Phase34RunnerPostgresTests(unittest.TestCase):
                 excerpt = prompt.split("<evidence>\n", 1)[1].split(
                     "\n</evidence>", 1
                 )[0]
-                positions = list(re.finditer(r"(?m)^\[(\d+)\] ", excerpt))
+                positions = list(re.finditer(r"(?m)^\[(\d+)\] \[\d+\] ", excerpt))
                 for i, match in enumerate(positions):
                     right = (positions[i + 1].start()
                              if i + 1 < len(positions) else len(excerpt))
