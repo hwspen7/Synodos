@@ -3,29 +3,29 @@
    ========================================================================== */
 :root {
   color-scheme: light;
-  --mop-bg: #f8f7fb;
+  --mop-bg: #f7f7f6;
   --mop-surface: #ffffff;
-  --mop-paper: #fcfafd;
-  --mop-paper-rgb: 252, 250, 253;
-  --mop-login-bg: #f8f6fc;
-  --mop-text: #24202b;
-  --mop-text-strong: #1c1725;
-  --mop-text-card: #21192e;
-  --mop-text-muted: #696170;
-  --mop-text-soft: #807487;
-  --mop-ink-rgb: 36, 30, 45;
-  --mop-primary: #68389a;
-  --mop-primary-strong: #55277f;
-  --mop-primary-rgb: 104, 56, 154;
-  --mop-accent: #fd621b;
-  --mop-secondary: #e95d24;
-  --mop-secondary-rgb: 233, 93, 36;
+  --mop-paper: #ffffff;
+  --mop-paper-rgb: 255, 255, 255;
+  --mop-login-bg: #faf8f4;
+  --mop-text: #292b31;
+  --mop-text-strong: #1e2026;
+  --mop-text-card: #27292f;
+  --mop-text-muted: #6c6e76;
+  --mop-text-soft: #82838b;
+  --mop-ink-rgb: 41, 43, 49;
+  --mop-primary: #eb7100;
+  --mop-primary-strong: #a84d00;
+  --mop-primary-rgb: 235, 113, 0;
+  --mop-accent: #eb7100;
+  --mop-secondary: #bf5d0a;
+  --mop-secondary-rgb: 191, 93, 10;
   --mop-success: #2e7d32;
   --mop-danger: #b3261e;
   --mop-border: rgba(var(--mop-ink-rgb), 0.12);
   --mop-border-strong: rgba(var(--mop-ink-rgb), 0.2);
-  --mop-shadow: 0 18px 50px rgba(53, 30, 82, 0.09);
-  --mop-shadow-soft: 0 4px 18px rgba(53, 30, 82, 0.055);
+  --mop-shadow: 0 18px 50px rgba(41, 36, 29, 0.07);
+  --mop-shadow-soft: 0 4px 18px rgba(41, 36, 29, 0.045);
   --mop-radius: 10px;
   --mop-radius-lg: 14px;
 }
@@ -75,7 +75,7 @@ button {
   height: 58px;
   padding: 0 28px;
   border-bottom: 1px solid var(--mop-border);
-  background: rgba(252, 250, 253, 0.92);
+  background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(14px);
 }
 
