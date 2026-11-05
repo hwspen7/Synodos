@@ -180,6 +180,11 @@ class SpeakerCandidateTests(unittest.TestCase):
             "cluster": -1, "speaker_id": 8, "speaker_name": "Speaker 8",
         }]
         processor.settings = SimpleNamespace(sample_rate=16000)
+        # The fixture bypasses __init__, so initialize the new
+        # voiceprint-match state explicitly before calling reclustering.
+        processor._participants = []
+        processor._auto_profile_mode = False
+        processor._auto_match_cache = {}
         processor._match_participant = Mock(return_value=(None, 0.0))
         processor.models = SimpleNamespace(
             cluster_with_info=lambda embeddings: (
