@@ -70,6 +70,27 @@ def process(job, gateway):
         data['evidence_audit'] = evidence_audit(data, [s['id'] for s in segments])
         aid=store.save_artifact(job['meeting_id'],job['id'],kind,mode,revision,data,gateway.model_for(mode))
         return {'artifact_id':aid,'data':data,'source_revision':revision}
+    if kind == 'speaker_insights':
+        from intelligence.speaker_insights import analyze_speaker, choose_speaker_turns
+        data = job.get('payload') or {}
+        speaker_id = data.get('speaker_id')
+        revision, segments = _context(job)
+        if type(speaker_id) is not int or speaker_id <= 0:
+            raise ValueError('A positive saved speaker ID is required')
+        if type(data.get('source_revision')) is not int or data['source_revision'] != revision:
+            raise ValueError('Transcript changed before analysis; refresh and retry')
+        name, selected = choose_speaker_turns(segments, speaker_id)
+        result = analyze_speaker(segments, speaker_id, gateway)
+        current_revision, current_segments = _context(job)
+        if current_revision != revision:
+            raise ValueError('Transcript changed while analyzing; refresh and retry')
+        current_name, current_selected = choose_speaker_turns(current_segments, speaker_id)
+        if current_name != name or [s['id'] for s in current_selected] != [s['id'] for s in selected]:
+            raise ValueError('Speaker attribution changed while analyzing; retry')
+        model = gateway.model_for('meeting')
+        aid = store.save_artifact(job['meeting_id'], job['id'], kind, 'meeting',
+                                  revision, result, model)
+        return {'artifact_id': aid, 'data': result, 'source_revision': revision}
     if kind=='index_meeting':
         rev,segments=_context(job)
         # A coalesced 1,300-character block can contain the entire small
