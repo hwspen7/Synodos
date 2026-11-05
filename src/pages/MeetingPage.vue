@@ -529,7 +529,7 @@ function connect(autostart = false): void {
       if (msg.spk_threshold !== undefined) spkThreshold.value = msg.spk_threshold
       status.value = 'idle'
       // Start automatically on create, resume, or restart.
-      if (autostart || route.query.autostart === '1') void startMic()
+      if (autostart) void startMic()
     },
     onPartial: (text, detectedLanguage, revision) => {
       if (clientSeq !== mySeq || revision <= lastPartialRevision) return
@@ -725,10 +725,17 @@ async function correctTranscript(seg: Segment): Promise<void> {
 }
 
 onMounted(async () => {
+  // Consume the one-time start request before asynchronous setup. Browser
+  // refresh must not start another microphone capture.
+  const startOnce = route.query.autostart === '1'
+  if (startOnce) {
+    const { autostart: _consumed, ...remainingQuery } = route.query
+    await router.replace({ query: remainingQuery, hash: route.hash })
+  }
   await loadMeetingConfig()
   await loadSavedTranscript()
   await loadRecordings()
-  if (route.query.autostart === '1') connect(true)
+  if (startOnce) connect(true)
 })
 
 onBeforeUnmount(() => stopInternal())
