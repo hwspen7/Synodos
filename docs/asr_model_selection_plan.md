@@ -36,7 +36,7 @@ Freeze development FLEURS first (requires datasets, soundfile, scipy; NOT torchc
     python -m tools.freeze_fleurs_asr_corpus --split validation --per-language 20 --apply
 
 Set the E-drive development manifest:
-    $manifest = "E:\AI-Cache\MeetingReference\ASRSelection\fleurs_validation_20_sf_v2\manifest.json"
+    $manifest = "E:\AI-Cache\MeetingReference\ASRSelection\fleurs_validation_20_sf_v3\manifest.json"
     $results = "E:\AI-Cache\MeetingReference\ASRSelection\trials"
     New-Item -ItemType Directory -Force $results | Out-Null
 
@@ -148,3 +148,13 @@ fail-closed SHA256 validation. Do not delete the old folder or
 overwrite conflicting WAVs. The original download cache may be reused
 where the datasets library supports it. Running the same command again
 continues a partial sf_v2 freeze without changing its locked revision.
+
+
+## sf_v3 source-row identity
+
+FLEURS repeats some official \`id\` values within a split. Sampling still
+uses the immutable per-record hash rank and original row order for ties,
+but case IDs and WAV filenames are now based on both original ID and
+stable row index. This avoids collisions and retains all selected data,
+including duplicated official IDs. The sf_v3 folder is separate from
+the earlier incomplete sf_v2 export, with no deletion or overwrite.

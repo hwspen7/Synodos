@@ -18,7 +18,7 @@ The command defaults to DRY RUN. Download only with --apply.
     & .\.venv\Scripts\python.exe -m tools.freeze_fleurs_asr_corpus --split validation --per-language 20 --apply
 
 Result manifest:
-E:\AI-Cache\MeetingReference\ASRSelection\fleurs_validation_20_sf_v2\manifest.json
+E:\AI-Cache\MeetingReference\ASRSelection\fleurs_validation_20_sf_v3\manifest.json
 
 The short development set has 200 cases. It may be used for debugging
 engine setup and decoding differences. It is not release test evidence.
@@ -78,7 +78,7 @@ cohort. Keep experimental qwen-asr packages in a separate E-drive venv.
 As of the sf_v2 freezer, the default output path is versioned to avoid
 a collision with WAVs created by the older TorchCodec/decode path:
 
-    E:\AI-Cache\MeetingReference\ASRSelection\fleurs_validation_20_sf_v2
+    E:\AI-Cache\MeetingReference\ASRSelection\fleurs_validation_20_sf_v3
 
 The old fleurs_validation_20 folder is preserved for investigation.
 Never remove source caches, old WAVs, or QA records merely to rerun.
@@ -98,8 +98,37 @@ with soundfile for export. The other split never participates.
 
 After finishing the 200 development cases, use:
 
-    $manifest = "E:\AI-Cache\MeetingReference\ASRSelection\fleurs_validation_20_sf_v2\manifest.json"
+    $manifest = "E:\AI-Cache\MeetingReference\ASRSelection\fleurs_validation_20_sf_v3\manifest.json"
 
 The independently frozen 1,000-case final test manifest is under:
 
-    E:\AI-Cache\MeetingReference\ASRSelection\fleurs_test_100_sf_v2\manifest.json
+    E:\AI-Cache\MeetingReference\ASRSelection\fleurs_test_100_sf_v3\manifest.json
+
+
+## Repeated official IDs within the same split (sf_v3)
+
+The official FLEURS \`id\` column is NOT assumed to identify a unique
+recording. Some rows in the streamed validation data share the same
+\`id\`. The sf_v2 tool stopped before emitting a manifest.
+
+The updated sampling algorithm retains ALL source rows. It sorts by
+the existing seeded SHA256 of official ID and uses stable source row
+index as the tie breaker. No example is dropped, substituted or
+selected by transcript, audio quality or model output.
+
+Each exported sample now uses a unique composite identity:
+\`fleurs_validation_en_r000123_id45\`.
+The manifest retains separate \`source_row_index\` and \`official_id\`
+fields for audit. The \`sf_v3\` directory isolates this identity
+change from the previous incomplete \`sf_v2\` directory and preserves
+the original pinned revision and local cache without deleting data.
+
+Use:
+    python -m tools.freeze_fleurs_asr_corpus --split validation --per-language 20 --apply
+
+Then set:
+    $manifest = "E:\AI-Cache\MeetingReference\ASRSelection\fleurs_validation_20_sf_v3\manifest.json"
+
+Do not try to validate the old sf_v2 manifest: it was never created.
+The warning about an unauthenticated HF Hub request is informational,
+not the cause of this error.

@@ -28,8 +28,8 @@ DATASET = "google/fleurs"
 ALLOWED_SPLITS = {"validation": "development", "test": "sealed_test"}
 SHA = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 MIN_SECONDS, MAX_SECONDS = 0.8, 30.0
-FREEZE_VERSION = "sf_v2"
-PLAN_SCHEMA = "meeting-fleurs-freeze-plan-v2"
+FREEZE_VERSION = "sf_v3"
+PLAN_SCHEMA = "meeting-fleurs-freeze-plan-v3"
 
 
 def require_e_drive(path: Path) -> Path:
@@ -121,26 +121,44 @@ def choose_streaming_examples(dataset, *, language: str, count: int,
     if count < 1:
         raise ValueError("Selection must have positive size")
     selected = []
-    seen_ids = set()
     for index, example in enumerate(dataset):
         if not isinstance(example, dict) or "id" not in example:
             raise ValueError("Streaming FLEURS row has no official ID")
-        source_id = int(example["id"])
-        if source_id in seen_ids:
-            raise ValueError("Duplicate official example ID; refusing ambiguous freeze")
-        seen_ids.add(source_id)
+        if type(example["id"]) is not int or example["id"] < 0:
+            raise ValueError("Invalid official FLEURS sample ID")
+        source_id = example["id"]
+        # FLEURS' official ID field may repeat inside a split. It is not
+        # a row identifier. Hashing the ID with deterministic row-index
+        # tie breaking preserves the existing selection rule while
+        # distinguishing legitimate rows with the same source ID.
         digest = int(hashlib.sha256(
             f"{seed}/{language}/{source_id}".encode("utf-8")
         ).hexdigest(), 16)
-        entry = (-digest, -index, example)
+        entry = (-digest, -index, index, example)
         if len(selected) < count:
             heapq.heappush(selected, entry)
         elif entry[:2] > selected[0][:2]:
             heapq.heapreplace(selected, entry)
     if len(selected) != count:
         raise ValueError("Not enough official cases for " + language)
-    return [entry[2] for entry in sorted(
-        selected, key=lambda entry: (-entry[0], -entry[1]))]
+    return [
+        {**entry[3], "_fleurs_source_row_index": entry[2]}
+        for entry in sorted(selected, key=lambda entry: (-entry[0], -entry[1]))
+    ]
+
+
+def case_identity(language: str, split: str, source_row_index: int,
+                  official_id: int) -> tuple[str, str]:
+    """Define an immutable, collision-free identity for each source row."""
+    if (language not in LANGUAGES or split not in ALLOWED_SPLITS or
+            type(source_row_index) is not int or source_row_index < 0 or
+            type(official_id) is not int or official_id < 0):
+        raise ValueError("Invalid case identity")
+    suffix = f"r{source_row_index:06d}_id{official_id}"
+    return (
+        f"fleurs_{split}_{language}_{suffix}",
+        f"{language}_{suffix}.wav",
+    )
 
 
 def freeze_plan(destination: Path, split: str, count: int,
@@ -250,8 +268,11 @@ def freeze_fleurs(root: Path, split: str, per_language: int, seed: str,
             if not reference:
                 raise ValueError("Selected official reference is empty")
             pcm, duration = encode_pcm16(decode_audio_without_torchcodec(example["audio"]))
-            sample_id = str(int(example["id"]))
-            filename = lang + "_" + sample_id + ".wav"
+            source_row_index = example["_fleurs_source_row_index"]
+            official_id = example["id"]
+            case_id, filename = case_identity(
+                lang, split, source_row_index, official_id
+            )
             wav = destination / "wav" / filename
             wav.parent.mkdir(parents=True, exist_ok=True)
             hash_value = hashlib.sha256(pcm).hexdigest()
@@ -268,7 +289,10 @@ def freeze_fleurs(root: Path, split: str, per_language: int, seed: str,
                 with wav.open("xb") as output:
                     output.write(pcm)
             lang_cases.append({
-                "id": "fleurs_" + split + "_" + lang + "_" + sample_id,
+                "id": case_id,
+                "source_row_index": source_row_index,
+                "official_id": official_id,
+                "official_audio_path": str(example.get("path") or ""),
                 "language": lang,
                 "corpus": "fleurs_published",
                 "split": ALLOWED_SPLITS[split],
@@ -289,6 +313,8 @@ def freeze_fleurs(root: Path, split: str, per_language: int, seed: str,
         "freeze_plan_file": str(plan_path.resolve()),
         "freeze_plan_sha256": hashlib.sha256(plan_path.read_bytes()).hexdigest(),
         "selected_split_streaming": True,
+        "row_index_identity": True,
+        "official_id_uniqueness_assumed": False,
         "dataset_revision": commit, "license": "CC BY 4.0",
         "attribution": "Google FLEURS",
         "data_split": split, "benchmark_role": ALLOWED_SPLITS[split],

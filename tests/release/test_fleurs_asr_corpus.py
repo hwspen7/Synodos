@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import io
 import wave
-from tools.freeze_fleurs_asr_corpus import choose_indices, choose_streaming_examples, freeze_plan, encode_pcm16, decode_audio_without_torchcodec, LANGUAGES, SCHEMA
+from tools.freeze_fleurs_asr_corpus import choose_indices, choose_streaming_examples, freeze_plan, case_identity, encode_pcm16, decode_audio_without_torchcodec, LANGUAGES, SCHEMA
 
 
 class FleursCorpusTests(unittest.TestCase):
@@ -30,10 +30,40 @@ class FleursCorpusTests(unittest.TestCase):
         self.assertEqual([row["id"] for row in chosen], indices)
         self.assertTrue(all(row["audio"]["bytes"] == b"not decoded" for row in chosen))
 
-    def test_streaming_rejects_duplicate_ids(self):
+    def test_streaming_duplicate_official_ids_are_distinct_source_rows(self):
+        rows = [{"id": 7, "path": "first.flac"},
+                {"id": 7, "path": "second.flac"},
+                {"id": 9, "path": "third.flac"}]
+        chosen = choose_streaming_examples(
+            iter(rows), language="en", count=3, seed="v1"
+        )
+        self.assertEqual(len(chosen), 3)
+        self.assertEqual(
+            {row["_fleurs_source_row_index"] for row in chosen}, {0, 1, 2}
+        )
+        self.assertEqual(
+            [row["id"] for row in chosen], [rows[i]["id"] for i in
+                                            choose_indices(rows, language="en",
+                                                           count=3, seed="v1")]
+        )
+        distinct = {
+            case_identity("en", "validation",
+                          row["_fleurs_source_row_index"], row["id"])
+            for row in chosen
+        }
+        self.assertEqual(len(distinct), 3)
+        self.assertNotEqual(
+            case_identity("en", "validation", 0, 7),
+            case_identity("en", "validation", 1, 7),
+        )
+
+    def test_stable_id_and_index_pair(self):
+        self.assertEqual(
+            case_identity("zh", "test", 12, 8),
+            ("fleurs_test_zh_r000012_id8", "zh_r000012_id8.wav"),
+        )
         with self.assertRaises(ValueError):
-            choose_streaming_examples(iter([{"id": 7}, {"id": 7}]),
-                                      language="en", count=1, seed="v1")
+            case_identity("zh", "test", -1, 8)
 
     def test_partial_resume_pins_dataset_revision_and_seed(self):
         with TemporaryDirectory() as tmp:
