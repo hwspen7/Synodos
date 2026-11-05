@@ -13,6 +13,7 @@ import numpy as np
 
 from sessions.processor import SessionProcessor
 from storage.speakers import SpeakerStore
+from storage.meetings import MeetingStore
 
 
 def embedding(index=0):
@@ -126,6 +127,25 @@ class SpeakerSessionIntegrationTests(unittest.TestCase):
         self.assertEqual(item["speaker_name"], "Registered Person")
         self.assertEqual(item["speaker_id"], 2)
         self.assertEqual(item["speaker_diarization_source"], "registered_voiceprint")
+
+    def test_auto_matching_preference_survives_meeting_save_reload(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = MeetingStore(Path(temp))
+            record = store.create(title="Meeting B")
+            meeting_id = record["id"]
+            state = {
+                "id": meeting_id, "title": "Meeting B",
+                "sample_rate": 16000, "merge_gap_s": 2.0,
+                "segments": [], "participant_ids": [],
+                "auto_match_saved": False,
+                "ui_settings": {"auto_match_saved": False},
+            }
+            store.save_state(state)
+            restored = store.load_state(meeting_id)
+            self.assertIsNotNone(restored)
+            self.assertFalse(restored["auto_match_saved"])
+            self.assertFalse(store.get_meeting(meeting_id)["auto_match_saved"])
+            self.assertFalse(store.get_meeting(meeting_id)["ui_settings"]["auto_match_saved"])
 
     def test_all_touched_python_modules_are_syntax_valid(self):
         root = Path(__file__).resolve().parents[2]
