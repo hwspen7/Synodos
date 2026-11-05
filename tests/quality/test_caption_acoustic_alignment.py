@@ -64,27 +64,28 @@ class CaptionAcousticAlignmentTests(unittest.TestCase):
                 return True
             def final_turns_snapshot(self):
                 return [
-                    {"start_ms": 200, "end_ms": 450, "speaker_id": 2},
-                    {"start_ms": 550, "end_ms": 900, "speaker_id": 2},
+                    {"start_ms": 200, "end_ms": 650, "speaker_id": 2},
+                    {"start_ms": 700, "end_ms": 1200, "speaker_id": 2},
                 ]
 
         processor = processor_for_test()
+        processor.segments[0]["end_sample"] = 20000
         original_text = processor.segments[0]["text"]
         original_times = (
             processor.segments[0]["start_sample"],
             processor.segments[0]["end_sample"],
         )
-        activity = np.zeros((100, 8), dtype=np.float32)
+        activity = np.zeros((125, 8), dtype=np.float32)
         processor.independent_diarization = Completed(activity)
         self.assertTrue(processor._rebuild_and_push())
         support = processor._independent_support[1]
         self.assertEqual(
             support["speaker_activity_intervals_ms"],
-            [[200, 450], [550, 900]],
+            [[200, 650], [700, 1200]],
         )
         self.assertEqual(
             processor.snapshot_state()["segments"][0]["speaker_activity_fraction"],
-            0.6,
+            0.76,
         )
         self.assertEqual(processor.segments[0]["text"], original_text)
         self.assertEqual(
