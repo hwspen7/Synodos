@@ -25,7 +25,6 @@ def reconcile_identity_decisions(
         raise ValueError("Only independent CAM++ and ECAPA matching are supported")
     matched = {}
     observed = {}
-    verified = {}
     for model in MODELS:
         result = decisions.get(model)
         if not isinstance(result, dict):
@@ -55,7 +54,6 @@ def reconcile_identity_decisions(
             if result.get("score_kind") != "raw_cosine_not_probability":
                 raise ValueError("Identity candidate score provenance mismatch")
             matched[model] = profile
-            verified[model] = True
         observed[model] = status
 
     if len(matched) == 2:
