@@ -1,0 +1,27 @@
+name: Individual-headset AMI source integrity
+
+on:
+  push:
+    branches:
+      - feature/meeting-knowledge-quality
+    paths:
+      - 'tools/prepare_ami_individual_headsets.py'
+      - 'tests/release/test_ami_individual_headsets.py'
+      - '.github/workflows/ami-individual-headsets.yml'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  offline_contract:
+    name: AMI individual headset source safety
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install "numpy>=1.26"
+      - run: python -m unittest tests.release.test_ami_individual_headsets -v
+      - run: python -m compileall -q tools/prepare_ami_individual_headsets.py
