@@ -106,6 +106,13 @@ class SpeakerInsightsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             split_speaker_turns([turn(1, 1, "b" * 7000)])
 
+    def test_source_fingerprint_tracks_revisions(self):
+        baseline = [turn(1, 1, "One")]
+        digest = speaker_source_hash(baseline)
+        self.assertEqual(digest, speaker_source_hash([dict(baseline[0])]))
+        self.assertNotEqual(digest, speaker_source_hash([dict(baseline[0], text="Two")]))
+        self.assertNotEqual(digest, speaker_source_hash([dict(baseline[0], speaker_id=2)]))
+
     def test_source_prompt_contains_only_selected_ids(self):
         prompt = speaker_prompt("Speaker 1", 1, [turn(5, 1, "Hello")])
         self.assertIn("[5]", prompt)
