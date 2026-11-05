@@ -764,7 +764,7 @@ onBeforeUnmount(() => stopInternal())
       </div>
     </header>
     <section class="meeting-workspace-summary" aria-label="Meeting overview">
-      <div class="workspace-summary-label"><span class="summary-live-dot" :class="{ active: recording }"></span> {{ recording ? 'Transcribing live' : 'Transcript workspace' }}</div>
+      <div class="workspace-summary-label"><span class="summary-live-dot" :class="{ active: recording }"></span> {{ recording ? 'Live transcription' : 'Meeting overview' }}</div>
       <div class="workspace-summary-detail">
         <span><strong>Language</strong> {{ language === 'auto' ? 'Auto detect' : language.toUpperCase() }}</span>
         <span><strong>Translation</strong> {{ translationTarget || 'Off' }}</span>
@@ -784,15 +784,6 @@ onBeforeUnmount(() => stopInternal())
       {{ selectedWithoutVoiceprints.length }} selected participant(s) have no voiceprints. Automatic identification is not available for these people.
       <RouterLink to="/speakers">Manage voiceprints</RouterLink>
     </p>
-    <section v-if="error" class="meeting-action-notice" role="alert">
-      <div class="notice-symbol"><AppIcon name="alert" :size="19" /></div>
-      <div class="notice-copy"><strong>Recording needs attention</strong><p>{{ error }}</p></div>
-      <div class="notice-actions">
-        <button type="button" @click="selectMeetingTool('settings')">Review settings</button>
-        <button type="button" @click="selectMeetingTool('recordings')">Open recordings</button>
-        <button type="button" class="notice-dismiss" aria-label="Dismiss alert" @click="error = ''"><AppIcon name="x" :size="15" /></button>
-      </div>
-    </section>
     <p v-if="untranslatedCount > 0" class="hint-text warn-text" role="status">
       {{ untranslatedCount }} segment(s) have no available translation; original text is shown.
     </p>
@@ -823,6 +814,15 @@ onBeforeUnmount(() => stopInternal())
           <div><span class="transcript-eyebrow">MEETING RECORD</span><h2>Transcript</h2><span>Speaker-attributed conversation · timestamps preserved</span></div>
           <span class="transcript-count">{{ paragraphs.length }} turns</span>
         </div>
+        <section v-if="error" class="meeting-action-notice" role="alert">
+              <div class="notice-symbol"><AppIcon name="alert" :size="19" /></div>
+              <div class="notice-copy"><strong>Recording needs attention</strong><p>{{ error }}</p></div>
+              <div class="notice-actions">
+                <button type="button" @click="selectMeetingTool('settings')">Review settings</button>
+                <button type="button" @click="selectMeetingTool('recordings')">Open recordings</button>
+                <button type="button" class="notice-dismiss" aria-label="Dismiss alert" @click="error = ''"><AppIcon name="x" :size="15" /></button>
+              </div>
+            </section>
     <main ref="transcriptEl" class="transcript" @scroll="onTranscriptScroll">
       <div v-if="segments.length === 0 && !partialText" class="empty-state">
         <div class="empty-icon"><AppIcon name="mic" :size="26" /></div>
