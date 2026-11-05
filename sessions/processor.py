@@ -198,6 +198,14 @@ class SessionProcessor(threading.Thread):
         self.ui_settings: dict = {}
         self._translation_tasks: dict[int, Future] = {}
         self._speaker_tasks: dict[int, Future] = {}
+        # A saturated global speaker queue must not silently discard the
+        # voiceprint for a confirmed ASR segment. Keep only a small bounded
+        # set of PCM clips, retrying when an in-flight worker releases a slot.
+        # The canonical caption is never changed by queue management.
+        self._speaker_deferred: dict[int, tuple[dict, np.ndarray]] = {}
+        self._speaker_deferred_limit = 8
+        self._speaker_deferred_max_samples = 30 * sr
+        self._speaker_backpressure_warned = False
         # Optional ECAPA shadow samples stay in memory and never enter saved state.
         self._ecapa_shadow = None
         self._ecapa_shadow_audio: dict[int, np.ndarray] = {}
@@ -475,6 +483,11 @@ class SessionProcessor(threading.Thread):
                 logger.exception("session %s final transcription failed", self.session_id)
                 self._put({"type": "error", "message": "Final transcription failed; confirmed text may be incomplete"})
         speaker_updated = self._collect_speakers(wait_seconds=5.0)
+        # Retry tasks released by the first drain, without an unbounded wait.
+        # This allows late speaker evidence to resolve before final captions
+        # are saved even if the global queue was briefly saturated.
+        if self._speaker_tasks:
+            speaker_updated |= self._collect_speakers(wait_seconds=5.0)
         acoustic_updated = self._collect_acoustic(wait_seconds=6.0)
         if speaker_updated or acoustic_updated or speaker_candidate_enabled():
             try:
@@ -487,11 +500,12 @@ class SessionProcessor(threading.Thread):
                 self._fallback_labels()
         self._collect_translations(wait_seconds=2.0)
         self._rebuild_and_push()
-        if self._speaker_tasks or self._acoustic_tasks:
+        if self._speaker_tasks or self._acoustic_tasks or self._speaker_deferred:
             self._put({"type": "feature_warning", "feature": "diarization",
                        "message": "Speaker analysis unfinished; uncertain speakers were kept unidentified"})
             self._speaker_tasks.clear()
             self._acoustic_tasks.clear()
+            self._speaker_deferred.clear()
         if self._translation_tasks:
             self._put({"type": "feature_warning", "feature": "translation",
                        "message": "Some translations were not completed before meeting shutdown"})
@@ -976,9 +990,15 @@ class SessionProcessor(threading.Thread):
                     sentence, seg_audio, self.models.embed, sr,
                     minimum_embedding_seconds=self._speaker_min_audio_s,
                 )
-                if speaker_task is None:
-                    self._put({"type": "feature_warning", "feature": "diarization",
-                               "message": "Speaker analysis backlog full; speaker remains unidentified"})
+            deferred = False
+            if (self._speech_settings.engine != "legacy"
+                    and speaker_task is None
+                    and len(seg_audio) >= int(sr * self._speaker_min_audio_s)):
+                deferred = self._defer_speaker_analysis(
+                    self._next_segment_id, sentence, seg_audio,
+                )
+                if not deferred:
+                    self._warn_speaker_backpressure()
             record = {
                 "id": self._next_segment_id,
                 "_audio_base_sample": start_offset,
@@ -993,12 +1013,16 @@ class SessionProcessor(threading.Thread):
                 "words": sentence.get("words", []),
                 "emb": emb,
                 "cluster": -1,
-                "speaker_uncertain": speaker_task is not None,
+                "speaker_uncertain": (
+                    speaker_task is not None or deferred
+                    or (self._speech_settings.engine != "legacy" and emb is None)
+                ),
                 "speaker_evidence_status": (
                     "direct_embedding" if emb is not None
                     else "pending_turn_analysis" if speaker_task is not None
-                    else "short_turn" if len(seg_audio) < int(sr * 1.2)
-                    else "speaker_task_backpressure_or_failure"
+                    else "deferred_turn_analysis" if deferred
+                    else "short_turn" if len(seg_audio) < int(sr * self._speaker_min_audio_s)
+                    else "speaker_queue_exhausted"
                 ),
             }
             self.segments.append(record)
@@ -1358,10 +1382,60 @@ class SessionProcessor(threading.Thread):
         self._translation_tasks[segment["id"]] = task
         task.add_done_callback(self._notify_async_ready)
 
-    def _collect_speakers(self, wait_seconds: float = 0.0) -> bool:
-        if not self._speaker_tasks:
+    def _warn_speaker_backpressure(self) -> None:
+        """Warn once about evidence actually dropped, not a retriable delay."""
+        if self._speaker_backpressure_warned:
+            return
+        self._speaker_backpressure_warned = True
+        metrics.increment("speaker_queue_evidence_unavailable")
+        self._put({
+            "type": "feature_warning",
+            "feature": "diarization",
+            "message": (
+                "Speaker evidence backlog exceeded its bounded retry budget. "
+                "Affected captions remain unidentified; ASR text is preserved."
+            ),
+        })
+
+    def _defer_speaker_analysis(
+        self, sid: int, sentence: dict, audio: np.ndarray,
+    ) -> bool:
+        """Retain bounded PCM once; retry with unchanged ASR/timestamps."""
+        if (len(self._speaker_deferred) >= self._speaker_deferred_limit
+                or not 0 < len(audio) <= self._speaker_deferred_max_samples):
             return False
-        if wait_seconds > 0:
+        if sid in self._speaker_tasks or sid in self._speaker_deferred:
+            return False
+        self._speaker_deferred[sid] = (
+            dict(sentence), np.array(audio, dtype=np.float32, copy=True),
+        )
+        metrics.increment("speaker_queue_deferred")
+        return True
+
+    def _retry_deferred_speakers(self) -> None:
+        """Admit older evidence first without blocking real-time ASR."""
+        if not self._speaker_deferred:
+            return
+        live_ids = {seg["id"] for seg in self.segments}
+        for sid, (sentence, audio) in tuple(self._speaker_deferred.items()):
+            if sid not in live_ids:
+                self._speaker_deferred.pop(sid, None)
+                continue
+            task = submit_speaker_analysis(
+                sentence, audio, self.models.embed, self.settings.sample_rate,
+                minimum_embedding_seconds=self._speaker_min_audio_s,
+            )
+            if task is None:
+                break  # Shared worker queue is still full.
+            self._speaker_deferred.pop(sid, None)
+            self._speaker_tasks[sid] = task
+            original = next(seg for seg in self.segments if seg["id"] == sid)
+            original["speaker_evidence_status"] = "pending_turn_analysis"
+            task.add_done_callback(self._notify_async_ready)
+            metrics.increment("speaker_queue_retried")
+
+    def _collect_speakers(self, wait_seconds: float = 0.0) -> bool:
+        if wait_seconds > 0 and self._speaker_tasks:
             wait(tuple(self._speaker_tasks.values()), timeout=wait_seconds)
         updated = False
         for sid, future in tuple(self._speaker_tasks.items()):
@@ -1480,6 +1554,7 @@ class SessionProcessor(threading.Thread):
             metrics.increment("speaker_async_completed")
         if updated:
             self._last_reclustered_segment_id = 0
+        self._retry_deferred_speakers()
         return updated
 
     def _collect_translations(self, wait_seconds: float = 0.0) -> None:

@@ -56,6 +56,52 @@ def processor_for_test():
 
 
 class LiveFusionTests(unittest.TestCase):
+    def test_backpressure_defers_voiceprint_and_retries_after_slot_frees(self):
+        from concurrent.futures import Future
+        processor = processor_for_test()
+        sentence = {"start": 0, "end": 1000, "text": "Some valid speech",
+                    "words": []}
+        clip = np.full(16000, 0.1, dtype=np.float32)
+        self.assertTrue(processor._defer_speaker_analysis(1, sentence, clip))
+        processor.segments[0]["speaker_uncertain"] = True
+        processor.segments[0]["speaker_evidence_status"] = "deferred_turn_analysis"
+        self.assertEqual(len(processor._speaker_deferred), 1)
+        # The first retry remains saturated, the next gets an actual future.
+        future = Future()
+        with patch("sessions.processor.submit_speaker_analysis",
+                   side_effect=[None, future]) as submit:
+            processor._retry_deferred_speakers()
+            self.assertEqual(len(processor._speaker_deferred), 1)
+            self.assertEqual(len(processor._speaker_tasks), 0)
+            processor._retry_deferred_speakers()
+        self.assertEqual(submit.call_count, 2)
+        self.assertEqual(len(processor._speaker_deferred), 0)
+        self.assertIs(processor._speaker_tasks[1], future)
+        self.assertEqual(
+            processor.segments[0]["speaker_evidence_status"],
+            "pending_turn_analysis",
+        )
+        self.assertEqual(processor.segments[0]["text"], "Some valid speech")
+        self.assertEqual(
+            (processor.segments[0]["start_sample"],
+             processor.segments[0]["end_sample"]), (0, 16000),
+        )
+
+    def test_backpressure_retry_queue_is_bounded_and_keeps_unknown_honest(self):
+        processor = processor_for_test()
+        samples = np.ones(16000, dtype=np.float32)
+        for sid in range(1, 9):
+            self.assertTrue(processor._defer_speaker_analysis(
+                sid, {"start": 0, "end": 1000, "text": str(sid)}, samples,
+            ))
+        self.assertFalse(processor._defer_speaker_analysis(
+            9, {"start": 0, "end": 1000, "text": "ninth"}, samples,
+        ))
+        self.assertEqual(len(processor._speaker_deferred), 8)
+        self.assertFalse(processor._defer_speaker_analysis(
+            10, {}, np.ones(480001, dtype=np.float32),
+        ))
+
     def test_speaker_fixture_is_independent_of_hybrid_shell_settings(self):
         with patch.dict(os.environ, {
             "MEETING_ASR_ENGINE": "hybrid",

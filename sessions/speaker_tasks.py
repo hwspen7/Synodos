@@ -7,6 +7,10 @@ import numpy as np
 
 _POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="meeting-acoustic-speakers")
 _SLOTS = threading.BoundedSemaphore(24)
+# Independent 1.5-second acoustic probes are supplementary. Do not let
+# their queue monopolize the shared speaker-analysis capacity and permanently
+# prevent confirmed speech from obtaining a voiceprint.
+_ACOUSTIC_SLOTS = threading.BoundedSemaphore(4)
 
 
 def submit_speaker_analysis(
@@ -52,7 +56,10 @@ def submit_acoustic_window(
     start_sample: int, samples: np.ndarray, embed, sample_rate: int,
 ) -> Future | None:
     """Analyze independent, bounded voice windows without holding up ASR."""
+    if not _ACOUSTIC_SLOTS.acquire(blocking=False):
+        return None
     if not _SLOTS.acquire(blocking=False):
+        _ACOUSTIC_SLOTS.release()
         return None
     audio = np.asarray(samples, dtype=np.float32).copy()
 
@@ -69,9 +76,11 @@ def submit_acoustic_window(
             return start_sample, len(audio), normalize(embed(audio))
         finally:
             _SLOTS.release()
+            _ACOUSTIC_SLOTS.release()
 
     try:
         return _POOL.submit(work)
     except BaseException:
         _SLOTS.release()
+        _ACOUSTIC_SLOTS.release()
         raise
