@@ -363,3 +363,22 @@
 @media(max-width:400px){
   .meeting-detail-scroll .meeting-review-tools button{font-size:10px}
 }
+
+
+/* Evidence jump: illuminate the canonical transcript turn without changing text. */
+.meeting-route .meeting-primary .paragraph.paragraph-highlighted{
+  background:#fff8ef;
+  outline:1px solid #f0ceab;
+  border-radius:10px;
+  padding-left:12px;
+  padding-right:12px;
+}
+.meeting-route .review-speaker-list button.active{
+  border-color:#eab778;
+  background:#fff3e7;
+}
+.meeting-route .meeting-selected-tool .speaker-contribution{
+  border-top:1px solid #edeae4;
+  padding-top:16px;
+  margin-top:4px;
+}
