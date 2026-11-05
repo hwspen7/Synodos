@@ -42,3 +42,10 @@ test('voice recognition changes do not change recording and diarization controls
     'saveMeeting()', 'applySpeechSettings()', 'openIdentityEvidence',
   ]) assert.ok(page.includes(critical), critical)
 })
+
+test('speaker library exposes enrollment eligibility without claiming verification', () => {
+  const speakerPage = read('src/pages/SpeakersPage.vue')
+  assert.match(speakerPage, /Auto-match eligible/)
+  assert.match(speakerPage, /Needs a clean CAM\+\+ sample/)
+  assert.match(speakerPage, /vector\.duration_s >= 2/)
+})
