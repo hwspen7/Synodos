@@ -32,7 +32,7 @@ const changes = computed(() => {
 
 <template>
   <section class="phase07-status" aria-label="Recording quality diagnostics">
-    <span class="phase07-tag">PHASE 07</span>
+    <span class="phase07-tag">ENGINE STATUS</span>
     <span :title="asrModel || ''">ASR {{ asrEngine || 'unknown' }}</span>
     <span>Speakers {{ diarizationMode || 'cluster' }}</span>
     <span :class="['phase07-backlog', `is-${backlogStatus}`]" role="status">
@@ -52,9 +52,9 @@ const changes = computed(() => {
 
 <style scoped>
 .phase07-status { display:flex; gap:.7rem; align-items:center; flex-wrap:wrap; padding:.55rem .85rem;
-  margin:.5rem 0 1rem; border:1px solid var(--border, #ccd1d9); border-radius:12px;
-  background:var(--surface, transparent); font-size:.78rem; opacity:.94; }
-.phase07-tag { font-weight:700; letter-spacing:.08em; }
+  margin:.5rem 0 1rem; border:1px solid #f0dfcd; border-radius:12px;
+  background:#fffaf5; font-size:.75rem; opacity:1; }
+.phase07-tag { font-weight:760; letter-spacing:.06em; color:#a54e00; }
 .phase07-backlog.is-watch { font-weight:600; }
 .phase07-backlog.is-high,.phase07-caution { font-weight:700; color:var(--danger, #b45309); }
 </style>
