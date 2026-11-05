@@ -172,6 +172,8 @@ class SpeakerStore:
                     "created_at": now,
                     "short": bool(v.get("short", False)),
                 })
+            if not prepared:
+                return []
             prior_updated_at = s["updated_at"]
             s["vectors"].extend(prepared)
             s["updated_at"] = now
