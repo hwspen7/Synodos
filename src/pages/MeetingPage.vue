@@ -218,7 +218,7 @@ function applyTranscript(msg: ServerTranscript): void {
     segments: msg.segments.length,
     paragraphs: buildTranscriptParagraphs(expandContentFirstSegments(
       segs, Boolean(translationTarget.value),
-    )).length,
+    ), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value }).length,
   }
   void scrollIfNeeded()
 }
@@ -765,6 +765,9 @@ onBeforeUnmount(() => stopInternal())
         <span>Language {{ language === 'auto' ? 'Auto' : language.toUpperCase() }}</span>
         <span>Translation {{ translationTarget || 'Off' }}</span>
         <span v-if="serverInfo">ASR {{ serverInfo.asr_engine }}</span>
+        <span v-if="serverInfo?.diarization_mode === 'single'">Speaker mode: Single</span>
+        <span v-else-if="serverInfo?.independent_diarization === 'nemotron3'">Speaker model requested: Nemotron3</span>
+        <span v-else-if="serverInfo">Speaker model: CAM++</span>
         <span v-if="durableSeconds !== null">Saved audio {{ durableSeconds.toFixed(1) }}s</span>
       </div>
       <div class="workspace-export-tools">
@@ -887,9 +890,8 @@ onBeforeUnmount(() => stopInternal())
           <div class="para-head">
             <span class="speaker-dot" :style="{ background: para.color }"></span>
             <span class="speaker-name">{{ para.speaker_name || `Speaker ${para.speaker_id}` }}</span>
-            <span v-if="para.segmentIds.length > 1" class="seg-count">
-              {{ para.segmentIds.length }} segments
-            </span>
+            <!-- Caption chunk count stays internal; a badge next to Speaker 1
+                 looked like a phantom Speaker 12 or Speaker 13. -->
             <span class="para-time">{{ formatTime(para.start_ms) }} \u2013 {{ formatTime(para.end_ms) }}</span>
           </div>
           <div class="transcript-utterance-lines">
