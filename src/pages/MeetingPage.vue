@@ -846,7 +846,15 @@ onBeforeUnmount(() => stopInternal())
       {{ selectedWithoutVoiceprints.length }} selected participant(s) have no voiceprints. Automatic identification is not available for these people.
       <RouterLink to="/speakers">Manage voiceprints</RouterLink>
     </p>
-    <p v-if="error" class="error-banner" role="alert">{{ error }}</p>
+    <section v-if="error" class="meeting-action-notice" role="alert">
+      <div class="notice-symbol"><AppIcon name="alert" :size="19" /></div>
+      <div class="notice-copy"><strong>Recording needs attention</strong><p>{{ error }}</p></div>
+      <div class="notice-actions">
+        <button type="button" @click="showAdvancedControls = true">Review settings</button>
+        <button type="button" @click="showRecordings = true; loadRecordings()">Open recordings</button>
+        <button type="button" class="notice-dismiss" aria-label="Dismiss alert" @click="error = ''"><AppIcon name="x" :size="15" /></button>
+      </div>
+    </section>
     <p v-if="untranslatedCount > 0" class="hint-text warn-text" role="status">
       {{ untranslatedCount }} segment(s) have no available translation; original text is shown.
     </p>
