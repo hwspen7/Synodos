@@ -236,6 +236,85 @@ class RealtimeSubtitleContracts(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertGreater(calls[-1], int(sr * 2.70))
 
+    def test_whisper_and_hybrid_retire_the_same_settled_voice_island(self):
+        # Regression: previous hybrid-only protection did not run under the
+        # default Whisper engine, allowing old voice-off phonemes to be
+        # decoded again in a later rolling inference window.
+        for engine in ("whisper", "hybrid"):
+            with self.subTest(engine=engine):
+                proc, models, _ = self.make_processor(engine=engine)
+                sr = proc.settings.sample_rate
+                proc.buffer.append(np.full(sr * 8, .03, dtype=np.float32))
+                offsets = []
+
+                def transcribe(audio, **kwargs):
+                    offsets.append(proc.buffer.start_offset())
+                    if proc.buffer.start_offset() < int(sr * 2.70):
+                        return Recognition(
+                            utterances=(Utterance(
+                                "Hey, how are you, man?", 1000, 2000, "en"
+                            ),),
+                            language="en", speech_detected=True,
+                            speech_intervals_ms=((900, 2750),),
+                        )
+                    return Recognition(engine=engine, speech_detected=False)
+
+                models.recognize_multilingual = transcribe
+                with patch("sessions.processor.submit_speaker_analysis",
+                           return_value=None):
+                    proc._cycle(final=False)
+                    self.assertEqual(len(proc.segments), 1)
+                    self.assertGreaterEqual(
+                        proc.buffer.start_offset(), int(sr * 2.80),
+                    )
+                    proc.buffer.append(np.full(sr * 2, .03, dtype=np.float32))
+                    proc._cycle(final=False)
+                self.assertEqual(len(proc.segments), 1)
+                self.assertEqual(len(offsets), 2)
+                self.assertGreater(offsets[-1], int(sr * 2.70))
+
+    def test_whisper_digital_silence_cannot_publish_fabricated_words(self):
+        proc, models, events = self.make_processor(engine="whisper")
+        sr = proc.settings.sample_rate
+        proc.buffer.append(np.zeros(sr * 9, dtype=np.float32))
+        models.text = "Amen."
+        with patch("sessions.processor.submit_speaker_analysis") as speaker:
+            self.assertFalse(proc._cycle(final=False))
+        self.assertEqual(proc.segments, [])
+        self.assertFalse(any(event["type"] == "partial" for event in events))
+        speaker.assert_not_called()
+
+    def test_whisper_preserves_active_vad_turn_until_voice_off(self):
+        proc, models, _ = self.make_processor(engine="whisper")
+        sr = proc.settings.sample_rate
+        proc.buffer.append(np.full(sr * 8, .03, dtype=np.float32))
+        models.recognize_multilingual = lambda *args, **kwargs: Recognition(
+            utterances=(Utterance("I am still talking.", 1000, 2000, "en"),),
+            language="en", speech_detected=True,
+            speech_intervals_ms=((900, 7800),),
+        )
+        with patch("sessions.processor.submit_speaker_analysis",
+                   return_value=None):
+            self.assertFalse(proc._cycle(final=False))
+        self.assertEqual(proc.segments, [])
+
+    def test_whisper_keeps_new_short_reply_island(self):
+        proc, models, _ = self.make_processor(engine="whisper")
+        sr = proc.settings.sample_rate
+        proc.buffer.append(np.full(sr * 8, .03, dtype=np.float32))
+        models.recognize_multilingual = lambda *args, **kwargs: Recognition(
+            utterances=(
+                Utterance("I am here.", 1000, 2000, "en"),
+                Utterance("Yes.", 2600, 7400, "en"),
+            ), language="en", speech_detected=True,
+            speech_intervals_ms=((900, 2750), (7000, 7700)),
+        )
+        with patch("sessions.processor.submit_speaker_analysis",
+                   return_value=None):
+            proc._cycle(final=False)
+        self.assertEqual(len(proc.segments), 1)
+        self.assertLessEqual(proc.buffer.start_offset(), sr * 2)
+
     def test_speech_island_with_pending_reply_not_trimmed(self):
         processor, models, events = self.make_processor(engine="hybrid")
         sr = processor.settings.sample_rate
