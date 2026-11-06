@@ -68,7 +68,6 @@ export interface TranscriptSegment {
   caption_projection_status?: string
   speaker_diarization_source?: string
   speaker_acoustic_channel?: number | null
-  speaker_channel_gate_reason?: string | null
   speaker_acoustic_stream_start?: number | null
   speaker_continuity_id?: number
   speaker_final_resolution_status?: string
@@ -239,7 +238,6 @@ export interface MeetingSegment {
   caption_projection_status?: string
   speaker_diarization_source?: string
   speaker_acoustic_channel?: number | null
-  speaker_channel_gate_reason?: string | null
   speaker_acoustic_stream_start?: number | null
   speaker_continuity_id?: number
   speaker_final_resolution_status?: string
