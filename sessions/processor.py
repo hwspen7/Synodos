@@ -68,6 +68,7 @@ from sessions.corroborated_speaker_channels import CorroboratedSpeakerChannels
 from sessions.speaker_cluster_birth import gate_new_cluster_births
 from sessions.short_turn_identity import recover_short_turn_identity
 from sessions.speaker_partition_evidence import consistent_partition_embedding
+from sessions.speaker_resolution import preserve_supported_camplus
 from speech.acoustic_timeline import AcousticTimeline
 from speech.diarization import resolve_diarization_mode
 from speech.turn_integrity import valid_turn_partition
@@ -2172,13 +2173,28 @@ class SessionProcessor(threading.Thread):
                             if published is not None:
                                 item["speaker_status"] = "voice_reuse_confirmed"
                         if published is None:
-                            # An uncorroborated acoustic channel is unknown,
-                            # never a new person based on a CAM++ cluster ID.
-                            item["speaker_id"] = -1
-                            item["speaker_name"] = "Unidentified Speaker"
-                            item["speaker_status"] = "speaker_birth_pending"
-                            item["speaker_diarization_source"] = "nemotron3_uncertain"
-                            self._independent_published[int(item["id"])] = -1
+                            if preserve_supported_camplus(source):
+                                # A new raw channel is not sufficient reason
+                                # to erase an independently supported CAM++
+                                # speaker identity. Keep it provisional and
+                                # leave the final projection in CAM++'s hands.
+                                item["speaker_status"] = "acoustic_provisional"
+                                item["speaker_diarization_source"] = (
+                                    "camplus_independent_unresolved"
+                                )
+                                source["speaker_diarization_source"] = (
+                                    "camplus_independent_unresolved"
+                                )
+                            else:
+                                # No supported voice evidence from either
+                                # backend. This is an honest unknown.
+                                item["speaker_id"] = -1
+                                item["speaker_name"] = "Unidentified Speaker"
+                                item["speaker_status"] = "speaker_birth_pending"
+                                item["speaker_diarization_source"] = (
+                                    "nemotron3_uncertain"
+                                )
+                                self._independent_published[int(item["id"])] = -1
                             continue
                         item["speaker_id"] = published
                         item["speaker_name"] = f"Speaker {published}"
@@ -2225,6 +2241,14 @@ class SessionProcessor(threading.Thread):
                             item["speaker_status"] = "known_voice_recovered"
                             item["speaker_diarization_source"] = "camplus_voice_reuse"
                             self._independent_published[int(item["id"])] = matched_known
+                        elif preserve_supported_camplus(source):
+                            item["speaker_status"] = "acoustic_provisional"
+                            item["speaker_diarization_source"] = (
+                                "camplus_independent_unresolved"
+                            )
+                            source["speaker_diarization_source"] = (
+                                "camplus_independent_unresolved"
+                            )
                         else:
                             item["speaker_id"] = -1
                             item["speaker_name"] = "Unidentified Speaker"
