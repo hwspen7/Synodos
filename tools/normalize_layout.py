@@ -152,7 +152,7 @@ def replace_all(content: str, values: dict[str, str]) -> str:
     # A single regex pass prevents rewriting already-rewritten import paths.
     keys = sorted(values, key=len, reverse=True)
     pattern = re.compile("|".join(
-        r"(?<![\\w])" + re.escape(key) + r"(?![\\w])" for key in keys
+        r"(?<![\w])" + re.escape(key) + r"(?![\w])" for key in keys
     ))
     content = pattern.sub(lambda match: values[match.group(0)], content)
     # Legacy 'from tools import module' imports cannot follow a file move
