@@ -104,6 +104,15 @@ class CorroboratedSpeakerChannels:
         vector = _unit(embedding)
         existing = self._channels.existing(channel)
         if existing is not None:
+            own = [
+                float(np.dot(vector, reference))
+                for reference in self._references.get(existing, [])
+                if vector is not None and vector.shape == reference.shape
+            ]
+            if own and max(own) < self.distinct_voice_max_similarity:
+                # The model reused an existing channel for acoustically
+                # incompatible speech. Never force the old person's label.
+                return None
             scores = self._scores(vector) if vector is not None else []
             # A strongly incompatible voice on an already-mapped channel
             # is unknown rather than forcibly assigned to that person.
