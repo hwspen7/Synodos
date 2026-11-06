@@ -56,7 +56,9 @@ def recover_short_turn_identity(
         emb = _unit(segment.get("emb"))
         sid = segment.get("speaker_id")
         short_probe = (
-            segment.get("speaker_evidence_status") == "short_probe"
+            segment.get("speaker_evidence_status") in (
+                "short_probe", "short_probe_known_voice"
+            )
             and bool(segment.get("speaker_uncertain"))
         )
         if (short_probe and emb is not None
