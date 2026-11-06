@@ -13,7 +13,8 @@ from sessions.audio_buffer import AudioBuffer
 from core.config import Settings
 from sessions.processor import SessionProcessor
 from sessions.channels.provisional_speakers import (
-    PROVISIONAL_EXISTING, PROVISIONAL_NEW, assign_provisional_speakers,
+    ATTRIBUTION_DEFERRED, PROVISIONAL_EXISTING, PROVISIONAL_NEW,
+    assign_provisional_speakers,
 )
 from speech.config import SpeechSettings
 from storage.meetings import MeetingStore
@@ -103,6 +104,54 @@ class ProvisionalSpeakerTests(unittest.TestCase):
         self.assertEqual(items[2]["speaker_final_resolution_status"], PROVISIONAL_EXISTING)
         self.assertEqual(items[3]["speaker_final_resolution_status"], PROVISIONAL_NEW)
 
+    def test_unsupported_short_turn_does_not_allocate_a_new_speaker(self):
+        items = [
+            row(27, 72000, 73000, 2),
+            row(29, 76000, 77000, speaker_evidence_status="short_turn",
+                language="zh", language_confidence=.99),
+            row(28, 77000, 80000, 2),
+        ]
+        self.assertEqual(assign_provisional_speakers(items, previous={29: 5}), {})
+        self.assertEqual(items[1]["speaker_id"], -1)
+        self.assertEqual(items[1]["speaker_final_resolution_status"], ATTRIBUTION_DEFERRED)
+        items[1].update(channel(2))
+        self.assertEqual(assign_provisional_speakers(items, channel_labels={2: 2}), {29: 2})
+
+    def test_confident_language_can_corroborate_only_the_acoustic_winner(self):
+        def reference(i, start, label, language):
+            return row(i, start, start + 1300, label,
+                       speaker_evidence_status="turn_voiceprint",
+                       language=language, language_confidence=.97)
+
+        def assign(probe, language, confidence):
+            items = [
+                reference(1, 0, 2, "zh"),
+                reference(2, 1500, 2, "zh"),
+                reference(3, 3000, 3, "en"),
+                reference(4, 4500, 3, "en"),
+                row(5, 6200, 7000, language=language, language_confidence=confidence),
+            ]
+            assign_provisional_speakers(items, voice_embeddings={
+                1: [1, 0], 2: [1, 0], 3: [.995, .10], 4: [.995, .10], 5: probe,
+            })
+            return items[-1]["speaker_id"]
+
+        self.assertEqual(assign([.8, -.6], "zh", .99), 2)
+        self.assertEqual(assign([.8, -.6], "en", .99), 1)
+        self.assertEqual(assign([.8, -.6], "zh", .70), 1)
+        self.assertEqual(assign([.6, -.8], "zh", .99), 1)
+
+    def test_saved_unsupported_placeholder_is_deferred_without_erasing_text(self):
+        item = persisted(row(1, 0, 800, 5, speaker_evidence_status="short_turn",
+                             speaker_final_resolution_status=PROVISIONAL_NEW))
+        with tempfile.TemporaryDirectory() as root:
+            store = MeetingStore(Path(root))
+            store.save_state({"id": "short-turn", "segments": [item]})
+            shown = store.list_segments("short-turn")[0]
+            self.assertEqual(shown["speaker_final_resolution_status"], ATTRIBUTION_DEFERRED)
+            self.assertEqual(shown["text"], item["text"])
+            self.assertEqual(store.load_state("short-turn")["segments"][0]["speaker_id"], 5)
+
     def test_clearing_enrolled_identity_returns_a_numbered_caption(self):
         from api.speech_features import SpeakerCorrectionRequest, edit_segment_speaker
 
@@ -127,6 +176,23 @@ class ProvisionalSpeakerTests(unittest.TestCase):
             self.assertEqual([item["speaker_id"] for item in shown], [3, 1])
             self.assertEqual(exported["transcript"]["segments"], shown)
             self.assertEqual(store.load_state("legacy-caption")["segments"][1]["speaker_id"], -1)
+
+    def test_resume_does_not_restore_unsupported_short_speaker(self):
+        with patch("sessions.processor.load_settings", return_value=SpeechSettings()):
+            processor = SessionProcessor("resume", AudioBuffer(16000), Settings(),
+                                         object(), asyncio.Queue())
+        item = persisted(row(29, 76000, 77000, 5, speaker_evidence_status="short_turn",
+                             speaker_final_resolution_status=PROVISIONAL_NEW,
+                             speaker_uncertain=True))
+        processor.load_state({"segments": [item]})
+        events = []
+        processor._put = events.append
+        processor._rebuild_and_push()
+        live = next(event["segments"][0] for event in events if event["type"] == "transcript")
+        for segment in (live, processor.snapshot_state()["segments"][0]):
+            self.assertEqual(segment["speaker_id"], -1)
+            self.assertEqual(segment["speaker_final_resolution_status"], ATTRIBUTION_DEFERRED)
+            self.assertEqual(segment["text"], item["text"])
 
     def test_resume_preserves_display_id_without_seeding_voice_clustering(self):
         settings = Settings()

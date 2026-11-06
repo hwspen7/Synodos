@@ -8,9 +8,11 @@ from collections.abc import Iterable, Mapping
 import numpy as np
 
 from speech.audio.acoustic_timeline import normalize
+from speech.supported_languages import PHASE1_LANGUAGE_SET
 
 PROVISIONAL_EXISTING = "existing_speaker_provisional"
 PROVISIONAL_NEW = "new_speaker_provisional"
+ATTRIBUTION_DEFERRED = "speaker_attribution_deferred"
 PROVISIONAL_RESOLUTIONS = frozenset({PROVISIONAL_EXISTING, PROVISIONAL_NEW})
 
 _CHANNEL_SOURCES = frozenset({
@@ -36,6 +38,28 @@ def _channel(item: dict) -> int | None:
     return channel
 
 
+def unsupported_short_turn(item: dict) -> bool:
+    return (
+        item.get("speaker_evidence_status") == "short_turn"
+        and not item.get("speaker_embedding_available")
+        and item.get("emb") is None
+        and _channel(item) is None
+    )
+
+
+def _defer_attribution(item: dict) -> None:
+    item.update(speaker_id=-1, speaker_name="", speaker_status="uncertain",
+                speaker_uncertain=True, speaker_final_resolution_status=ATTRIBUTION_DEFERRED)
+
+
+def _reliable_language(item: dict) -> str | None:
+    language = item.get("language")
+    confidence = item.get("language_confidence")
+    return language if (isinstance(language, str) and language in PHASE1_LANGUAGE_SET
+                        and isinstance(confidence, (int, float))
+                        and 0.90 <= confidence <= 1.0) else None
+
+
 def assign_provisional_speakers(
     items: list[dict],
     *,
@@ -47,9 +71,9 @@ def assign_provisional_speakers(
     """Complete the display projection after all authoritative decisions.
 
     Reuse a uniquely supported channel or a brief, uninterrupted bridge
-    between the same speaker. For everything else, allocate meeting-local
-    placeholders. Placeholders never enter the channel mapper or voice
-    clustering, and the original evidence fields are retained.
+    between the same speaker. Hold unsupported short turns for further
+    evidence. Remaining provisional labels never enter the channel mapper
+    or voice clustering, and the original evidence fields are retained.
     """
     previous = previous or {}
     voice_embeddings = voice_embeddings or {}
@@ -88,7 +112,8 @@ def assign_provisional_speakers(
             vector = normalize(voice_embeddings.get(item["id"], item.get("emb")))
             if vector is not None:
                 references = voice_references[label]
-                references.append((item["start_ms"], item["end_ms"], vector))
+                references.append((item["start_ms"], item["end_ms"], vector,
+                                   _reliable_language(item)))
                 if len(references) > 6:
                     del references[2]
 
@@ -115,6 +140,7 @@ def assign_provisional_speakers(
         voice = voice_embeddings.get(item["id"], item.get("emb"))
         voice_eligible = (
             item.get("speaker_acoustic_channel") is None
+            and item.get("speaker_channel_gate_reason") not in _CHANNEL_CONFLICTS
             and not item.get("overlap_intervals_ms")
             and item.get("speaker_evidence_status") != "multi_turn_acoustic_evidence_only"
             and item.get("speaker_activity_status") not in (
@@ -141,6 +167,11 @@ def assign_provisional_speakers(
                 and 0 <= right["start_ms"] - item["end_ms"] <= 450
                 and 0 < item["end_ms"] - item["start_ms"] <= 1200):
             apply(item, established[left["id"]], PROVISIONAL_EXISTING)
+            last_run = None
+            continue
+
+        if voice is None and unsupported_short_turn(item):
+            _defer_attribution(item)
             last_run = None
             continue
 
@@ -176,19 +207,43 @@ def _match_voice(item: dict, raw: object, references: dict) -> int | None:
     probe = normalize(raw)
     if probe is None:
         return None
-    ranked = sorted(
-        ((max((float(np.dot(probe, vec)) for start, end, vec in turns
-               if vec.shape == probe.shape
-               and (end <= item["start_ms"] or start >= item["end_ms"])),
-              default=-1.0), label)
-         for label, turns in references.items()),
-        reverse=True,
-    )
-    # Match the production strong-reuse cosine floor and require separation
-    # from the runner-up. These are acoustic scores, not probabilities.
-    score, label = ranked[0]
-    if score >= 0.78 and (len(ranked) == 1 or score - ranked[1][0] >= 0.10):
+    ranked = []
+    for label, turns in references.items():
+        eligible = [(float(np.dot(probe, vec)), start, end, language)
+                    for start, end, vec, language in turns
+                    if vec.shape == probe.shape
+                    and (end <= item["start_ms"] or start >= item["end_ms"])]
+        if eligible:
+            ranked.append((max(row[0] for row in eligible), label, eligible))
+    ranked.sort(key=lambda row: (-row[0], row[1]))
+    if not ranked or ranked[0][0] < 0.78:
+        return None
+    score, label, eligible = ranked[0]
+    if len(ranked) == 1 or score - ranked[1][0] >= 0.10:
         return label
+
+    # Language can corroborate the acoustic winner in a narrow margin band.
+    # Use only consistent, independently timed high-confidence references.
+    language = _reliable_language(item)
+    if language is None or score - ranked[1][0] < 0.06:
+        return None
+    if _reference_language(eligible) != language:
+        return None
+    for other_score, _, other in ranked[1:]:
+        if score - other_score >= 0.10:
+            break
+        if _reference_language(other) in (None, language):
+            return None
+    return label
+
+
+def _reference_language(eligible: list) -> str | None:
+    languages = {row[3] for row in eligible if row[3] is not None}
+    if len(languages) != 1:
+        return None
+    intervals = [(start, end) for _, start, end, language in eligible if language is not None]
+    if min(end for _, end in intervals) <= max(start for start, _ in intervals):
+        return next(iter(languages))
     return None
 
 
@@ -197,7 +252,11 @@ def numbered_saved_segments(
 ) -> list[dict]:
     """Project old saved transcripts without rewriting their stored records."""
     if all(_positive(item.get("speaker_id")) and item.get("speaker_name")
-           and item["speaker_name"] != "Unidentified Speaker" for item in segments):
+           and item["speaker_name"] != "Unidentified Speaker"
+           and item.get("speaker_final_resolution_status") != ATTRIBUTION_DEFERRED
+           and not (item.get("speaker_final_resolution_status") == PROVISIONAL_NEW
+                    and unsupported_short_turn(item))
+           for item in segments):
         return segments
     rows = [
         dict(item,
@@ -206,6 +265,11 @@ def numbered_saved_segments(
              speaker_embedding_available=item.get("emb") is not None)
         for item in segments
     ]
+    for item in rows:
+        if (item.get("speaker_final_resolution_status") == ATTRIBUTION_DEFERRED
+                or (item.get("speaker_final_resolution_status") == PROVISIONAL_NEW
+                    and unsupported_short_turn(item))):
+            _defer_attribution(item)
     assign_provisional_speakers(rows, reserved_labels=reserved_labels)
     fields = ("speaker_id", "speaker_name", "speaker_status",
               "speaker_uncertain", "speaker_final_resolution_status")

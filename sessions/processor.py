@@ -70,7 +70,8 @@ from sessions.translation_tasks import (
 from sessions.identity.speaker_tasks import submit_speaker_analysis, submit_acoustic_window
 from sessions.identity.speaker_evidence import speaker_evidence
 from sessions.channels.provisional_speakers import (
-    PROVISIONAL_NEW, PROVISIONAL_RESOLUTIONS, assign_provisional_speakers, numbered_saved_segments,
+    ATTRIBUTION_DEFERRED, PROVISIONAL_NEW, PROVISIONAL_RESOLUTIONS,
+    assign_provisional_speakers, numbered_saved_segments, unsupported_short_turn,
 )
 from sessions.identity.registered_identity import match_saved_voice
 from sessions.channels.corroborated_speaker_channels import CorroboratedSpeakerChannels
@@ -2616,7 +2617,8 @@ class SessionProcessor(threading.Thread):
             reason = source.get("speaker_final_resolution_status")
             label = item["speaker_id"]
             if ((type(label) is not int or label <= 0) and saved is not None
-                    and (reason != PROVISIONAL_NEW or saved not in occupied)):
+                    and (reason != PROVISIONAL_NEW
+                         or (saved not in occupied and not unsupported_short_turn(source)))):
                 item.update(speaker_id=saved, speaker_name=source["speaker_name"],
                             speaker_status="uncertain", speaker_uncertain=True,
                             speaker_final_resolution_status=reason)
@@ -2633,7 +2635,8 @@ class SessionProcessor(threading.Thread):
             reserved_labels=getattr(self, "_participant_label_map", {}).values(),
         )
         for item in items:
-            if item["id"] in self._provisional_published:
+            if (item["id"] in self._provisional_published
+                    or item["speaker_final_resolution_status"] == ATTRIBUTION_DEFERRED):
                 self._fused_final_status[item["id"]].update(
                     speaker_status=item["speaker_status"],
                     speaker_name=item["speaker_name"],

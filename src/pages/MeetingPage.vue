@@ -109,7 +109,7 @@ const reviewSpeakers = computed(() => {
   const byId = new Map<number, { id: number; name: string; segments: number; firstSegmentId: number }>()
   const ordered = [...segments.value].sort((a, b) => a.start_ms - b.start_ms || a.id - b.id)
   for (const segment of ordered) {
-    if (!segment.text.trim()) continue
+    if (!segment.text.trim() || segment.speaker_final_resolution_status === 'speaker_attribution_deferred') continue
     const name = segment.speaker_name || (segment.speaker_id > 0
       ? `Speaker ${segment.speaker_id}` : 'Unidentified Speaker')
     const previous = byId.get(segment.speaker_id)
@@ -189,10 +189,13 @@ const statusClass = computed(() => {
 })
 
 /** Show each report speaker separately when independent acoustic evidence is available. */
-const reportedSegments = computed(() => projectReportedSpeakers(segments.value))
+const publishedSegments = computed(() => segments.value.filter(segment =>
+  segment.speaker_final_resolution_status !== 'speaker_attribution_deferred',
+))
+const reportedSegments = computed(() => projectReportedSpeakers(publishedSegments.value))
 const paragraphs = computed<Paragraph[]>(() =>
   buildTranscriptParagraphs(reportedSegments.value ?? expandContentFirstSegments(
-    segments.value, translationTarget.value,
+    publishedSegments.value, translationTarget.value,
   ), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value,
     channelHeadings: reportedSegments.value !== null,
     singlePrimarySpeaker: reportedSegments.value === null }),
