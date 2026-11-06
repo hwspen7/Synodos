@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 _ROOT = tempfile.TemporaryDirectory(prefix="meeting-test-")
 for _env in ("MEETINGS_DIR", "SPEAKERS_DIR", "HOTWORDS_DIR"):
@@ -48,6 +50,21 @@ class APIContractTests(unittest.TestCase):
             expected <= actual,
             f"Missing operations: {sorted(expected - actual)}",
         )
+
+    def test_health_reports_flat_speech_engine_and_model(self) -> None:
+        """The live /api/health handler must not treat settings as a module."""
+        from api.health import health
+        from speech.config import SpeechSettings
+
+        speech_settings = SpeechSettings(engine="whisper", model="large-v3")
+        with patch("api.health.load_speech_settings", return_value=speech_settings):
+            payload = asyncio.run(health())
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["realtime"]["asr_engine"], "whisper")
+        self.assertEqual(payload["realtime"]["asr_model"], "large-v3")
+        self.assertIn("active_sessions", payload)
+        self.assertIn("infrastructure", payload)
 
     def test_websocket_and_openapi(self) -> None:
         """Check the websocket declaration without assuming flattened app.routes."""

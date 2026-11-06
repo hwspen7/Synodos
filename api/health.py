@@ -18,7 +18,7 @@ async def health() -> dict:
         "status": "ok",
         "realtime": {
             "source_revision": os.getenv("MEETING_SOURCE_REVISION", ""),
-            "asr_engine": speech.asr.engine,
+            "asr_engine": speech.engine,
             "asr_model": speech.model,
             "independent_diarization": os.getenv(
                 "MEETING_INDEPENDENT_DIARIZATION", "off"
