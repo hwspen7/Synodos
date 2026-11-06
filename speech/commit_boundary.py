@@ -63,8 +63,8 @@ def completed_island_drop(
     published_intervals_ms: Iterable[tuple[int, int]],
     held_intervals_ms: Iterable[tuple[int, int]] = (),
     sample_rate: int = 16000,
-    max_suffix_ms: int = 850,
-    minimum_coverage: float = 0.50,
+    max_suffix_ms: int = 250,
+    minimum_coverage: float = 0.85,
     settle_ms: int = 600,
     pad_ms: int = 80,
 ) -> int:
@@ -140,6 +140,7 @@ def unclosed_voice_turn(
     """Hold a candidate while its supporting VAD island is still open."""
     for left, right in intervals_ms:
         a, b = int(left), int(right)
-        if a < end_ms and b > start_ms and b >= audio_ms - settle_ms:
+        if (a < end_ms and b > start_ms and b >= audio_ms - settle_ms
+                and b - end_ms <= settle_ms):
             return True
     return False

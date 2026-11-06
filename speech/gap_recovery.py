@@ -11,6 +11,8 @@ from collections.abc import Callable, Iterable, Mapping
 
 import numpy as np
 
+from speech.language import normalize_language
+from speech.supported_languages import PHASE1_LANGUAGE_SET
 from speech.contracts import Utterance, Word
 from speech.quality_guard import speech_intervals, verify_utterances
 
@@ -137,6 +139,12 @@ def recover_missing_voice(
                     language if language not in ("auto", "und", "")
                     else str(getattr(info, "language", "und") or "und")
                 )
+                probability = getattr(info, "language_probability", None)
+                if language in ("auto", "und", "") and (
+                    normalize_language(detected) not in PHASE1_LANGUAGE_SET
+                    or (isinstance(probability, (int, float)) and probability < 0.50)
+                ):
+                    continue
                 candidates = verify_utterances(
                     list(chunks), local, clip_b - clip_a, detected,
                     preserve_disputed_text=True,

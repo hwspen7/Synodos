@@ -681,14 +681,20 @@ async function scrollIfNeeded(): Promise<void> {
   if (el) el.scrollTop = el.scrollHeight
 }
 
-function formatTime(ms: number): string {
+function formatTime(ms: number, precise = false): string {
   const total = Math.max(0, Math.floor(ms / 1000))
   const h = Math.floor(total / 3600)
   const m = Math.floor((total % 3600) / 60)
   const s = total % 60
   const mm = String(m).padStart(2, '0')
   const ss = String(s).padStart(2, '0')
-  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
+  const time = h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
+  return precise ? time + '.' + String(Math.max(0, Math.floor(ms)) % 1000).padStart(3, '0') : time
+}
+
+function formatCaptionTime(start: number, end: number): string {
+  const precise = end > start && Math.floor(start / 1000) === Math.floor(end / 1000)
+  return formatTime(start, precise) + ' – ' + formatTime(end, precise)
 }
 
 async function loadRecordings(): Promise<void> {

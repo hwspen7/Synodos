@@ -1,6 +1,5 @@
 """Conservative time-aligned ASR deduplication."""
 from __future__ import annotations
-import re
 import unicodedata
 from difflib import SequenceMatcher
 
@@ -25,59 +24,51 @@ def is_temporal_duplicate(start: int, end: int, text: str, confirmed: list[dict]
             return True
     return False
 
+def _words_only(text: str) -> str:
+    return " ".join("".join(
+        ch if ch.isalnum() or ch.isspace() else " "
+        for ch in normalized_text(text)
+    ).split())
+
+
 def is_adjacent_tail_echo(
     start: int, end: int, text: str, confirmed: list[dict],
     *, sample_rate: int = 16000, timestamp_quality: str = "segment",
 ) -> bool:
-    """Flag a tiny unaligned repeat of the *previous sentence's last word*.
-
-    A new recording of a valid short reply must not be deleted simply
-    because its words repeat a past utterance. This narrow rule only
-    applies to unaligned single-word echoes at the same sound boundary.
-    It does not attempt unsafe translation/transliteration matching.
-    """
-    if (sample_rate <= 0 or start < 0 or end <= start
-            or end - start > round(1.05 * sample_rate)):
+    """Suppress a repeated suffix only when both records own the same audio."""
+    if sample_rate <= 0 or start < 0 or not 0 < end - start <= 1.05 * sample_rate:
         return False
-    # Only one short Latin word; full sentences and CJK code switching
-    # cannot be judged duplicative by a text suffix alone.
-    fragment = re.findall(r"[a-z0-9]+", unicodedata.normalize(
-        "NFKC", str(text or "")
-    ).casefold())
-    if len(fragment) != 1 or len(fragment[0]) > 14:
+    fragment = _words_only(text)
+    if not fragment or len(fragment) > 32:
         return False
     for previous in reversed(confirmed[-8:]):
-        old_start = int(previous.get("start_sample", -1))
         old_end = int(previous.get("end_sample", -1))
-        if old_start < 0 or old_end - old_start < round(0.7 * sample_rate):
+        if start >= old_end:
             continue
-        if timestamp_quality == "word":
-            # Precise, independently positioned words are preserved. Only
-            # the same previous word's *acoustic interval* can be an echo.
-            prior_words = previous.get("words") or []
-            if not prior_words:
-                continue
-            last = prior_words[-1]
-            if not isinstance(last, dict):
-                continue
-            last_start = int(last.get("start_ms", -100000)) * sample_rate // 1000
-            last_end = int(last.get("end_ms", -100000)) * sample_rate // 1000
-            base = int(previous.get("_audio_base_sample", 0))
-            last_start += base
-            last_end += base
-            if (abs(start - last_start) > round(0.18 * sample_rate)
-                    or abs(end - last_end) > round(0.23 * sample_rate)):
-                continue
-        elif (start < old_end - round(0.18 * sample_rate)
-              or start > old_end + round(0.24 * sample_rate)
-              or end > old_end + round(0.96 * sample_rate)):
+        old_start = int(previous.get("start_sample", -1))
+        base = int(previous.get("_audio_base_sample", 0))
+        # Without a prior word alignment, proximity to an utterance end
+        # cannot establish ownership of a new person's short response.
+        words = previous.get("words") or ()
+        if not words:
             continue
-        old_text = str(previous.get("text") or "").strip()
-        if not old_text.endswith((".", "?", "!", "\u3002", "\uff1f", "\uff01")):
+        suffix = []
+        try:
+            last = base + int(words[-1]["end_ms"]) * sample_rate // 1000
+        except (KeyError, TypeError, ValueError, OverflowError):
             continue
-        tokens = re.findall(
-            r"[a-z0-9]+", unicodedata.normalize("NFKC", old_text).casefold()
-        )
-        if len(tokens) >= 3 and tokens[-1] == fragment[0]:
-            return True
+        for word in reversed(words[-8:]):
+            try:
+                left = base + int(word["start_ms"]) * sample_rate // 1000
+                right = base + int(word["end_ms"]) * sample_rate // 1000
+                suffix.insert(0, str(word["text"]))
+            except (KeyError, TypeError, ValueError, OverflowError):
+                break
+            if not old_start <= left < right <= last <= old_end:
+                break
+            overlap = min(end, last) - max(start, left)
+            if (overlap >= 0.70 * max(end - start, last - left)
+                    and fragment in (_words_only("".join(suffix)),
+                                     _words_only(" ".join(suffix)))):
+                return True
     return False

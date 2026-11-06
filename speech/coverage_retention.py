@@ -20,6 +20,7 @@ def choose_safe_drop(
     attempts: dict[int, int],
     max_holds: int = 2,
     final: bool = False,
+    min_uncovered_ms: int = 1000,
 ) -> tuple[int, list[dict]]:
     """Return a drop frontier and newly exhausted reference-free voice gaps.
 
@@ -42,7 +43,7 @@ def choose_safe_drop(
         for a, b in speech_intervals_ms
     ]
     gaps = uncovered_voice_intervals(
-        regions, utterances, duration_ms, min_uncovered_ms=1000,
+        regions, utterances, duration_ms, min_uncovered_ms=min_uncovered_ms,
     )
     safe_drop = proposed_drop_samples
     exhausted = []

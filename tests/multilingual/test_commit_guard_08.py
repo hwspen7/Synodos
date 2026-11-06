@@ -31,12 +31,12 @@ class CommitGuardTests(unittest.TestCase):
         previous = [{"start_sample": 0, "end_sample": 32000, "text": "One speaker."}]
         self.assertFalse(is_temporal_duplicate(0, 32000, "Another speaker.", previous))
 
-    def test_adjacent_unaligned_tail_word_is_not_committed_twice(self):
+    def test_adjacent_unaligned_reply_is_preserved(self):
         prior = [{
             "start_sample": 40000, "end_sample": 56000,
             "text": "Who are you?",
         }]
-        self.assertTrue(is_adjacent_tail_echo(
+        self.assertFalse(is_adjacent_tail_echo(
             56000, 60500, "You.", prior
         ))
         self.assertFalse(is_adjacent_tail_echo(
@@ -61,13 +61,12 @@ class CommitGuardTests(unittest.TestCase):
             }]
         ))
 
-    def test_actual_man_echo_with_window_estimate(self):
+    def test_window_estimate_without_overlap_cannot_prove_echo(self):
         prior = [{
             "start_sample": 16000, "end_sample": 32000,
             "text": "Hi, how are you man?",
         }]
-        # Regression for the observed 00:01-00:03 two-caption artifact.
-        self.assertTrue(is_adjacent_tail_echo(
+        self.assertFalse(is_adjacent_tail_echo(
             32000, 46900, "Man.", prior, timestamp_quality="window_estimate"
         ))
         self.assertFalse(is_adjacent_tail_echo(
@@ -87,6 +86,17 @@ class CommitGuardTests(unittest.TestCase):
         self.assertFalse(is_adjacent_tail_echo(
             32600, 38800, "Man.", prior, timestamp_quality="word"
         ))
+
+    def test_multilingual_suffix_requires_same_acoustic_interval(self):
+        prior = [{
+            "start_sample": 0, "end_sample": 32000, "text": "Earlier text",
+            "words": [
+                {"text": "\u5c71", "start_ms": 1500, "end_ms": 1750},
+                {"text": "\u59c6", "start_ms": 1750, "end_ms": 2000},
+            ],
+        }]
+        self.assertTrue(is_adjacent_tail_echo(24000, 32000, "\u5c71\u59c6\u3002", prior))
+        self.assertFalse(is_adjacent_tail_echo(32000, 40000, "\u5c71\u59c6\u3002", prior))
 
     def test_full_sentence_echo_and_overlap_other_speaker_preserved(self):
         prior = [{

@@ -8,6 +8,8 @@ from __future__ import annotations
 import math
 import os
 from collections.abc import Callable, Mapping, Iterable
+from speech.language import normalize_language
+from speech.supported_languages import PHASE1_LANGUAGE_SET
 from speech.audio_windows import local_speech_regions, speech_windows
 from speech.contracts import Recognition, Utterance, Word
 from speech.quality_guard import verify_utterances, speech_intervals
@@ -53,6 +55,8 @@ def recognize_windows(
         "1", "true", "yes",
     )
     raw_model_intervals = []
+    uncertain = []
+    anchors = []
     for start, end in windows:
         local_regions = local_speech_regions(regions, start, end)
         if not local_regions:
@@ -64,18 +68,57 @@ def recognize_windows(
                 output, duration_ms=round(len(samples) * 1000 / sample_rate),
                 shift_ms=round(start * 1000 / sample_rate),
             ))
-        language = str(getattr(info, "language", "und") or "und").lower()
+        language = normalize_language(getattr(info, "language", None))
         probability = _probability(getattr(info, "language_probability", None))
-        if probability is not None and probability < unknown_threshold:
-            language = "und"
-        if language not in ("auto", "", "und"):
-            confirmed_languages.add(language)
+        local_ms = round((end - start) * 1000 / sample_rate)
         verified = verify_utterances(
-            output, local_regions, round((end - start) * 1000 / sample_rate),
-            language, preserve_disputed_text=preserve_disputed_text,
+            output, local_regions, local_ms, language,
+            preserve_disputed_text=preserve_disputed_text,
             prefer_word_bounds=prefer_word_bounds,
             allow_short_vad_supported=allow_short_vad_supported,
         )
+        if not verified:
+            continue
+        span_ms = verified[-1].end_ms - verified[0].start_ms
+        if (language in PHASE1_LANGUAGE_SET and probability is not None
+                and probability >= .75 and span_ms >= 1500):
+            anchors.append((start, end, language))
+        uncertain.append((start, end, local_regions, verified, language, probability))
+
+    retries = 0
+    for start, end, local_regions, verified, language, probability in uncertain:
+        nearby = sorted(
+            (max(0, a - end, start - b), code) for a, b, code in anchors
+            if max(0, a - end, start - b) <= 8 * sample_rate
+        )
+        context = nearby[0][1] if nearby and len({code for _, code in nearby}) == 1 else None
+        span_ms = verified[-1].end_ms - verified[0].start_ms
+        unsupported = language not in PHASE1_LANGUAGE_SET and language != "und"
+        weak = probability is not None and probability < unknown_threshold
+        abrupt_switch = (
+            context is not None and context != language and span_ms < 1200
+            and (probability is None or probability < .85)
+        )
+        if unsupported or (weak and span_ms < 1500) or abrupt_switch:
+            if context is None or retries >= 2:
+                continue
+            retries += 1
+            retry_options = dict(kwargs, language=context, multilingual=False)
+            try:
+                recovered, _ = transcribe(samples[start:end], **retry_options)
+                verified = verify_utterances(
+                    recovered, local_regions, round((end - start) * 1000 / sample_rate),
+                    context, preserve_disputed_text=preserve_disputed_text,
+                    prefer_word_bounds=prefer_word_bounds,
+                    allow_short_vad_supported=allow_short_vad_supported,
+                )
+            except Exception:
+                continue
+            language, probability = context, None
+        elif weak:
+            language = "und"
+        if verified and language != "und":
+            confirmed_languages.add(language)
         shift_ms = round(start * 1000 / sample_rate)
         for item in verified:
             words = tuple(Word(w.text, w.start_ms + shift_ms, w.end_ms + shift_ms) for w in item.words)

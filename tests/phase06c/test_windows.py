@@ -66,9 +66,15 @@ class LanguageWindowTests(unittest.TestCase):
         self.assertGreater(result.utterances[1].start_ms, result.utterances[0].start_ms)
 
     def test_low_confidence_does_not_invent_language(self):
-        result, _ = self._run([("pt", .21), ("en", .94)])
-        self.assertEqual([x.language for x in result.utterances], ["und", "en"])
-        self.assertAlmostEqual(result.utterances[0].language_confidence, .21)
+        result, n = self._run([("pt", .21), ("en", .94)])
+        self.assertEqual([x.language for x in result.utterances], ["en"])
+        self.assertEqual(n, 3)
+        self.assertTrue(result.speech_detected)
+
+    def test_contextual_retry_replaces_uncertain_words(self):
+        result, n = self._run([("pt", .21), ("en", .94), ("en", .94)])
+        self.assertEqual([x.language for x in result.utterances], ["en", "en"])
+        self.assertEqual(n, 3)
 
     def test_no_speech(self):
         result = recognize_windows([0.0]*16000, [], lambda *_a, **_k: None, {})

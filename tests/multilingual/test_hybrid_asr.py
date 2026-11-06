@@ -113,6 +113,36 @@ class HybridRoutingTests(unittest.TestCase):
         self.assertEqual(audit["qwen_accepted"], 1)
         self.assertEqual(audit["strategy"], "full_single_language_v2")
 
+    def test_v2_rejects_wrong_language_or_missing_baseline_turn(self):
+        whisper, qwen = Mock(), Mock()
+        baseline = Recognition((
+            Utterance("first", 100, 850, "fr", language_confidence=.9),
+            Utterance("second", 1000, 1750, "fr", language_confidence=.9),
+        ), "fr", speech_intervals_ms=((100, 1750),))
+        whisper.recognize.return_value = baseline
+        engine = HybridEngine(whisper, qwen, full_language_window=True)
+        for candidate in (
+            sample("wrong", "ru", 100, 1750),
+            sample("first only", "fr", 100, 850),
+        ):
+            with self.subTest(candidate=candidate):
+                qwen.recognize.return_value = candidate
+                result = engine.recognize(voiced())
+                self.assertEqual(result.utterances, baseline.utterances)
+                self.assertEqual(result.speech_intervals_ms, baseline.speech_intervals_ms)
+
+    def test_reroute_cannot_overrun_into_neighboring_text(self):
+        whisper, qwen = Mock(), Mock()
+        baseline = Recognition((
+            Utterance("english", 0, 700, "en"),
+            Utterance("french", 700, 1500, "fr", language_confidence=.95),
+        ), "mul")
+        whisper.recognize.return_value = baseline
+        qwen.recognize.return_value = sample("too long", "fr", 0, 960)
+        result = HybridEngine(whisper, qwen).recognize(voiced())
+        self.assertEqual(result.utterances, baseline.utterances)
+        self.assertEqual(len(qwen.recognize.call_args.args[0]), 12800)
+
     def test_v2_mixed_language_preserves_per_segment_routing(self):
         whisper, qwen = Mock(), Mock()
         whisper.recognize.return_value = Recognition(

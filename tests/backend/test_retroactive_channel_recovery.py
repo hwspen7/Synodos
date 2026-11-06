@@ -41,6 +41,20 @@ class ChannelBackfillTests(unittest.TestCase):
         self.original[0]["emb"] = None
         self.assertEqual(self.reconcile(), {})
 
+    def test_strong_missing_embedding_on_corroborated_channel_is_provisional(self):
+        self.original[0]["emb"] = None
+        self.projected[0]["speaker_channel_gate_reason"] = "missing_voice_embedding"
+        self.assertEqual(self.reconcile(), {28: 2})
+        self.assertTrue(self.projected[0]["speaker_uncertain"])
+
+    def test_conflicting_timeline_embedding_blocks_acoustic_backfill(self):
+        self.original[0]["emb"] = None
+        self.projected[0]["speaker_channel_gate_reason"] = "missing_voice_embedding"
+        self.assertEqual(backfill_confirmed_channels(
+            self.projected, self.original, {3: 2}, lambda voice: 1,
+            effective_embeddings={28: [1, 0]},
+        ), {})
+
     def test_wrong_voice_identity_cannot_recover(self):
         self.assertEqual(self.reconcile(lambda voice: 1), {})
 

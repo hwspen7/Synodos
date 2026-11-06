@@ -14,7 +14,7 @@ from sessions.processor import SessionProcessor
 
 
 class AsrPriorityTests(unittest.TestCase):
-    def test_due_asr_wins_over_independent_acoustic_notification(self):
+    def make_processor(self):
         settings = Settings(
             vad_threshold_s=2.5,
             rec_threshold_s=1.0,
@@ -33,23 +33,36 @@ class AsrPriorityTests(unittest.TestCase):
                 "test-asr-priority", buffer, settings,
                 object(), asyncio.Queue(),
             )
-            processor._async_ready.set()
-            calls = []
+        processor._async_ready.set()
+        processor._finalize = Mock()
+        return processor
 
-            def due_audio(final=False):
-                calls.append("asr")
-                processor.stop()
-                return True
+    def test_due_asr_wins_over_independent_acoustic_notification(self):
+        processor = self.make_processor()
 
-            processor._cycle = Mock(side_effect=due_audio)
-            processor._collect_speakers = Mock(
-                side_effect=AssertionError("ASR was starved by acoustics"),
-            )
-            processor._finalize = Mock()
-            processor.run()
+        def due_audio(final=False):
+            processor.stop()
+            return True
 
-        self.assertEqual(calls, ["asr"])
+        processor._cycle = Mock(side_effect=due_audio)
+        processor._collect_speakers = Mock()
+        processor.run()
+        processor._cycle.assert_called_once_with(final=False)
         processor._collect_speakers.assert_not_called()
+
+    def test_completed_speaker_result_is_collected_without_new_pcm(self):
+        processor = self.make_processor()
+        processor._last_inferred_absolute_end = processor.buffer.absolute_end_samples()
+
+        def completed_speaker():
+            processor.stop()
+            return True
+
+        processor._collect_speakers = Mock(side_effect=completed_speaker)
+        processor._collect_acoustic = Mock(return_value=False)
+        processor._schedule_acoustic = Mock()
+        processor.run()
+        processor._collect_speakers.assert_called_once()
 
 
 if __name__ == "__main__":

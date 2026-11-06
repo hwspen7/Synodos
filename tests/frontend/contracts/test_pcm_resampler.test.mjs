@@ -33,12 +33,29 @@ test("48 kHz to 16 kHz keeps correct sample count across 128-sample worklet bloc
   assert.ok(Worklet)
   const instance = new Worklet({ processorOptions: { sampleRate: 48000, targetRate: 16000 } })
   for (let i = 0; i < 375; i++) {
-    instance.process([[new Float32Array(128)]])
+    const input = Float32Array.from({ length: 128 }, (_, j) => {
+      const phase = 2 * Math.PI * (128 * i + j) / 48000
+      return 0.2 * Math.sin(1000 * phase) + 0.25 * Math.sin(12000 * phase)
+    })
+    instance.process([[input]])
   }
   const outputSamples = chunks.reduce((sum, frame) => sum + frame.length, 0)
-  assert.equal(outputSamples, 16000)
-  assert.equal(chunks.length, 10)
+  assert.equal(outputSamples, 14400)
+  assert.equal(chunks.length, 9)
   assert.ok(chunks.every((frame) => frame.length === 1600))
+  const middle = chunks[2]
+  const amplitudeAt = frequency => {
+    let cosine = 0
+    let sine = 0
+    for (let i = 0; i < middle.length; i++) {
+      const phase = 2 * Math.PI * frequency * i / 16000
+      cosine += middle[i] * Math.cos(phase)
+      sine += middle[i] * Math.sin(phase)
+    }
+    return 2 * Math.hypot(cosine, sine) / middle.length / 32768
+  }
+  assert.ok(amplitudeAt(1000) > 0.19)
+  assert.ok(amplitudeAt(4000) < 0.002)
   // One extra worklet quantum has insufficient audio for a full packet.
   instance.process([[new Float32Array(128)]])
   assert.equal(chunks.length, 10)

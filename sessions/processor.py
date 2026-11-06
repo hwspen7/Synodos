@@ -52,12 +52,14 @@ from speech.quality_profile import (
     quality_candidate_enabled, speaker_candidate_enabled,
 )
 from speech.nemotron_activity import (
-    choose_caption_speaker, choose_caption_speaker_from_turns,
+    activity_turns, choose_caption_speaker, choose_caption_speaker_from_turns,
 )
 from speech.caption_acoustic_alignment import caption_support_summary
 from speech.content_first_projection import project_confirmed_caption
 from speech.asr_stage_trace import shifted
 from speech.contracts import Utterance
+from speech.language import normalize_language
+from speech.supported_languages import PHASE1_LANGUAGE_SET
 from phase07.recovery import autosave_seconds
 from sessions.outbox import enqueue_message
 from sessions.translation_tasks import submit_translation
@@ -291,19 +293,17 @@ class SessionProcessor(threading.Thread):
                     break
                 if self._async_ready.is_set():
                     self._async_ready.clear()
-                    # Continuous independent diarization may notify every
-                    # ~0.7s. Never starve ASR when microphone audio has
-                    # already reached the speech inference threshold.
-                    if self.buffer.seconds() < self._process_threshold_s:
-                        speaker_updated = self._collect_speakers()
-                        acoustic_updated = self._collect_acoustic()
-                        self._collect_translations()
-                        if speaker_updated or acoustic_updated:
-                            self._recluster()
-                            self._last_reclustered_segment_id = self._next_segment_id - 1
-                        if self.segments:
-                            self._autosave_if_due(self._rebuild_and_push())
-                        continue
+                    # Completed inference is independent of whether ASR has
+                    # new PCM. Collect it even above the ASR buffer threshold.
+                    below_threshold = self.buffer.seconds() < self._process_threshold_s
+                    if (below_threshold or self.buffer.absolute_end_samples()
+                            == self._last_inferred_absolute_end):
+                        try:
+                            self._refresh_auxiliary_results()
+                        except Exception:
+                            logger.exception("Unable to refresh asynchronous meeting evidence")
+                        if below_threshold:
+                            continue
                 if self._save_requested.is_set():
                     continue
                 try:
@@ -1021,10 +1021,12 @@ class SessionProcessor(threading.Thread):
             if os.getenv("MEETING_ASR_TRACE_STAGES", "0").lower() in (
                 "1", "true", "yes",
             ):
-                trace = (
-                    recognition.recovery_diagnostics or {}
-                ).get("stage_trace")
-                if isinstance(trace, dict) and len(self._asr_stage_trace) < 1024:
+                diagnostics = recognition.recovery_diagnostics or {}
+                trace = diagnostics.get("stage_trace")
+                routing = diagnostics.get("hybrid")
+                if ((isinstance(trace, dict) or isinstance(routing, dict))
+                        and len(self._asr_stage_trace) < 1024):
+                    trace = trace if isinstance(trace, dict) else {}
                     origin_ms = round(start_offset * 1000 / sr)
                     stage = {
                         "start_ms": origin_ms,
@@ -1044,6 +1046,8 @@ class SessionProcessor(threading.Thread):
                         "recovery_failed",
                     ):
                         stage[name] = max(0, int(trace.get(name) or 0))
+                    if isinstance(routing, dict):
+                        stage["hybrid_routing"] = dict(routing)
                     self._asr_stage_trace.append(stage)
                     current_content_trace = stage
         telemetry.observe_asr_cycle(buffer_s, time.monotonic() - phase07_asr_started)
@@ -1059,6 +1063,7 @@ class SessionProcessor(threading.Thread):
             "duplicate_skipped": 0,
             "tail_echo_skipped": 0,
             "acoustic_rejected": 0,
+            "language_rejected": 0,
             "published_new": 0,
             "published_from_recovery": 0,
         }
@@ -1066,6 +1071,17 @@ class SessionProcessor(threading.Thread):
             start_ms = int(sentence["start"])
             end_ms = int(sentence["end"])
             text = sentence["text"]
+            language = normalize_language(sentence.get("language"))
+            language_score = sentence.get("language_confidence")
+            if (self._speech_settings.engine != "legacy"
+                    and getattr(self, "speech_language", "auto") == "auto"
+                    and (language not in PHASE1_LANGUAGE_SET | {"und", "mul"}
+                         or (language == "und" and end_ms - start_ms < 1500
+                             and isinstance(language_score, (int, float))
+                             and language_score < .50))):
+                commit_receipt["language_rejected"] += 1
+                metrics.increment("asr_unverified_language_candidate")
+                continue
             # Recheck the exact proposed segment's PCM. A VAD false
             # positive on a quiet, stationary interval must not be promoted
             # into a permanent caption or a new speaker cluster.
@@ -1203,7 +1219,7 @@ class SessionProcessor(threading.Thread):
         if current_content_trace is not None:
             if sum(commit_receipt[key] for key in (
                 "held", "invalid_timestamps", "duplicate_skipped",
-                "tail_echo_skipped", "acoustic_rejected", "published_new",
+                "tail_echo_skipped", "acoustic_rejected", "language_rejected", "published_new",
             )) != commit_receipt["verified_candidates"]:
                 raise AssertionError("ASR candidate accounting not conserved")
             current_content_trace["commit_receipt"] = commit_receipt
@@ -1262,13 +1278,13 @@ class SessionProcessor(threading.Thread):
         coverage_limited = False
         if (self._speech_settings.engine != "legacy"
                 and (quality_candidate_enabled()
-                     or os.getenv("MEETING_ASR_COVERAGE_RETENTION", "0")
+                     or os.getenv("MEETING_ASR_COVERAGE_RETENTION", "1")
                      .strip().lower() in ("1", "true", "yes"))):
             voice_ranges = tuple(getattr(
                 recognition, "speech_intervals_ms", (),
             ))
             if voice_ranges:
-                observed = list(recognition.utterances)
+                observed = []
                 # Existing confirmed words may still fall inside the retained
                 # rolling window and must count as covered evidence.
                 for previous in self.segments:
@@ -1298,6 +1314,7 @@ class SessionProcessor(threading.Thread):
                     utterances=tuple(observed),
                     attempts=self._coverage_hold_attempts,
                     final=final,
+                    min_uncovered_ms=350,
                 )
                 coverage_limited = local_end < proposed_drop
                 for gap in exhausted:
@@ -1342,9 +1359,6 @@ class SessionProcessor(threading.Thread):
                  start_offset * 1000 // sr + int(item["end"])]
                 for item in unconfirmed
             ]
-            current_content_trace["buffer_release_until_ms"] = (
-                start_offset * 1000 // sr + local_end * 1000 // sr
-            )
         if local_end > 0:
             # Preserve any earlier unfinished utterance before advancing audio.
             if unconfirmed:
@@ -1352,10 +1366,10 @@ class SessionProcessor(threading.Thread):
                 local_end = min(local_end, first_held_ms * sr // 1000)
             if local_end > 0:
                 self.buffer.drop_before(local_end)
-        elif (not final and not sentences
+        elif (not final and not unconfirmed
               and self._speech_settings.engine != "legacy"
               and recognition.speech_detected is True
-              and os.getenv("MEETING_ASR_SPEECH_BACKPRESSURE_GUARD", "0")
+              and os.getenv("MEETING_ASR_SPEECH_BACKPRESSURE_GUARD", "1")
                   .strip().lower() in ("1", "true", "yes")):
             # If a model repeatedly hears speech but decodes no words,
             # never let the rolling buffer fill until WebSocket shutdown.
@@ -1390,27 +1404,31 @@ class SessionProcessor(threading.Thread):
                     self.buffer.drop_before(drop)
                     metrics.increment("audio_safe_silence_reclaimed")
 
-        self._collect_speakers()
-        acoustic_updated = self._collect_acoustic()
-        self._collect_translations()
-        changed = False
-        if self.segments:
-            try:
-                if acoustic_updated or self._last_reclustered_segment_id != self._next_segment_id - 1:
-                    self._recluster()
-                    self._last_reclustered_segment_id = self._next_segment_id - 1
-            except Exception:
-                logger.exception("speaker clustering failed; publishing confirmed text")
-                self._fallback_labels()
-            changed = self._rebuild_and_push()
-
-        # Include later speaker updates, not only newly committed ASR text.
-        # This saves confirmed segments and their latest speaker projection;
-        # it never persists partial/unconfirmed ASR hypotheses.
-        self._autosave_if_due(changed)
-
+        if current_content_trace is not None:
+            current_content_trace["buffer_release_until_ms"] = (
+                self.buffer.start_offset() * 1000 // sr
+            )
+        changed = self._refresh_auxiliary_results()
         if not final:
             self._send_state()
+        return changed
+
+    def _refresh_auxiliary_results(self) -> bool:
+        speaker_updated = self._collect_speakers()
+        acoustic_updated = self._collect_acoustic()
+        self._collect_translations()
+        if not self.segments:
+            return False
+        try:
+            if (speaker_updated or acoustic_updated
+                    or self._last_reclustered_segment_id != self._next_segment_id - 1):
+                self._recluster()
+                self._last_reclustered_segment_id = self._next_segment_id - 1
+        except Exception:
+            logger.exception("Speaker clustering failed; publishing confirmed text")
+            self._fallback_labels()
+        changed = self._rebuild_and_push()
+        self._autosave_if_due(changed)
         return changed
 
     def _schedule_acoustic(self, start_offset: int, audio: np.ndarray) -> None:
@@ -2104,6 +2122,7 @@ class SessionProcessor(threading.Thread):
         self._fused_final_status = {}
         self._content_first_projection = {}
         origin = getattr(self, "_independent_pcm_origin_samples", 0)
+        effective_embeddings = {}
         for item, source in zip(items, ordered):
             if source.get("speaker_override"):
                 item["speaker_diarization_source"] = "manual_override"
@@ -2195,6 +2214,8 @@ class SessionProcessor(threading.Thread):
                                 min_coverage=0.75,
                                 min_consistency=0.78,
                             )
+                    if voice_embedding is not None:
+                        effective_embeddings[int(item["id"])] = voice_embedding
                     # Safe content-first display projection is secondary to
                     # the canonical, never-rewritten ASR segment. Words from
                     # this inference window are relative to _audio_base_sample.
@@ -2245,6 +2266,35 @@ class SessionProcessor(threading.Thread):
                             self._content_first_projection[int(item["id"])] = (
                                 projection
                             )
+                    if official_turns is None and activity is not None:
+                        # Expose simultaneous acoustic activity while the
+                        # meeting is still running, without assigning words
+                        # to a source the mixed audio did not separate.
+                        first = start_ms // 10
+                        last = (end_ms + 9) // 10
+                        local = activity[first:last]
+                        if len(local) and np.any(np.sum(local >= 0.65, axis=1) >= 2):
+                            try:
+                                overlap = project_confirmed_caption(
+                                    text=str(source["text"]), words=None,
+                                    caption_start_ms=item["start_ms"],
+                                    caption_end_ms=item["end_ms"], word_base_ms=None,
+                                    official_turns=activity_turns(
+                                        local, threshold=0.65, min_turn_ms=120,
+                                    ),
+                                    acoustic_origin_ms=round(
+                                        origin * 1000 / self.settings.sample_rate
+                                    ) + first * 10,
+                                    speaker_id_map=self._nemotron_channels.labels,
+                                )["overlap_intervals_ms"]
+                            except (AttributeError, TypeError, ValueError, OverflowError):
+                                logger.debug("Live overlap evidence unavailable", exc_info=True)
+                            else:
+                                item["overlap_intervals_ms"] = overlap
+                                self._content_first_projection[int(item["id"])] = {
+                                    "status": "live_overlap_only", "cues": [],
+                                    "overlap_intervals_ms": overlap,
+                                }
                     decision = (
                         choose_caption_speaker_from_turns(
                             official_turns, start_ms, end_ms,
@@ -2397,6 +2447,7 @@ class SessionProcessor(threading.Thread):
             backfill_confirmed_channels(
                 items, ordered, channel_mapper.labels,
                 channel_mapper.match_known,
+                effective_embeddings=effective_embeddings,
             )
             if channel_mapper is not None else {}
         )

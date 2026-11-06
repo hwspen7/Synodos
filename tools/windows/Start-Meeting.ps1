@@ -40,11 +40,37 @@ function Set-AiEnvironment {
     }
 }
 
+function Get-RealtimeProfile {
+    $engine = $env:MEETING_ASR_ENGINE
+    if ([string]::IsNullOrWhiteSpace($engine)) { $engine = 'hybrid' }
+    $diarization = $env:MEETING_INDEPENDENT_DIARIZATION
+    if ($env:MEETING_MULTISPEAKER_TEST -eq '1') { $diarization = 'nemotron3' }
+    if ([string]::IsNullOrWhiteSpace($diarization)) { $diarization = 'off' }
+    $revision = ''
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        $candidate = & git -C $RepoRoot rev-parse --verify HEAD 2>$null
+        if ($LASTEXITCODE -eq 0) { $revision = [string]$candidate }
+    }
+    return @{
+        Engine = $engine.ToLowerInvariant()
+        Diarization = $diarization.Trim().ToLowerInvariant()
+        Revision = $revision
+    }
+}
+
 function Set-BackendEnvironment {
     Set-AiEnvironment
     # Select tested ASR hybrid V2, but allow explicit Whisper rollback.
-    if ([string]::IsNullOrWhiteSpace($env:MEETING_ASR_ENGINE)) {
-        $env:MEETING_ASR_ENGINE = 'hybrid'
+    $profile = Get-RealtimeProfile
+    $env:MEETING_ASR_ENGINE = $profile.Engine
+    $env:MEETING_INDEPENDENT_DIARIZATION = $profile.Diarization
+    $env:MEETING_SOURCE_REVISION = $profile.Revision
+    if ($profile.Diarization -notin @('off', 'nemotron3')) {
+        throw "MEETING_INDEPENDENT_DIARIZATION must be off or nemotron3"
+    }
+    Write-Host ("Realtime profile: ASR={0}, diarization={1}, revision={2}" -f $profile.Engine, $profile.Diarization, $profile.Revision)
+    if ($profile.Diarization -eq 'off') {
+        Write-Warning 'Independent diarization is off. Captions use CAM++ speaker evidence.'
     }
     if ($env:MEETING_ASR_ENGINE -notin @('hybrid', 'whisper')) {
         throw "Launcher supports MEETING_ASR_ENGINE=hybrid or whisper"
@@ -62,6 +88,9 @@ function Set-BackendEnvironment {
     $env:MEETING_ASR_LANGUAGE = 'auto'
     $env:MEETING_TRANSLATE_TO = 'en'
     $env:MEETING_PREWARM_ASR = '1'
+    if ([string]::IsNullOrWhiteSpace($env:MEETING_WHISPER_GAP_RECOVERY)) {
+        $env:MEETING_WHISPER_GAP_RECOVERY = '1'
+    }
     # Prefer CUDA DLLs bundled with the installed PyTorch wheel.
     # Windows CTranslate2 may not find them unless their folder is on PATH.
     $torchCudaLib = Join-Path $RepoRoot '.venv\Lib\site-packages\torch\lib'
@@ -201,8 +230,14 @@ function Get-AiCapabilities {
 function Test-BackendReady {
     $ai = Get-AiCapabilities
     $health = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/health' -TimeoutSec 3
+    $profile = Get-RealtimeProfile
     return ($ai.enabled -eq $true -and $ai.text_model -eq $Model -and
-        $health.infrastructure.database_backend -eq 'postgres')
+        $health.infrastructure.database_backend -eq 'postgres' -and
+        $health.realtime.asr_engine -eq $profile.Engine -and
+        $health.realtime.asr_model -eq 'large-v3' -and
+        $health.realtime.independent_diarization -eq $profile.Diarization -and
+        ([string]::IsNullOrEmpty($profile.Revision) -or
+            $health.realtime.source_revision -eq $profile.Revision))
 }
 
 function Test-BackendSourceUpdated([int]$ProcessId) {

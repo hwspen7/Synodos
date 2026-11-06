@@ -11,7 +11,6 @@ from speech.supported_languages import PHASE1_LANGUAGE_SET, spoken_language
 WHISPER_LANGUAGES = frozenset(("en", "zh", "ar", "id"))
 QWEN_LANGUAGES = frozenset(("fr", "es", "ja", "ru", "de", "hi"))
 POLICY = "fleurs-validation-200-v1"
-PAD_MS = 160
 MAX_REROUTES = 24
 
 
@@ -34,12 +33,30 @@ def acoustic_activity(audio: np.ndarray) -> bool:
                 np.sqrt(np.mean(np.square(audio, dtype=np.float64))) >= .001)
 
 
+def covers_baseline(candidate, baseline) -> bool:
+    """Require each baseline interval to remain substantially represented."""
+    ordered = sorted(candidate, key=lambda u: u.start_ms)
+    for old in baseline:
+        cursor = old.start_ms
+        covered = 0
+        for item in ordered:
+            start = max(cursor, item.start_ms)
+            end = min(old.end_ms, item.end_ms)
+            if end > start:
+                covered += end - start
+                cursor = end
+        if covered < 0.75 * (old.end_ms - old.start_ms):
+            return False
+    return True
+
+
 def shift_utterances(items, offset_ms: int, bound_ms: int, language: str):
     shifted = []
     for item in items:
         a, b = item.start_ms + offset_ms, item.end_ms + offset_ms
-        if not item.text.strip() or not 0 <= a < b <= bound_ms:
-            continue
+        if (not item.text.strip() or not offset_ms <= a < b <= bound_ms
+                or normalize_language(item.language) != language):
+            return ()
         words = tuple(
             replace(word, start_ms=word.start_ms + offset_ms,
                     end_ms=word.end_ms + offset_ms)
@@ -47,8 +64,13 @@ def shift_utterances(items, offset_ms: int, bound_ms: int, language: str):
             if 0 <= word.start_ms + offset_ms <
                word.end_ms + offset_ms <= bound_ms
         )
+        if len(words) != len(item.words):
+            return ()
         shifted.append(replace(item, start_ms=a, end_ms=b,
                                language=language, words=words))
+    shifted.sort(key=lambda item: item.start_ms)
+    if any(left.end_ms > right.start_ms for left, right in zip(shifted, shifted[1:])):
+        return ()
     return tuple(shifted)
 
 
@@ -158,11 +180,10 @@ class HybridEngine:
                 normalize_language(item.language) for item in baseline.utterances
             }
             reliable = all(
-                item.language_confidence is None or (
-                    isinstance(item.language_confidence, (float, int))
-                    and math.isfinite(item.language_confidence)
-                    and item.language_confidence >= .60
-                ) for item in baseline.utterances
+                isinstance(item.language_confidence, (float, int))
+                and math.isfinite(item.language_confidence)
+                and item.language_confidence >= .60
+                for item in baseline.utterances
             )
             # An unmodified bounded recording avoids text-derived cuts
             # and the extra VAD boundary. This route is intentionally
@@ -179,10 +200,16 @@ class HybridEngine:
                     candidate = self._call(
                         "qwen3", samples, "auto", terms
                     )
-                    if has_text(candidate):
+                    selected = next(iter(selected_languages))
+                    bounded = shift_utterances(
+                        candidate.utterances, 0, round(samples.size / 16), selected,
+                    )
+                    if bounded and covers_baseline(bounded, baseline.utterances):
                         audit["qwen_accepted"] += 1
-                        return self._wrap(candidate, audit)
-                    audit["qwen_empty"] = 1
+                        return self._wrap(replace(
+                            baseline, utterances=bounded, language=selected,
+                        ), audit)
+                    audit["qwen_empty" if not has_text(candidate) else "qwen_rejected"] = 1
                 except Exception:
                     audit["qwen_failed"] += 1
                 audit["whisper_retained"] = len(baseline.utterances)
@@ -193,9 +220,8 @@ class HybridEngine:
         for item in baseline.utterances:
             language = normalize_language(item.language)
             score = item.language_confidence
-            reliable = (score is None or (
-                isinstance(score, (float, int)) and
-                math.isfinite(score) and score >= .60))
+            reliable = (isinstance(score, (float, int)) and
+                        math.isfinite(score) and score >= .60)
             if not reliable or language not in PHASE1_LANGUAGE_SET:
                 audit["uncertain_language"] += 1
             if (not reliable or language not in QWEN_LANGUAGES or
@@ -203,8 +229,10 @@ class HybridEngine:
                 output.append(item)
                 audit["whisper_retained"] += 1
                 continue
-            start_ms = max(0, item.start_ms - PAD_MS)
-            end_ms = min(duration_ms, item.end_ms + PAD_MS)
+            # Do not decode adjacent speech and then claim its words belong
+            # to this interval. The baseline owns the replacement boundary.
+            start_ms = max(0, item.start_ms)
+            end_ms = min(duration_ms, item.end_ms)
             start = start_ms * 16
             end = min(samples.size, end_ms * 16)
             if end - start < 1600:
@@ -215,11 +243,12 @@ class HybridEngine:
             try:
                 qwen = self._call("qwen3", samples[start:end], language, terms)
                 moved = shift_utterances(qwen.utterances, start_ms,
-                                         duration_ms, language)
-                if moved:
+                                         end_ms, language)
+                if moved and covers_baseline(moved, (item,)):
                     output.extend(moved)
                     audit["qwen_accepted"] += 1
                     continue
+                audit["qwen_rejected"] = audit.get("qwen_rejected", 0) + 1
             except Exception:
                 audit["qwen_failed"] += 1
             output.append(item)

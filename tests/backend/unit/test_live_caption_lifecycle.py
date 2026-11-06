@@ -136,10 +136,11 @@ class RealtimeSubtitleContracts(unittest.TestCase):
             "id": 1, "start_sample": prior_end - sr,
             "end_sample": prior_end,
             "text": "Who are you?", "speaker_id": 1,
+            "words": [{"start_ms": 13750, "end_ms": 14000, "text": "you"}],
             "speaker_name": "Speaker 1", "cluster": -3, "emb": None,
         }]
         processor._next_segment_id = 2
-        processor.buffer.set_start_offset(prior_end)
+        processor.buffer.set_start_offset(prior_end - sr // 4)
         processor.buffer.append(
             np.full(int(sr * 7.5), .03, dtype=np.float32)
         )
@@ -164,14 +165,15 @@ class RealtimeSubtitleContracts(unittest.TestCase):
         processor.segments = [{
             "id": 1, "start_sample": sr, "end_sample": sr * 2,
             "text": "Hi, how are you man?", "speaker_id": 1,
+            "words": [{"start_ms": 1680, "end_ms": 2000, "text": "man"}],
             "speaker_name": "Speaker 1", "cluster": -3, "emb": None,
         }]
         processor._next_segment_id = 2
-        processor.buffer.set_start_offset(sr * 2)
+        processor.buffer.set_start_offset(int(sr * 1.68))
         processor.buffer.append(np.full(sr * 3, 0.03, dtype=np.float32))
         models.recognize_multilingual = lambda *a, **kw: Recognition(
             utterances=(Utterance(
-                "Man.", 0, 930, "en", timestamp_quality="window_estimate"
+                "Man.", 0, 320, "en", timestamp_quality="window_estimate"
             ),),
             language="en", speech_detected=True,
         )
@@ -186,23 +188,49 @@ class RealtimeSubtitleContracts(unittest.TestCase):
                              for x in events))
         speaker.assert_not_called()
 
+    def test_later_caption_does_not_discard_an_earlier_untranscribed_voice(self):
+        processor, models, _ = self.make_processor()
+        sr = processor.settings.sample_rate
+        processor.buffer.append(np.full(sr * 8, .03, dtype=np.float32))
+        models.recognize_multilingual = lambda *a, **kw: Recognition(
+            (Utterance("Later sentence", 3500, 4600, "en"),),
+            "en", speech_detected=True, speech_intervals_ms=((900, 1450), (3500, 4600)),
+        )
+        processor._cycle(final=False)
+        self.assertEqual(len(processor.segments), 1)
+        self.assertLess(processor.buffer.start_offset(), int(sr * .9))
+
+    def test_unverified_foreign_language_does_not_reach_live_or_saved_text(self):
+        processor, models, events = self.make_processor(engine="hybrid")
+        processor.speech_language = "auto"
+        sr = processor.settings.sample_rate
+        processor.buffer.append(np.full(sr * 8, .03, dtype=np.float32))
+        models.recognize_multilingual = lambda *a, **kw: Recognition(
+            (Utterance("Tchau.", 1000, 1400, "pt"),), "pt",
+            speech_detected=True, speech_intervals_ms=((1000, 1400),),
+        )
+        processor._cycle(final=False)
+        processor._cycle(final=True)
+        self.assertFalse(processor.segments)
+        self.assertFalse(any(row.get("text") == "Tchau." for row in events))
+
     def test_live_confirmed_acoustic_off_boundary_consumes_small_tail(self):
         processor, models, events = self.make_processor(engine="hybrid")
         sr = processor.settings.sample_rate
         processor.buffer.append(np.full(sr * 8, .03, dtype=np.float32))
         models.recognize_multilingual = lambda *a, **kw: Recognition(
             utterances=(Utterance(
-                "Hi, how are you man?", 1000, 2000, "en"
+                "Hi, how are you man?", 950, 2000, "en"
             ),),
             language="en", speech_detected=True,
-            speech_intervals_ms=((950, 2250),),
+            speech_intervals_ms=((950, 2150),),
         )
         with patch("sessions.processor.submit_speaker_analysis",
                    return_value=None):
             self.assertTrue(processor._cycle(final=False))
         self.assertEqual(len(processor.segments), 1)
         self.assertEqual(processor.segments[0]["end_sample"], 2 * sr)
-        self.assertEqual(processor.buffer.start_offset(), int(2.33 * sr))
+        self.assertEqual(processor.buffer.start_offset(), int(2.23 * sr))
 
     def test_two_inference_windows_do_not_decode_same_leftover_syllable(self):
         processor, models, events = self.make_processor(engine="hybrid")
@@ -212,13 +240,13 @@ class RealtimeSubtitleContracts(unittest.TestCase):
 
         def transcribe(audio, **kwargs):
             calls.append(processor.buffer.start_offset())
-            if processor.buffer.start_offset() < int(sr * 2.70):
+            if processor.buffer.start_offset() < int(sr * 2.14):
                 return Recognition(
                     utterances=(Utterance(
-                        "Hey, how are you, man?", 1000, 2000, "en"
+                        "Hey, how are you, man?", 950, 2000, "en"
                     ),),
                     language="en", speech_detected=True,
-                    speech_intervals_ms=((900, 2750),),
+                    speech_intervals_ms=((950, 2150),),
                 )
             return Recognition(engine="hybrid", speech_detected=False)
 
@@ -228,13 +256,13 @@ class RealtimeSubtitleContracts(unittest.TestCase):
             processor._cycle(final=False)
             self.assertEqual(len(processor.segments), 1)
             self.assertGreaterEqual(
-                processor.buffer.start_offset(), int(sr * 2.80)
+                processor.buffer.start_offset(), int(sr * 2.22)
             )
             processor.buffer.append(np.full(sr * 2, .03, dtype=np.float32))
             processor._cycle(final=False)
         self.assertEqual(len(processor.segments), 1)
         self.assertEqual(len(calls), 2)
-        self.assertGreater(calls[-1], int(sr * 2.70))
+        self.assertGreater(calls[-1], int(sr * 2.14))
 
     def test_whisper_and_hybrid_retire_the_same_settled_voice_island(self):
         # Regression: previous hybrid-only protection did not run under the
@@ -249,13 +277,13 @@ class RealtimeSubtitleContracts(unittest.TestCase):
 
                 def transcribe(audio, **kwargs):
                     offsets.append(proc.buffer.start_offset())
-                    if proc.buffer.start_offset() < int(sr * 2.70):
+                    if proc.buffer.start_offset() < int(sr * 2.14):
                         return Recognition(
                             utterances=(Utterance(
-                                "Hey, how are you, man?", 1000, 2000, "en"
+                                "Hey, how are you, man?", 950, 2000, "en"
                             ),),
                             language="en", speech_detected=True,
-                            speech_intervals_ms=((900, 2750),),
+                            speech_intervals_ms=((950, 2150),),
                         )
                     return Recognition(engine=engine, speech_detected=False)
 
@@ -265,13 +293,13 @@ class RealtimeSubtitleContracts(unittest.TestCase):
                     proc._cycle(final=False)
                     self.assertEqual(len(proc.segments), 1)
                     self.assertGreaterEqual(
-                        proc.buffer.start_offset(), int(sr * 2.80),
+                        proc.buffer.start_offset(), int(sr * 2.22),
                     )
                     proc.buffer.append(np.full(sr * 2, .03, dtype=np.float32))
                     proc._cycle(final=False)
                 self.assertEqual(len(proc.segments), 1)
                 self.assertEqual(len(offsets), 2)
-                self.assertGreater(offsets[-1], int(sr * 2.70))
+                self.assertGreater(offsets[-1], int(sr * 2.14))
 
     def test_whisper_digital_silence_cannot_publish_fabricated_words(self):
         proc, models, events = self.make_processor(engine="whisper")
@@ -284,7 +312,7 @@ class RealtimeSubtitleContracts(unittest.TestCase):
         self.assertFalse(any(event["type"] == "partial" for event in events))
         speaker.assert_not_called()
 
-    def test_whisper_preserves_active_vad_turn_until_voice_off(self):
+    def test_whisper_commits_earlier_sentence_during_continuous_voice(self):
         proc, models, _ = self.make_processor(engine="whisper")
         sr = proc.settings.sample_rate
         proc.buffer.append(np.full(sr * 8, .03, dtype=np.float32))
@@ -295,8 +323,9 @@ class RealtimeSubtitleContracts(unittest.TestCase):
         )
         with patch("sessions.processor.submit_speaker_analysis",
                    return_value=None):
-            self.assertFalse(proc._cycle(final=False))
-        self.assertEqual(proc.segments, [])
+            self.assertTrue(proc._cycle(final=False))
+        self.assertEqual([item["text"] for item in proc.segments], ["I am still talking."])
+        self.assertLessEqual(proc.buffer.start_offset(), 2 * sr)
 
     def test_whisper_keeps_new_short_reply_island(self):
         proc, models, _ = self.make_processor(engine="whisper")

@@ -1,5 +1,8 @@
 """Health endpoint."""
 
+import os
+
+from speech.config import load_settings as load_speech_settings
 from fastapi import APIRouter, HTTPException
 from core.runtime import infra
 from observability.metrics import metrics
@@ -10,8 +13,17 @@ router = APIRouter()
 
 @router.get("/api/health")
 async def health() -> dict:
+    speech = load_speech_settings()
     return {
         "status": "ok",
+        "realtime": {
+            "source_revision": os.getenv("MEETING_SOURCE_REVISION", ""),
+            "asr_engine": speech.engine,
+            "asr_model": speech.model,
+            "independent_diarization": os.getenv(
+                "MEETING_INDEPENDENT_DIARIZATION", "off"
+            ).strip().lower(),
+        },
         "sample_rate": settings.sample_rate,
         "vad_threshold_s": settings.vad_threshold_s,
         "rec_threshold_s": settings.rec_threshold_s,

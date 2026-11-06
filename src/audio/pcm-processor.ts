@@ -1,17 +1,9 @@
-/**
-  * Audio processing and UI rendering.
- *
-  * Audio processing and UI rendering.
-  * Audio processing and UI rendering.
- */
 export const PCM_PROCESSOR_NAME = 'mop-pcm-processor'
 
 export const pcmProcessorCode = `
 class PCMProcessor extends AudioWorkletProcessor {
   constructor(processorOptions) {
     super()
-    // Process audio and meeting metadata.
-    // Process audio and meeting metadata.
     const opts =
       (processorOptions && processorOptions.processorOptions) ||
       (typeof globalThis !== 'undefined' && globalThis.options && globalThis.options.processorOptions) ||
@@ -19,6 +11,22 @@ class PCMProcessor extends AudioWorkletProcessor {
     const sampleRate = opts.sampleRate || 48000
     const targetRate = opts.targetRate || 16000
     this.ratio = sampleRate / targetRate
+    // Filter before decimation. Linear interpolation alone aliases energy
+    // above the destination Nyquist frequency into the speech band.
+    this.radius = this.ratio > 1 ? Math.ceil(12 * this.ratio) : 0
+    this.kernel = new Float32Array(2 * this.radius + 1)
+    if (this.radius) {
+      const cutoff = 0.45 / this.ratio
+      let sum = 0
+      for (let i = -this.radius; i <= this.radius; i++) {
+        const sinc = i === 0 ? 2 * cutoff : Math.sin(2 * Math.PI * cutoff * i) / (Math.PI * i)
+        const window = 0.54 + 0.46 * Math.cos(Math.PI * i / this.radius)
+        sum += this.kernel[i + this.radius] = sinc * window
+      }
+      for (let i = 0; i < this.kernel.length; i++) this.kernel[i] /= sum
+    } else {
+      this.kernel[0] = 1
+    }
     this.pending = new Float32Array(0)
     this.pos = 0
     this._dbgCount = 0
@@ -32,15 +40,7 @@ class PCMProcessor extends AudioWorkletProcessor {
       if (event.data?.type === 'flush') {
         // Emit any final output sample that can be formed with a held
         // terminal input sample before acknowledging the stop boundary.
-        const tail = []
-        while (this.pos < this.pending.length) {
-          const i0 = Math.floor(this.pos)
-          const i1 = Math.min(i0 + 1, this.pending.length - 1)
-          const frac = this.pos - i0
-          tail.push(this.pending[i0] * (1 - frac) + this.pending[i1] * frac)
-          this.pos += this.ratio
-        }
-        this._emitPcm(tail)
+        this._emitPcm(this._resample(true))
         // The stop acknowledgment must follow the final partial PCM frame.
         this._postPcm(this.pendingPcm)
         this.pendingPcm = []
@@ -71,13 +71,37 @@ class PCMProcessor extends AudioWorkletProcessor {
     }
   }
 
+  _filtered(index) {
+    let value = 0
+    for (let tap = -this.radius; tap <= this.radius; tap++) {
+      const source = Math.max(0, Math.min(this.pending.length - 1, index + tap))
+      value += this.pending[source] * this.kernel[tap + this.radius]
+    }
+    return value
+  }
+
+  _resample(final) {
+    const out = []
+    const limit = final ? this.pending.length : this.pending.length - this.radius - 1
+    while (this.pos < limit) {
+      const index = Math.floor(this.pos)
+      const fraction = this.pos - index
+      const first = this._filtered(index)
+      out.push(fraction ? first * (1 - fraction) + this._filtered(index + 1) * fraction : first)
+      this.pos += this.ratio
+    }
+    const keepFrom = Math.max(0, Math.min(this.pending.length, Math.floor(this.pos) - this.radius))
+    this.pending = this.pending.slice(keepFrom)
+    this.pos -= keepFrom
+    return out
+  }
+
   process(inputs) {
     if (this.flushed) return true
     const input = inputs[0]
     const channel = input && input[0]
     if (!channel || channel.length === 0) return true
 
-    // Process audio and meeting metadata.
     this._dbgCount++
     if (this._dbgCount % 370 === 1) {
       let mx = 0
@@ -88,30 +112,12 @@ class PCMProcessor extends AudioWorkletProcessor {
       this.port.postMessage({ type: 'dbg', max: mx })
     }
 
-    // Process audio and meeting metadata.
     const pending = new Float32Array(this.pending.length + channel.length)
     pending.set(this.pending, 0)
     pending.set(channel, this.pending.length)
     this.pending = pending
 
-    // Process audio and meeting metadata.
-    const ratio = this.ratio
-    const out = []
-    while (this.pos + 1 < this.pending.length) {
-      const i0 = Math.floor(this.pos)
-      const frac = this.pos - i0
-      const s = this.pending[i0] * (1 - frac) + this.pending[i0 + 1] * frac
-      out.push(s)
-      this.pos += ratio
-    }
-
-    // Process audio and meeting metadata.
-    // Retain the fractional resampling phase across audio worklet blocks.
-    const keepFrom = Math.min(this.pending.length, Math.floor(this.pos))
-    this.pending = this.pending.slice(keepFrom)
-    this.pos -= keepFrom
-
-    this._emitPcm(out)
+    this._emitPcm(this._resample(false))
     return true
   }
 }
