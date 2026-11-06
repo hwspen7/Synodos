@@ -515,7 +515,7 @@ class SessionProcessor(threading.Thread):
         incomplete_speaker_ids = (
             set(self._speaker_tasks) | set(self._speaker_deferred)
         )
-        for record in self.segments:
+        for record in getattr(self, "segments", ()):
             if (record.get("id") in incomplete_speaker_ids
                     and record.get("emb") is None
                     and record.get("speaker_evidence_status") in (
