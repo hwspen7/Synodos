@@ -302,7 +302,7 @@ class SessionProcessor(threading.Thread):
                             self._recluster()
                             self._last_reclustered_segment_id = self._next_segment_id - 1
                         if self.segments:
-                            self._rebuild_and_push()
+                            self._autosave_if_due(self._rebuild_and_push())
                         continue
                 if self._save_requested.is_set():
                     continue
@@ -505,13 +505,23 @@ class SessionProcessor(threading.Thread):
             except Exception:
                 logger.exception("session %s final transcription failed", self.session_id)
                 self._put({"type": "error", "message": "Final transcription failed; confirmed text may be incomplete"})
-        speaker_updated = self._collect_speakers(wait_seconds=5.0)
-        # Retry tasks released by the first drain, without an unbounded wait.
-        # This allows late speaker evidence to resolve before final captions
-        # are saved even if the global queue was briefly saturated.
-        if self._speaker_tasks:
-            speaker_updated |= self._collect_speakers(wait_seconds=5.0)
+        # A completed speaker job can admit another deferred voiceprint.
+        # Drain *all* admitted waves within a bounded shutdown budget rather
+        # than making only two passes and abandoning the final wave.
+        speaker_updated = self._drain_final_speaker_analysis()
         acoustic_updated = self._collect_acoustic(wait_seconds=6.0)
+        # A saved final meeting must never claim an unfinished worker is
+        # still pending. Keep the unassigned identity explicit and retain ASR.
+        incomplete_speaker_ids = (
+            set(self._speaker_tasks) | set(self._speaker_deferred)
+        )
+        for record in self.segments:
+            if (record.get("id") in incomplete_speaker_ids
+                    and record.get("emb") is None
+                    and record.get("speaker_evidence_status") in (
+                        "pending_turn_analysis", "deferred_turn_analysis")):
+                record["speaker_evidence_status"] = "turn_analysis_unfinished"
+                record["speaker_uncertain"] = True
         if speaker_updated or acoustic_updated or speaker_candidate_enabled():
             try:
                 self._recluster(
@@ -557,6 +567,31 @@ class SessionProcessor(threading.Thread):
             self._put({"type": "error", "message": "Unable to save the final meeting transcript"})
         self._save_queue.close(succeeded=self._final_save_ok)
 
+    def _drain_final_speaker_analysis(self, *, budget_seconds: float = 24.0) -> bool:
+        """Finish successive waves of voiceprint jobs without unbounded shutdown.
+
+        Each completed future can submit one or more deferred jobs. Draining
+        only twice silently abandons the last wave in a fast conversation.
+        The global ASR/voice worker pool is still bounded by its scheduler.
+        """
+        if not 0 < budget_seconds <= 120:
+            raise ValueError("Invalid speaker finalization budget")
+        deadline = time.monotonic() + budget_seconds
+        updated = False
+        while self._speaker_tasks or self._speaker_deferred:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            before = (len(self._speaker_tasks), len(self._speaker_deferred))
+            updated |= self._collect_speakers(wait_seconds=min(2.0, remaining))
+            after = (len(self._speaker_tasks), len(self._speaker_deferred))
+            if (before == after and not self._speaker_tasks
+                    and self._speaker_deferred):
+                # Global worker slots may be busy with another meeting.
+                # Avoid a CPU spin while retrying a bounded deferred queue.
+                time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+        return updated
+
     # ------------------------------------------------------------ persistence
     def request_save(self, timeout: float = 30.0) -> bool:
         """Wait for this request's write to complete successfully."""
@@ -577,6 +612,19 @@ class SessionProcessor(threading.Thread):
         succeeded = self._do_save()
         self._save_queue.finish(tickets, succeeded)
         return True
+
+    def _autosave_if_due(self, changed: bool) -> None:
+        """Periodically checkpoint confirmed text and revised speaker labels."""
+        if (not changed or not self.segments
+                or not self._phase07_autosave_interval
+                or not self.meeting_store or not self.meeting_id
+                or time.monotonic() - self._phase07_last_autosave
+                   < self._phase07_autosave_interval):
+            return
+        if self._do_save():
+            metrics.increment("phase07_autosaves")
+        else:
+            metrics.increment("phase07_autosave_errors")
 
     def _do_save(self) -> bool:
         if not self.meeting_store or not self.meeting_id:
@@ -1356,14 +1404,10 @@ class SessionProcessor(threading.Thread):
                 self._fallback_labels()
             changed = self._rebuild_and_push()
 
-        # Autosave only when a new confirmed segment exists; never persist partial ASR.
-        if (changed and self._phase07_autosave_interval and self.meeting_store and self.meeting_id
-                and self._next_segment_id - 1 > self._phase07_saved_segment_id
-                and time.monotonic() - self._phase07_last_autosave >= self._phase07_autosave_interval):
-            if self._do_save():
-                metrics.increment("phase07_autosaves")
-            else:
-                metrics.increment("phase07_autosave_errors")
+        # Include later speaker updates, not only newly committed ASR text.
+        # This saves confirmed segments and their latest speaker projection;
+        # it never persists partial/unconfirmed ASR hypotheses.
+        self._autosave_if_due(changed)
 
         if not final:
             self._send_state()
