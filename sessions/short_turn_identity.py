@@ -47,6 +47,9 @@ def recover_short_turn_identity(
         ),
     )
     reliable: list[tuple[int, int, np.ndarray]] = []
+    # A provisional continuation can extend the recency window, but its
+    # unverified embedding must NEVER become a trusted voice reference.
+    continuity_end: dict[int, int] = {}
     fixed = 0
     for segment in ordered:
         start = int(segment.get("start_sample") or 0)
@@ -68,7 +71,7 @@ def recover_short_turn_identity(
             # continuity. Do not create an identity from other short probes.
             votes: dict[int, float] = {}
             for label, last_end, reference in reliable:
-                gap = start - last_end
+                gap = start - max(last_end, continuity_end.get(label, -1))
                 if 0 <= gap <= int(max_gap_seconds * sample_rate) and (
                     reference.shape == emb.shape
                 ):
@@ -90,6 +93,10 @@ def recover_short_turn_identity(
                 fixed += 1
             continue
 
+        if (type(sid) is int and sid > 0
+                and segment.get("speaker_evidence_status")
+                    == "speaker_continuity_provisional"):
+            continuity_end[sid] = max(continuity_end.get(sid, -1), end)
         if (type(sid) is int and sid > 0
                 and not segment.get("speaker_uncertain")
                 and emb is not None):
