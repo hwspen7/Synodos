@@ -1706,7 +1706,7 @@ class SessionProcessor(threading.Thread):
             seg["matched_profile_id"] = None
             seg["matched_profile_name"] = None
             if (seg["emb"] is None
-                    or (seg.get("speaker_evidence_status") == "short_probe"
+                    or (seg.get("speaker_evidence_status") in ("short_probe", "short_probe_known_voice")
                         and seg.get("speaker_uncertain"))):
                 # A lone short probe must not create or hijack an identity.
                 seg["cluster"] = UNIDENTIFIED_CLUSTER
