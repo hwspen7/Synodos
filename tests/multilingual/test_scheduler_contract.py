@@ -61,7 +61,10 @@ class SchedulerContractTests(unittest.TestCase):
         }):
             settings = Settings()
             buffer = AudioBuffer(settings.sample_rate)
-            buffer.append(np.zeros(settings.sample_rate, dtype=np.float32))
+            # This contract verifies the gateway, not acceptance of an
+            # invented transcript on digital silence. Use non-silent PCM so
+            # the ASR hallucination veto does not correctly reject the stub.
+            buffer.append(np.full(settings.sample_rate, .03, dtype=np.float32))
             processor = SessionProcessor(
                 session_id="public-gateway-test",
                 buffer=buffer,
