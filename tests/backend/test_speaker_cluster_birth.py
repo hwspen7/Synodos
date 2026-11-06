@@ -154,6 +154,20 @@ class SpeakerClusterBirthTests(unittest.TestCase):
         self.assertEqual(turns[1]["speaker_name"], "Manually confirmed")
         self.assertEqual(turns[2]["speaker_id"], 10)
 
+    def test_birth_gate_preserves_original_embedding_reason_for_diagnostics(self):
+        turns = [
+            row(1, 0, [1, 0], 0, 2),
+            row(2, 1, [.6, .8], 3, 5),
+        ]
+        gate_new_cluster_births(turns, sample_rate=16000)
+        self.assertEqual(
+            turns[1]["speaker_upstream_evidence_status"], "turn_voiceprint"
+        )
+        self.assertEqual(
+            turns[1]["speaker_birth_decision"], "speaker_birth_unconfirmed"
+        )
+        self.assertEqual(turns[1]["speaker_id"], -1)
+
     def test_long_meeting_voice_reference_pool_is_bounded(self):
         long_history = [
             np.asarray([1.0, .001 * i], dtype=np.float32)
