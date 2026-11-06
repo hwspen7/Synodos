@@ -146,5 +146,87 @@ class CorroboratedSpeakerTests(unittest.TestCase):
         self.assertEqual(guard.labels, {1: 1})
 
 
+
+class SpeakerResumeTests(unittest.TestCase):
+    @staticmethod
+    def voice(label, stream, start, vector, **fields):
+        return {
+            "speaker_id": label, "speaker_acoustic_stream_start": stream,
+            "start_sample": start, "end_sample": start + 32000, "emb": vector,
+            "speaker_diarization_source": "nemotron3",
+            "speaker_final_resolution_status": "independent_acoustic_assigned",
+            **fields,
+        }
+
+    def test_swapped_channels_reuse_both_historical_ids(self):
+        guard = CorroboratedSpeakerChannels(offset=2)
+        guard.restore_references([
+            self.voice(1, 0, 0, vec(1, 0)),
+            self.voice(2, 0, 40000, vec(0, 1)),
+        ], 16000)
+        self.assertEqual(guard.labels, {})
+        self.assertIsNone(guard.observe(1, 9, 1200))
+        self.assertEqual(guard.observe(1, 10, 1700, vec(0, 1)), 2)
+        self.assertEqual(guard.observe(2, 11, 1700, vec(1, 0)), 1)
+        self.assertEqual(guard.labels, {1: 2, 2: 1})
+
+    def test_genuinely_new_voice_requires_independent_evidence_on_resume(self):
+        guard = CorroboratedSpeakerChannels(offset=2)
+        guard.restore_references([
+            self.voice(1, 0, 0, vec(1, 0)),
+            self.voice(2, 0, 40000, vec(0, 1)),
+        ], 16000)
+        self.assertIsNone(guard.observe(1, 10, 1700, vec(-1, 0)))
+        self.assertEqual(guard.observe(1, 11, 1700, vec(-1, 0)), 3)
+
+    def test_moderate_reuse_needs_two_nonoverlapping_captions(self):
+        guard = CorroboratedSpeakerChannels(offset=2)
+        guard.restore_references([
+            self.voice(1, 0, 0, vec(1, 0)),
+            self.voice(2, 0, 40000, vec(0, -1)),
+        ], 16000)
+        probe = vec(.75, .6614)
+        self.assertIsNone(guard.observe(1, 10, 1000, probe, interval=(80000, 96000)))
+        self.assertIsNone(guard.observe(1, 10, 1000, probe, interval=(80000, 96000)))
+        self.assertIsNone(guard.observe(1, 11, 1000, probe, interval=(88000, 104000)))
+        weaker = vec(.605, .796)
+        self.assertEqual(guard.observe(1, 12, 1000, weaker, interval=(105000, 121000)), 1)
+        self.assertEqual(guard.gate_reason(1), "historical_voice_corroborated")
+
+    def test_saved_transcript_exposes_verified_alias_without_overwriting_evidence(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from storage.meetings import MeetingStore
+
+        rows = [
+            self.voice(1, 0, 0, vec(1, 0)),
+            self.voice(2, 0, 40000, vec(0, 1)),
+            self.voice(3, 80000, 80000, vec(0, 1)),
+            self.voice(4, 80000, 120000, vec(1, 0)),
+        ]
+        for sid, row in enumerate(rows, 1):
+            row.update(id=sid, text=f"Turn {sid}", speaker_name=f"Speaker {sid}",
+                       speaker_acoustic_channel=(sid - 1) % 2 + 1)
+        with TemporaryDirectory() as directory:
+            store = MeetingStore(Path(directory))
+            store.save_state({"id": "resume-voices", "segments": rows})
+            shown = store.list_segments("resume-voices")
+            self.assertEqual([row.get("speaker_continuity_id") for row in shown],
+                             [None, None, 2, 1])
+            self.assertEqual([row["speaker_id"] for row in shown], [1, 2, 3, 4])
+            self.assertTrue(all("emb" not in row for row in shown))
+
+    def test_legacy_duplicate_numbers_are_repaired_without_duplicate_references(self):
+        guard = CorroboratedSpeakerChannels(offset=4)
+        rows = [
+            self.voice(1, 0, 0, vec(1, 0)),
+            self.voice(2, 0, 40000, vec(0, 1)),
+            self.voice(3, 80000, 80000, vec(0, 1)),
+            self.voice(4, 80000, 120000, vec(1, 0)),
+        ]
+        self.assertEqual(guard.restore_references(rows, 16000), {3: 2, 4: 1})
+        self.assertEqual(guard.observe(1, 10, 1700, vec(1, 0)), 1)
+        self.assertEqual(guard.observe(2, 11, 1700, vec(0, 1)), 2)
+
 if __name__ == "__main__":
     unittest.main()

@@ -53,3 +53,35 @@ test('voice-only meetings retain their existing view and manual identities survi
   assert.equal(projectChannelSpeakers([segment(1, 0, 2000, 1, null)]), null)
   assert.equal(projectChannelSpeakers([segment(1, 0, 2000, 1, 1), manual])[1], manual)
 })
+
+test('confirmed voices keep their headings when channels swap after a pause', () => {
+  const confirmed = { speaker_final_resolution_status: 'independent_acoustic_assigned' }
+  const first = segment(1, 0, 2000, 1, 1, confirmed)
+  const second = segment(2, 2100, 4000, 2, 2, confirmed)
+  const pending = segment(3, 6000, 6100, 3, 1, { speaker_acoustic_stream_start: 96000 })
+  const resumedSecond = segment(4, 6200, 7300, 2, 1, {
+    ...confirmed, speaker_acoustic_stream_start: 96000,
+  })
+  const resumedFirst = segment(5, 7400, 8800, 1, 2, {
+    ...confirmed, speaker_acoustic_stream_start: 96000,
+  })
+  assert.equal(projectChannelSpeakers([first, second, pending])[2].speaker_name, 'Speaker pending')
+  assert.deepEqual(projectChannelSpeakers([first, second, pending, resumedSecond, resumedFirst])
+    .map(row => row.speaker_id), [1, 2, 2, 2, 1])
+})
+
+test('saved legacy numbers follow their verified continuity aliases', () => {
+  const confirmed = { speaker_final_resolution_status: 'independent_acoustic_assigned' }
+  const rows = [
+    segment(1, 0, 2000, 1, 1, confirmed),
+    segment(2, 2100, 4000, 2, 2, confirmed),
+    segment(3, 6000, 7600, 3, 1, {
+      ...confirmed, speaker_acoustic_stream_start: 96000, speaker_continuity_id: 2,
+    }),
+    segment(4, 7700, 9000, 4, 2, {
+      ...confirmed, speaker_acoustic_stream_start: 96000, speaker_continuity_id: 1,
+    }),
+  ]
+  assert.deepEqual(projectChannelSpeakers(rows).map(row => row.speaker_id), [1, 2, 2, 1])
+  assert.deepEqual(rows.map(row => row.speaker_id), [1, 2, 3, 4])
+})

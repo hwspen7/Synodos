@@ -68,6 +68,8 @@ class CorroboratedSpeakerChannels:
         self.medium_min_ms = 9000
         self._last_gate_reason: dict[int, str] = {}
         self._references: dict[int, list[np.ndarray]] = {}
+        self._historical_labels: set[int] = set()
+        self._historical_probes: dict[int, dict[int, tuple[int, int, int, float, np.ndarray]]] = {}
         self._candidates: dict[int, dict[int, tuple[int, np.ndarray]]] = {}
 
     @property
@@ -93,6 +95,51 @@ class CorroboratedSpeakerChannels:
             entries.append(vector)
             if len(entries) > 8:
                 del entries[0]
+
+    def restore_references(self, segments: list[dict], sample_rate: int) -> dict[int, int]:
+        """Restore meeting voices and reconcile strong matches in saved reconnects."""
+        streams: dict[int, dict[int, list[tuple[int, int, np.ndarray]]]] = {}
+        for segment in segments:
+            label = segment.get("speaker_id")
+            start, end = int(segment.get("start_sample", 0)), int(segment.get("end_sample", 0))
+            if (type(label) is not int or not 0 < label <= self.offset
+                    or segment.get("speaker_diarization_source") != "nemotron3"
+                    or segment.get("speaker_final_resolution_status") != "independent_acoustic_assigned"
+                    or segment.get("speaker_uncertain") or segment.get("speaker_override")
+                    or segment.get("matched_profile_id") or segment.get("overlap_intervals_ms")
+                    or segment.get("speaker_evidence_status") == "multi_turn_acoustic_evidence_only"
+                    or end - start < sample_rate):
+                continue
+            vector = _unit(segment.get("emb"))
+            if vector is not None:
+                stream = segment.get("speaker_acoustic_stream_start") or 0
+                group = streams.setdefault(stream, {}).setdefault(label, [])
+                group.append((start, end, vector))
+
+        aliases: dict[int, int] = {}
+        for _, labels in sorted(streams.items()):
+            additions = []
+            for label, turns in labels.items():
+                turns = sorted(turns, key=lambda turn: turn[0])[-8:]
+                canonical = aliases.get(label, label)
+                if canonical not in self._historical_labels:
+                    independent = []
+                    for start, end, vector in turns:
+                        if not independent or start >= independent[-1][1]:
+                            independent.append((start, end, vector))
+                    matches = {self.match_known(vector) for _, _, vector in independent}
+                    if (len(matches) == 1 and None not in matches
+                            and (len(independent) >= 2 or turns[-1][1] - turns[-1][0] >= 2 * sample_rate)):
+                        canonical = matches.pop()
+                        aliases[label] = canonical
+                additions.append((canonical, turns))
+            # Compare against earlier recordings only. Raw channels within
+            # this recording retain their distinct presentation.
+            for canonical, turns in additions:
+                for _, _, vector in turns:
+                    self._remember(canonical, vector)
+                self._historical_labels.add(canonical)
+        return aliases
 
     def _scores(self, vector: np.ndarray) -> list[tuple[int, float]]:
         ranked = []
@@ -129,6 +176,7 @@ class CorroboratedSpeakerChannels:
         self, channel: int, segment_id: int, evidence_ms: int,
         embedding: object = None, *,
         reserved_labels: set[int] | None = None,
+        interval: tuple[int, int] | None = None,
     ) -> int | None:
         if (type(channel) is not int or not 1 <= channel <= 8
                 or type(segment_id) is not int or segment_id <= 0
@@ -159,7 +207,7 @@ class CorroboratedSpeakerChannels:
             self._remember(existing, vector)
             return existing
 
-        if not self._channels.labels:
+        if not self._channels.labels and not self._historical_labels:
             label = self._channels.resolve(
                 channel, evidence_ms, reserved_labels=reserved_labels,
             )
@@ -182,11 +230,36 @@ class CorroboratedSpeakerChannels:
         best_label, similarity = scores[0]
         if (similarity >= self.same_voice_similarity
                 and (len(scores) == 1 or similarity - scores[1][1] >= 0.08)):
-            self._channels.bind(channel, best_label)
+            self._channels.bind(channel, best_label, historical_labels=self._historical_labels)
             self._remember(best_label, vector)
             self._candidates.pop(channel, None)
             self._last_gate_reason[channel] = "existing_voice_reused"
             return best_label
+
+        runner_up = scores[1][1] if len(scores) > 1 else -1.0
+        if (best_label in self._historical_labels and interval is not None
+                and evidence_ms >= 650 and similarity >= 0.60 and similarity - runner_up >= 0.20):
+            start, end = interval
+            probes = self._historical_probes.setdefault(channel, {})
+            supported = any(
+                other_id != segment_id and label == best_label
+                and (right <= start or end <= left) and prior.shape == vector.shape
+                and max(similarity, prior_similarity) >= 0.72
+                and float(np.dot(prior, vector)) >= 0.65
+                for other_id, (label, left, right, prior_similarity, prior) in probes.items()
+            )
+            if supported:
+                self._channels.bind(channel, best_label, historical_labels=self._historical_labels)
+                self._remember(best_label, vector)
+                self._historical_probes.pop(channel, None)
+                self._candidates.pop(channel, None)
+                self._last_gate_reason[channel] = "historical_voice_corroborated"
+                return best_label
+            probes[segment_id] = (best_label, start, end, similarity, vector)
+            if len(probes) > 8:
+                probes.pop(next(iter(probes)))
+            self._last_gate_reason[channel] = "historical_match_needs_more_turns"
+            return None
 
         # A similarity in (0.48, 0.78) used to drop candidate evidence
         # outright. Keep a conservative middle band, but do not allocate
@@ -266,3 +339,14 @@ class CorroboratedSpeakerChannels:
             self._last_gate_reason[channel] = "candidate_voice_outlier"
             return None
         return label
+
+
+def saved_speaker_continuity(segments: list[dict], sample_rate: int) -> dict[int, int]:
+    """Expose only corroborated aliases for older saved transcripts."""
+    streams = {segment.get("speaker_acoustic_stream_start") or 0 for segment in segments
+               if segment.get("speaker_final_resolution_status") == "independent_acoustic_assigned"}
+    if len(streams) < 2:
+        return {}
+    offset = max((segment["speaker_id"] for segment in segments
+                  if type(segment.get("speaker_id")) is int and segment["speaker_id"] > 0), default=0)
+    return CorroboratedSpeakerChannels(offset=offset).restore_references(segments, sample_rate)

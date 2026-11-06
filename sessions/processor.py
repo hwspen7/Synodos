@@ -188,6 +188,7 @@ class SessionProcessor(threading.Thread):
         self._independent_pcm_origin_samples = 0
         self._independent_id_offset = 0
         self._nemotron_channels = CorroboratedSpeakerChannels()
+        self._historical_speaker_aliases: dict[int, int] = {}
         self._transcript_version = 0
         self._last_state_sent = 0.0
         self._last_inferred_absolute_end = -1
@@ -2132,6 +2133,7 @@ class SessionProcessor(threading.Thread):
     def _display_nemotron_channel(
         self, channel: int, evidence_ms: int, *,
         segment_id: int, embedding: object = None,
+        interval: tuple[int, int] | None = None,
     ) -> int | None:
         """Require independent voice evidence before adding a new speaker."""
         mapper = getattr(self, "_nemotron_channels", None)
@@ -2152,7 +2154,7 @@ class SessionProcessor(threading.Thread):
         )
         return mapper.observe(
             channel, segment_id, evidence_ms, embedding,
-            reserved_labels=reserved,
+            reserved_labels=reserved, interval=interval,
         )
 
     def _rebuild_and_push(self) -> bool:
@@ -2421,6 +2423,7 @@ class SessionProcessor(threading.Thread):
                             decision.speaker_id, acoustic_support_ms,
                             segment_id=int(item["id"]),
                             embedding=voice_embedding,
+                            interval=(int(source["start_sample"]), int(source["end_sample"])),
                         )
                         gate_reader = getattr(
                             self._nemotron_channels, "gate_reason", None
@@ -2642,6 +2645,10 @@ class SessionProcessor(threading.Thread):
         for item, source in zip(items, ordered, strict=True):
             item.setdefault("speaker_acoustic_channel", source.get("speaker_acoustic_channel"))
             item.setdefault("speaker_acoustic_stream_start", source.get("speaker_acoustic_stream_start"))
+            if item.get("speaker_final_resolution_status") == "independent_acoustic_assigned":
+                alias = getattr(self, "_historical_speaker_aliases", {}).get(item["speaker_id"])
+                if alias is not None:
+                    item["speaker_continuity_id"] = alias
         metrics.gauge("phase07_speaker_changes", phase07_speaker["speaker_switches"])
         metrics.gauge("phase07_unidentified_segments", phase07_speaker["unidentified_segments"])
         fingerprint = tuple(
@@ -2653,7 +2660,7 @@ class SessionProcessor(threading.Thread):
              i.get("speaker_diarization_source"), i.get("matched_profile_id"),
              i.get("speaker_match_similarity"), i.get("speaker_activity_score"),
              i.get("speaker_activity_status"),
-             i.get("speaker_acoustic_channel"), i.get("speaker_acoustic_stream_start"),
+             i.get("speaker_acoustic_channel"), i.get("speaker_acoustic_stream_start"), i.get("speaker_continuity_id"),
              i.get("speaker_channel_gate_reason"),
              i.get("speaker_final_resolution_status"),
              tuple(tuple(pair) for pair in i.get(

@@ -348,6 +348,7 @@ async function loadSavedTranscript(): Promise<void> {
         speaker_diarization_source: s.speaker_diarization_source,
         speaker_acoustic_channel: s.speaker_acoustic_channel,
         speaker_acoustic_stream_start: s.speaker_acoustic_stream_start,
+        speaker_continuity_id: s.speaker_continuity_id,
         speaker_uncertain: s.speaker_uncertain,
         speaker_final_resolution_status: s.speaker_final_resolution_status,
         matched_profile_id: s.matched_profile_id,
@@ -1137,8 +1138,7 @@ onBeforeUnmount(() => stopInternal())
                       <Phase07Status :segments="segments" :buffered-ms="bufferedMs" :recording="recording" :asr-engine="serverInfo?.asr_engine ?? 'unknown'" :asr-model="serverInfo?.asr_model" :diarization-mode="serverInfo?.diarization_mode" />
                       <p v-if="serverInfo" class="hint-text">ASR {{ serverInfo.asr_model }} · Window {{ serverInfo.processing_window_s }}s · Confirmation {{ serverInfo.confirmation_delay_s }}s · Hotwords {{ serverInfo.active_hotword_count ?? 0 }}</p>
                       <p v-if="serverInfo?.resumed && serverInfo.speaker_label_offset" class="hint-text">
-                        Speaker numbering continues from the saved meeting (previous maximum {{ serverInfo.speaker_label_offset }}).
-                        A first voice labeled Speaker {{ serverInfo.speaker_label_offset + 1 }} after reconnect does not mean that many people spoke in this recording.
+                        Resumed recordings reuse earlier speaker numbers when the voice evidence agrees.
                       </p>
                       <p v-if="audioAnalysis" class="hint-text">Audio analysis: {{ audioAnalysis }}</p>
                     </div>

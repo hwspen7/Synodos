@@ -7,28 +7,47 @@ function channelOf(segment: Segment): number | undefined {
     ? channel : undefined
 }
 
-/** Display diarizer channels without changing the canonical identity evidence. */
+function confirmedSpeaker(segment: Segment): number | undefined {
+  return segment.speaker_id > 0 && !segment.speaker_uncertain &&
+    segment.speaker_final_resolution_status === 'independent_acoustic_assigned'
+    ? segment.speaker_continuity_id ?? segment.speaker_id : undefined
+}
+
+/** Use raw channels within a recording and corroborated identities across recordings. */
 export function projectChannelSpeakers(canonical: Segment[]): Segment[] | null {
-  const streams = new Map<number, Set<number>>()
+  const streams = new Map<number, Map<number, Set<number>>>()
   for (const segment of canonical) {
     const channel = channelOf(segment)
     if (channel === undefined) continue
     const stream = segment.speaker_acoustic_stream_start ?? 0
-    const channels = streams.get(stream) ?? new Set<number>()
-    channels.add(channel)
+    const channels = streams.get(stream) ?? new Map<number, Set<number>>()
+    const confirmed = channels.get(channel) ?? new Set<number>()
+    const identity = confirmedSpeaker(segment)
+    if (identity !== undefined) confirmed.add(identity)
+    channels.set(channel, confirmed)
     streams.set(stream, channels)
   }
   if (!streams.size) return null
 
   const labels = new Map<string, number>()
-  const orderedStreams = [...streams].sort(([left], [right]) => left - right)
+  const priorIdentities = new Map<number, Set<number>>()
   let largest = 0
-  for (const [stream, channels] of orderedStreams) {
+  for (const [stream, channels] of [...streams].sort(([left], [right]) => left - right)) {
     const offset = largest
-    for (const channel of channels) {
-      const label = offset + channel
+    const currentIdentities: Array<[number, number]> = []
+    for (const [channel, confirmed] of channels) {
+      const identity = confirmed.size === 1 ? [...confirmed][0] : undefined
+      const earlier = identity === undefined ? undefined : priorIdentities.get(identity)
+      if (priorIdentities.size && (confirmed.size !== 1 || (earlier && earlier.size > 1))) continue
+      const label = earlier?.size === 1 ? [...earlier][0]! : offset + channel
       labels.set(`${stream}:${channel}`, label)
       largest = Math.max(largest, label)
+      if (identity !== undefined) currentIdentities.push([identity, label])
+    }
+    for (const [identity, label] of currentIdentities) {
+      const knownLabels = priorIdentities.get(identity) ?? new Set<number>()
+      knownLabels.add(label)
+      priorIdentities.set(identity, knownLabels)
     }
   }
   return canonical.map((segment) => {

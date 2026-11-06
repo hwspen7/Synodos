@@ -102,9 +102,8 @@ class Session:
             if state is not None:
                 self.processor.load_state(state)
                 if self.independent_diarization is not None:
-                    # AOSC is valid within one continuous PCM connection.
-                    # A reconnect starts a new anonymous speaker namespace
-                    # rather than falsely reusing the previous cache's IDs.
+                    # Raw acoustic channels reset at each PCM connection.
+                    # Meeting identities can carry across through voice evidence.
                     self.processor._independent_pcm_origin_samples = (
                         self.buffer.start_offset()
                     )
@@ -117,6 +116,9 @@ class Session:
                     )
                     self.processor._nemotron_channels = CorroboratedSpeakerChannels(
                         offset=self.processor._independent_id_offset
+                    )
+                    self.processor._historical_speaker_aliases = self.processor._nemotron_channels.restore_references(
+                        state.get("segments") or [], self.buffer.sample_rate,
                     )
             self.processor.load_participants()
             self.processor.load_hotwords()

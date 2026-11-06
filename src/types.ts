@@ -69,6 +69,7 @@ export interface TranscriptSegment {
   speaker_diarization_source?: string
   speaker_acoustic_channel?: number | null
   speaker_acoustic_stream_start?: number | null
+  speaker_continuity_id?: number
   speaker_final_resolution_status?: string
   speaker_uncertain?: boolean
   /** A registered voiceprint is a biometric candidate, not human confirmation. */
@@ -238,6 +239,7 @@ export interface MeetingSegment {
   speaker_diarization_source?: string
   speaker_acoustic_channel?: number | null
   speaker_acoustic_stream_start?: number | null
+  speaker_continuity_id?: number
   speaker_final_resolution_status?: string
   /** Same saved voice-match provenance as the live transcript. */
   matched_profile_id?: TranscriptSegment['matched_profile_id']

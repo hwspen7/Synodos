@@ -27,7 +27,7 @@ class StableSpeakerChannels:
             return None
         return self._labels.get(channel)
 
-    def bind(self, channel: int, display_label: int) -> None:
+    def bind(self, channel: int, display_label: int, *, historical_labels: set[int] | None = None) -> None:
         """Associate two acoustic channels with one proven voice identity."""
         if (type(channel) is not int or not 1 <= channel <= 8
                 or type(display_label) is not int or display_label <= 0):
@@ -35,7 +35,7 @@ class StableSpeakerChannels:
         prior = self._labels.get(channel)
         if prior is not None and prior != display_label:
             raise ValueError("Cannot rewrite a previously published speaker label")
-        if display_label not in self._labels.values():
+        if display_label not in self._labels.values() and display_label not in (historical_labels or ()):
             raise ValueError("Target speaker label has not been established")
         self._labels[channel] = display_label
 

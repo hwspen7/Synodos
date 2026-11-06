@@ -213,10 +213,18 @@ class MeetingStore:
         meta = payload.get("meta") or {}
         state = payload.get("state") or {}
         sr = int(state.get("sample_rate", meta.get("sample_rate") or 16000))
-        return [
-            self._segment_summary(s, sr)
-            for s in self._numbered_segments(state, sr)
-        ]
+        from sessions.corroborated_speaker_channels import saved_speaker_continuity
+
+        segments = self._numbered_segments(state, sr)
+        aliases = saved_speaker_continuity(segments, sr)
+        rows = []
+        for segment in segments:
+            row = self._segment_summary(segment, sr)
+            if (row["speaker_final_resolution_status"] == "independent_acoustic_assigned"
+                    and row["speaker_id"] in aliases):
+                row["speaker_continuity_id"] = aliases[row["speaker_id"]]
+            rows.append(row)
+        return rows
 
     def list_speech_coverage_gaps(self, meeting_id: str) -> list[dict] | None:
         """Expose unresolved voice intervals, never imaginary transcript text."""

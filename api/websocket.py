@@ -248,9 +248,7 @@ async def ws_audio(
             "merge_gap_s": settings.merge_gap_s,
             "meeting_id": meeting_id,
             "resumed": bool(loaded_state and loaded_state.get("segments")),
-            # Speaker 5 on a resumed meeting may be the FIRST voice of the
-            # new acoustic stream: Nemotron's local IDs are offset to avoid
-            # falsely merging strangers from different recordings.
+            # Offset applies only to newly established meeting voices.
             "speaker_label_offset": session.processor._independent_id_offset,
             "resumed_segment_count": len((loaded_state or {}).get("segments") or []),
             "title": session.processor.meeting_title,
