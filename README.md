@@ -131,6 +131,18 @@ python -m unittest tests.quality.test_english_only
 
 The Python test suite checks basic routes and persistence, not live FunASR inference or concurrent streaming. Initial startup may require downloading models. Override model identifiers or local paths using `ASR_MODEL`, `FSMN_VAD_MODEL`, `PUNC_MODEL`, and `SPK_MODEL`.
 
+### Adaptive audio for live captions
+
+Set `MEETING_ASR_ADAPTIVE_AUDIO=1` before starting the backend to try mild
+stationary-noise reduction and bounded gain for sustained quiet speech. It
+runs on the live multilingual caption input, reuses processed audio as
+windows move, and preserves sample timing. The WAV archive and voiceprint
+pipeline use the source PCM. Explicit `MEETING_DENOISE=1` takes precedence.
+Legacy ASR and native streaming do not use adaptive audio.
+
+Check `adaptive_asr_audio_enabled` at `/api/speech/capabilities`. Unset the
+option or set it to `0` and restart to compare against the baseline.
+
 ## Local data and migration
 
 The application creates `meetings/`, `speakers/`, and `hotwords/` relative to the backend working directory. Git excludes these private directories, downloaded models, virtual environments, dependencies, recordings, and logs.

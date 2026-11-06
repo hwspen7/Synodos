@@ -34,6 +34,12 @@ class SpeechSettings:
     native_streaming: bool = False
     recording_root: str = "recordings"
     max_recording_bytes: int = 4_000_000_000
+    adaptive_audio: bool = False
+
+    @property
+    def adaptive_audio_enabled(self) -> bool:
+        return (self.adaptive_audio and self.engine != "legacy"
+                and not self.enable_denoise and not self.native_streaming)
 
     def validate(self) -> "SpeechSettings":
         if self.engine not in SUPPORTED_ENGINES:
@@ -72,6 +78,7 @@ def load_settings() -> SpeechSettings:
         enable_events=_flag("MEETING_AUDIO_EVENTS"),
         enable_overlap=_flag("MEETING_OVERLAP_DETECTION"),
         enable_denoise=_flag("MEETING_DENOISE"),
+        adaptive_audio=_flag("MEETING_ASR_ADAPTIVE_AUDIO"),
         native_streaming=_flag("MEETING_NATIVE_STREAMING"),
         recording_root=os.getenv("MEETING_RECORDING_ROOT", "recordings"),
         max_recording_bytes=int(os.getenv("MEETING_MAX_RECORDING_BYTES", "4000000000")),

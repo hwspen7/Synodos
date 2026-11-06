@@ -46,6 +46,7 @@ from phase07.speakers import speaker_stats, find_distinct_participant
 from speech.commit_guard import is_temporal_duplicate, is_adjacent_tail_echo
 from speech.commit_boundary import completed_island_drop, unclosed_voice_turn
 from speech.acoustic_guard import uninformative_audio
+from speech.adaptive_audio import AdaptiveAudio
 from sessions.speaker_birth_guard import tentative_new_clusters
 from speech.coverage_retention import choose_safe_drop
 from speech.quality_profile import (
@@ -132,6 +133,9 @@ class SessionProcessor(threading.Thread):
         # Handle transcripts and speaker assignments.
         self._final_discard_s = settings.final_discard_s
         self._speech_settings = load_settings()
+        self._adaptive_audio = (
+            AdaptiveAudio(sr) if self._speech_settings.adaptive_audio_enabled else None
+        )
         self.speech_language = self._speech_settings.language
         self.translate_target = self._speech_settings.translate_to
         self._preview_tracker = PreviewTracker()
@@ -986,6 +990,12 @@ class SessionProcessor(threading.Thread):
             self._send_state()
             return False
         absolute_end = start_offset + len(audio)
+        # Retain noise-floor evidence even when the hybrid guard skips ASR.
+        # Timing, coverage and speaker analysis use the source PCM.
+        asr_audio = (
+            self._adaptive_audio.prepare(start_offset, audio)
+            if self._adaptive_audio is not None else audio
+        )
         if (self._speech_settings.engine == "hybrid"
                 and uninformative_audio(audio, sr)):
             # Do not feed sustained microphone noise to either decoder or
@@ -1018,7 +1028,7 @@ class SessionProcessor(threading.Thread):
             sentences = self.models.transcribe_sentences(audio, hotword=self._hotword_str or None)
         else:
             recognition = self.models.recognize_multilingual(
-                audio,
+                asr_audio,
                 language=self.speech_language,
                 terms=self._hotword_str,
                 config=self._speech_settings,

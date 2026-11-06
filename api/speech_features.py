@@ -41,6 +41,7 @@ async def capabilities() -> dict:
             "timestamps": cfg.engine in ("whisper", "qwen3"),
             "overlap_detection_configured": cfg.enable_overlap,
             "denoising_configured": cfg.enable_denoise,
+            "adaptive_asr_audio_enabled": cfg.adaptive_audio_enabled,
             "event_detection_configured": cfg.enable_events}
 
 
