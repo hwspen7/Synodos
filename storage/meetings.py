@@ -179,6 +179,7 @@ class MeetingStore:
                 "speaker_diarization_source", "camplus",
             ),
             "speaker_acoustic_channel": s.get("speaker_acoustic_channel"),
+            "speaker_acoustic_stream_start": s.get("speaker_acoustic_stream_start"),
             "speaker_channel_gate_reason": s.get("speaker_channel_gate_reason"),
             "speaker_activity_score": s.get("speaker_activity_score"),
             "speaker_activity_margin": s.get("speaker_activity_margin"),

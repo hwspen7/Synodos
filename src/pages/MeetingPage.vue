@@ -14,6 +14,7 @@ import { speakerColor } from '@/speaker/clustering'
 import { splitDisplaySentences } from '@/transcript/display'
 import { expandContentFirstSegments } from '@/transcript/contentFirst'
 import { buildTranscriptParagraphs } from '@/transcript/paragraphs'
+import { projectChannelSpeakers } from '@/transcript/channelSpeakers'
 import {
   supportedLanguages, restoredSpeechChoices,
 } from '@/config/phase1Languages'
@@ -174,11 +175,14 @@ const statusClass = computed(() => {
   return status.value === 'disconnected' ? 'bad' : 'muted'
 })
 
-/** Group neighboring same-speaker segments locally into paragraphs. */
+/** Use acoustic report channels for headings when the meeting has them. */
+const channelSegments = computed(() => projectChannelSpeakers(segments.value))
 const paragraphs = computed<Paragraph[]>(() =>
-  buildTranscriptParagraphs(expandContentFirstSegments(
+  buildTranscriptParagraphs(channelSegments.value ?? expandContentFirstSegments(
     segments.value, translationTarget.value,
-  ), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value, singlePrimarySpeaker: true }),
+  ), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value,
+    channelHeadings: channelSegments.value !== null,
+    singlePrimarySpeaker: channelSegments.value === null }),
 )
 const overlapWarnings = computed(() => segments.value.reduce(
   (sum, seg) => sum + (seg.overlap_intervals_ms?.length ?? 0), 0,
@@ -270,9 +274,7 @@ function applyTranscript(msg: ServerTranscript): void {
   segments.value = segs
   transcriptMeta.value = {
     segments: msg.segments.length,
-    paragraphs: buildTranscriptParagraphs(expandContentFirstSegments(
-      segs, translationTarget.value,
-    ), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value, singlePrimarySpeaker: true }).length,
+    paragraphs: paragraphs.value.length,
   }
   void scrollIfNeeded()
 }
@@ -344,6 +346,9 @@ async function loadSavedTranscript(): Promise<void> {
         overlap_intervals_ms: s.overlap_intervals_ms,
         caption_projection_status: s.caption_projection_status,
         speaker_diarization_source: s.speaker_diarization_source,
+        speaker_acoustic_channel: s.speaker_acoustic_channel,
+        speaker_acoustic_stream_start: s.speaker_acoustic_stream_start,
+        speaker_uncertain: s.speaker_uncertain,
         speaker_final_resolution_status: s.speaker_final_resolution_status,
         matched_profile_id: s.matched_profile_id,
         matched_profile_name: s.matched_profile_name,
@@ -934,9 +939,9 @@ onBeforeUnmount(() => stopInternal())
           <div class="para-head">
             <span class="speaker-dot" :style="{ background: para.color }"></span>
             <span class="speaker-name">{{ para.speaker_name || `Speaker ${para.speaker_id}` }}</span>
-            <span v-if="para.overlapping" class="speaker-registered-label">Primary during overlap</span>
+            <span v-if="para.overlapping" class="speaker-registered-label">{{ channelSegments ? 'Overlap' : 'Primary during overlap' }}</span>
             <span v-if="para.provisional" class="speaker-registered-label">Provisional</span>
-            <span v-if="segments.some(seg => para.segmentIds.includes(seg.id) && seg.speaker_id === para.speaker_id && seg.speaker_diarization_source === 'registered_voiceprint')"
+            <span v-if="segments.some(seg => para.segmentIds.includes(seg.id) && seg.speaker_name === para.speaker_name && seg.speaker_diarization_source === 'registered_voiceprint')"
               class="speaker-registered-label" title="Matched to a saved voiceprint. Verify important identities before relying on them.">
               <AppIcon name="check" :size="12" /> Voice match
             </span>
@@ -1027,7 +1032,7 @@ onBeforeUnmount(() => stopInternal())
               <div v-else class="review-focus-panel">
                 <div class="review-focus-heading">
                   <h3>Speakers</h3>
-                  <p>Check who spoke and confirm identities. Matching a voice is not proof of identity.</p>
+                  <p>Review fused speaker identities and voice matches. Transcript headings follow acoustic channels when available.</p>
                 </div>
                 <div v-if="!reviewSpeakers.length" class="review-tool-empty">
                   Speaker details appear after the meeting has a transcript.

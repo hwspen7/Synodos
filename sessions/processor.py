@@ -720,6 +720,9 @@ class SessionProcessor(threading.Thread):
                     "speaker_acoustic_channel": self._independent_scores.get(
                         int(s["id"]), {},
                     ).get("speaker_acoustic_channel", s.get("speaker_acoustic_channel")),
+                    "speaker_acoustic_stream_start": self._independent_scores.get(
+                        int(s["id"]), {},
+                    ).get("speaker_acoustic_stream_start", s.get("speaker_acoustic_stream_start")),
                     "speaker_channel_gate_reason": self._independent_scores.get(
                         int(s["id"]), {},
                     ).get("speaker_channel_gate_reason", s.get("speaker_channel_gate_reason")),
@@ -868,6 +871,7 @@ class SessionProcessor(threading.Thread):
                         "speaker_diarization_source", "camplus",
                     ),
                     "speaker_acoustic_channel": item.get("speaker_acoustic_channel"),
+                    "speaker_acoustic_stream_start": item.get("speaker_acoustic_stream_start"),
                     "speaker_channel_gate_reason": item.get("speaker_channel_gate_reason"),
                     "speaker_activity_score": item.get("speaker_activity_score"),
                     "speaker_activity_margin": item.get("speaker_activity_margin"),
@@ -2395,8 +2399,10 @@ class SessionProcessor(threading.Thread):
                         int(decision.speaker_id)
                         if type(decision.speaker_id) is int else None
                     )
+                    item["speaker_acoustic_stream_start"] = origin
                     self._independent_scores[int(item["id"])] = {
                         "speaker_acoustic_channel": item["speaker_acoustic_channel"],
+                        "speaker_acoustic_stream_start": origin,
                         "speaker_activity_score": decision.activity_score,
                         "speaker_activity_margin": decision.margin,
                         "speaker_activity_status": decision.status,
@@ -2631,6 +2637,11 @@ class SessionProcessor(threading.Thread):
                     speaker_uncertain=True,
                     speaker_final_resolution_status=item["speaker_final_resolution_status"],
                 )
+        # Resumed captions keep their old acoustic namespace in the view.
+        # They must not enter fusion against channels in the new stream.
+        for item, source in zip(items, ordered, strict=True):
+            item.setdefault("speaker_acoustic_channel", source.get("speaker_acoustic_channel"))
+            item.setdefault("speaker_acoustic_stream_start", source.get("speaker_acoustic_stream_start"))
         metrics.gauge("phase07_speaker_changes", phase07_speaker["speaker_switches"])
         metrics.gauge("phase07_unidentified_segments", phase07_speaker["unidentified_segments"])
         fingerprint = tuple(
@@ -2642,7 +2653,7 @@ class SessionProcessor(threading.Thread):
              i.get("speaker_diarization_source"), i.get("matched_profile_id"),
              i.get("speaker_match_similarity"), i.get("speaker_activity_score"),
              i.get("speaker_activity_status"),
-             i.get("speaker_acoustic_channel"),
+             i.get("speaker_acoustic_channel"), i.get("speaker_acoustic_stream_start"),
              i.get("speaker_channel_gate_reason"),
              i.get("speaker_final_resolution_status"),
              tuple(tuple(pair) for pair in i.get(

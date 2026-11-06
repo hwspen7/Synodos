@@ -119,6 +119,27 @@ class LiveFusionTests(unittest.TestCase):
         ):
             SpeechSettings(engine="hybrid", hybrid_qwen_python="").validate()
 
+    def test_live_and_saved_captions_keep_channels_from_each_recording_stream(self):
+        processor = processor_for_test()
+        old = processor.segments[0]
+        old.update(speaker_acoustic_channel=1, speaker_acoustic_stream_start=0)
+        processor.segments.append({
+            **old, "id": 2, "start_sample": 16000, "end_sample": 32000,
+            "speaker_acoustic_channel": None, "speaker_acoustic_stream_start": None,
+        })
+        processor._independent_pcm_origin_samples = 16000
+        activity = np.zeros((100, 8), dtype=np.float32)
+        activity[:, 0] = 0.95
+        processor.independent_diarization = FakeAcoustics(activity)
+        events = []
+        processor._put = events.append
+        self.assertTrue(processor._rebuild_and_push())
+        saved = processor.snapshot_state()["segments"]
+        live = next(event["segments"] for event in events if event["type"] == "transcript")
+        for items in (live, saved):
+            self.assertEqual([(item["speaker_acoustic_channel"], item["speaker_acoustic_stream_start"])
+                              for item in items], [(1, 0), (1, 16000)])
+
     def test_opt_in_multi_speaker_diagnostics_do_not_rewrite_camplus(self):
         processor = processor_for_test()
         processor.segments.append({

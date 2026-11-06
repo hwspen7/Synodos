@@ -28,6 +28,7 @@ export function buildTranscriptParagraphs(
     maxParagraphMs?: number
     maxParagraphChars?: number
     singlePrimarySpeaker?: boolean
+    channelHeadings?: boolean
   } = {},
 ): Paragraph[] {
   // The previous 750 ms hard cap fragmented continuous conversations
@@ -38,6 +39,7 @@ export function buildTranscriptParagraphs(
   const maxChars = opts.maxParagraphChars ?? 520
   const ordered = [...segments].sort((a, b) => a.start_ms - b.start_ms || a.id - b.id)
   const paragraphs: Paragraph[] = []
+  let latestEnd = -1
   for (const seg of ordered) {
     if (!seg.text.trim()) continue
     const translated = opts.translationTarget && seg.translation_target === opts.translationTarget
@@ -45,9 +47,15 @@ export function buildTranscriptParagraphs(
     const text = translated || seg.text
     const last = paragraphs[paragraphs.length - 1]
     const canonicalId = seg.source_segment_id ?? seg.id
-    const provisional = seg.speaker_diarization_source === 'nemotron3_channel_provisional' ||
+    const provisional = seg.speaker_id > 0 && (
+      seg.speaker_diarization_source === 'nemotron3_channel_provisional' ||
       seg.speaker_final_resolution_status === 'existing_speaker_provisional' ||
-      seg.speaker_final_resolution_status === 'new_speaker_provisional'
+      seg.speaker_final_resolution_status === 'new_speaker_provisional' ||
+      (opts.channelHeadings === true && seg.speaker_uncertain === true)
+    )
+    const overlapsChannel = opts.channelHeadings === true && seg.start_ms < latestEnd
+    latestEnd = Math.max(latestEnd, seg.end_ms)
+    if (overlapsChannel && last) last.overlapping = true
     if (opts.singlePrimarySpeaker && last && seg.start_ms < last.end_ms) {
       // Overlap is one display interval. Keep both original texts and
       // editing targets while showing only one primary speaker heading.
@@ -97,7 +105,7 @@ export function buildTranscriptParagraphs(
         start_ms: seg.start_ms, end_ms: seg.end_ms,
         text, originalText: translated ? seg.text : undefined,
         segmentIds: [canonicalId], color: seg.color,
-        provisional,
+        provisional, overlapping: overlapsChannel || undefined,
       })
     }
   }
