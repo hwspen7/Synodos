@@ -197,7 +197,7 @@ class Nemotron3Diarization:
                     raise SpeakerModelUnavailable(
                         "Nemotron 3 audio processor requires librosa. "
                         "Install it in the isolated Nemotron environment "
-                        "using requirements-speaker-nemotron.txt."
+                        "using requirements/speaker-nemotron.txt."
                     ) from exc
                 raise SpeakerModelUnavailable(
                     "Nemotron 3 requires a compatible Transformers release, "

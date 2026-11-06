@@ -174,7 +174,7 @@ def run_offline_refinement(
         if not python:
             raise OfflineDiarizationUnavailable(
                 "Configure MEETING_SPEAKER_REFINER_PYTHON to point to a dedicated "
-                "pyannote Python environment. See docs/guides/offline_speaker_refinement.md"
+                "pyannote Python environment."
             )
         executable = Path(python).expanduser()
         if not executable.is_file():

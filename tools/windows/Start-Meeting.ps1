@@ -310,7 +310,7 @@ function Start-Launcher {
     & $Python -c 'import psycopg, psycopg_pool, uvicorn'
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'Installing missing PostgreSQL and AI dependencies...'
-        & $Python -m pip install 'psycopg[binary,pool]>=3.2,<4' -r (Join-Path $RepoRoot 'requirements-intelligence.txt')
+        & $Python -m pip install 'psycopg[binary,pool]>=3.2,<4' -r (Join-Path $RepoRoot 'requirements\intelligence.txt')
         if ($LASTEXITCODE -ne 0) { throw 'Python dependency installation failed.' }
     }
     if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot 'node_modules\.bin\vite.cmd'))) {

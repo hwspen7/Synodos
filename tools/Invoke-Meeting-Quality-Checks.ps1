@@ -80,7 +80,7 @@ if (Test-Path -LiteralPath $GoldManifest) {
     }
 } else {
     Write-Warning "Human-reviewed real audio gold manifest missing: $GoldManifest"
-    Write-Warning "No fake real-meeting PASS will be generated. See docs/validation/meeting_knowledge_quality.md"
+    Write-Warning "No real-meeting PASS will be generated without a human-reviewed gold manifest."
 }
 $decision = Join-Path $ReportRoot "meeting_release_decision_$tag.json"
 $argsList = @("-m", "tools.validation.meeting_release_gate", "decide", "--baseline", $baseline,

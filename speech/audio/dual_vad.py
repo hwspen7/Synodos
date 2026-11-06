@@ -53,7 +53,7 @@ def crosscheck_speech_regions(
     except ImportError as exc:
         raise RuntimeError(
             "MEETING_WHISPER_DUAL_VAD=1 requires the webrtcvad-wheels package. "
-            "Install requirements-speech-dual-vad.txt or disable dual VAD."
+            "Install requirements/speech-dual-vad.txt or disable dual VAD."
         ) from exc
     waveform = np.asarray(samples, dtype=np.float32)
     if waveform.ndim != 1 or not np.all(np.isfinite(waveform)):
