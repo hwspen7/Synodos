@@ -291,6 +291,64 @@ class LiveFusionTests(unittest.TestCase):
             "Unidentified Speaker",
         )
 
+    def test_completed_nemotron_unknown_preserves_supported_camplus_identity(self):
+        class CompletedFakeAcoustics(FakeAcoustics):
+            def is_complete(self):
+                return True
+
+        processor = processor_for_test()
+        processor.segments[0].update({
+            "speaker_id": 1,
+            "speaker_name": "Speaker 1",
+            "speaker_evidence_status": "turn_voiceprint",
+            "speaker_uncertain": False,
+        })
+        processor.independent_diarization = CompletedFakeAcoustics(
+            np.zeros((100, 8), dtype=np.float32),
+        )
+        self.assertTrue(processor._rebuild_and_push())
+        result = processor.snapshot_state()["segments"][0]
+        self.assertEqual(result["speaker_id"], 1)
+        self.assertEqual(result["speaker_name"], "Speaker 1")
+        self.assertEqual(
+            result["speaker_diarization_source"],
+            "camplus_independent_unresolved",
+        )
+        self.assertNotIn(1, processor._independent_published)
+
+    def test_completed_nemotron_unknown_does_not_merge_two_camplus_voices(self):
+        class CompletedFakeAcoustics(FakeAcoustics):
+            def is_complete(self):
+                return True
+
+        processor = processor_for_test()
+        processor.segments[0].update({
+            "speaker_id": 1,
+            "speaker_name": "Speaker 1",
+            "speaker_evidence_status": "turn_voiceprint",
+            "speaker_uncertain": False,
+        })
+        processor.segments.append({
+            **processor.segments[0],
+            "id": 2,
+            "start_sample": 16000,
+            "end_sample": 32000,
+            "cluster": 1,
+            "speaker_id": 2,
+            "speaker_name": "Speaker 2",
+            "emb": np.array([0, 1], dtype=np.float32),
+        })
+        processor.independent_diarization = CompletedFakeAcoustics(
+            np.zeros((200, 8), dtype=np.float32),
+        )
+        self.assertTrue(processor._rebuild_and_push())
+        output = processor.snapshot_state()["segments"]
+        self.assertEqual([s["speaker_id"] for s in output], [1, 2])
+        self.assertTrue(all(
+            s["speaker_diarization_source"]
+                == "camplus_independent_unresolved" for s in output
+        ))
+
     def test_completed_track_missing_tail_does_not_invent_legacy_speaker(self):
         class CompletedFakeAcoustics(FakeAcoustics):
             def is_complete(self):
