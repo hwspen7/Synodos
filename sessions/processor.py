@@ -877,7 +877,7 @@ class SessionProcessor(threading.Thread):
             self._send_state()
             return False
         absolute_end = start_offset + len(audio)
-        if (self._speech_settings.engine in ("whisper", "hybrid")
+        if (self._speech_settings.engine == "hybrid"
                 and uninformative_audio(audio, sr)):
             # Do not feed sustained microphone noise to either decoder or
             # the speaker extractor. Keep a short tail for the next genuine
