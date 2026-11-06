@@ -69,9 +69,11 @@ def _word_items(piece: object, duration_ms: int) -> list[Word]:
         if not value.strip() or start is None or end is None:
             continue
         a, b = round(start * 1000), round(end * 1000)
-        if b <= a or a < 0 or b > duration_ms + 250:
+        if a < 0 or b > duration_ms + 250:
             continue
-        result.append(Word(value, a, min(b, duration_ms)))
+        b = min(b, duration_ms)
+        if b > a:
+            result.append(Word(value, a, b))
     return result
 
 
@@ -141,7 +143,8 @@ def verify_utterances(
             accepted.append(Utterance(text, start, end, detected_language, (), "segment"))
             continue
         if not words:
-            accepted.append(Utterance(text, start, end, detected_language, (), "segment"))
+            if not source_words:
+                accepted.append(Utterance(text, start, end, detected_language, (), "segment"))
             continue
         voiced: list[Word] = []
         for word in words:
@@ -161,7 +164,7 @@ def verify_utterances(
                 runs.append([word])
             else:
                 runs[-1].append(word)
-        all_accepted = len(voiced) == len(words) and len(runs) == 1
+        all_accepted = len(voiced) == len(source_words) and len(runs) == 1
         if preserve_disputed_text and not all_accepted:
             # Trimming words can turn imperfect alignment into missing meeting
             # content. Keep the model's wording while explicitly lowering

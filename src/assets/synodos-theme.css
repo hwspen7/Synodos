@@ -311,6 +311,7 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
   width:31px;height:31px;border-radius:50%;
   background:#f7e3d2!important;color:#99410a;font-size:11px;font-weight:800;border:0;
 }
+.synodos-speaker-avatar::before { content:attr(data-initials);user-select:none; }
 .synodos-shell.meeting-route .meeting-primary .speaker-name { font-size:12px;font-weight:800;color:#914007; }
 .synodos-shell.meeting-route .meeting-primary .para-time { color:#b5a596;font-size:10px; }
 .synodos-shell.meeting-route .meeting-primary .para-text.transcript-sentence {

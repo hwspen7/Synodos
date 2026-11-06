@@ -27,7 +27,7 @@ test('report channels 1, 2, and 3 produce three numbered headings', () => {
   const before = JSON.stringify(rows)
   const projected = projectChannelSpeakers(rows)
   assert.deepEqual(projected.map(row => row.speaker_name),
-    ['Speaker 1', 'Speaker pending', 'Speaker 2', 'Speaker 1', 'Speaker 2', 'Speaker 3'])
+    ['Speaker 1', 'Speaker 4', 'Speaker 2', 'Speaker 1', 'Speaker 2', 'Speaker 3'])
   const paragraphs = buildTranscriptParagraphs(projected, {
     channelHeadings: true, singlePrimarySpeaker: false, translationTarget: 'en',
   })
@@ -65,7 +65,7 @@ test('confirmed voices keep their headings when channels swap after a pause', ()
   const resumedFirst = segment(5, 7400, 8800, 1, 2, {
     ...confirmed, speaker_acoustic_stream_start: 96000,
   })
-  assert.equal(projectChannelSpeakers([first, second, pending])[2].speaker_name, 'Speaker pending')
+  assert.equal(projectChannelSpeakers([first, second, pending])[2], pending)
   assert.deepEqual(projectChannelSpeakers([first, second, pending, resumedSecond, resumedFirst])
     .map(row => row.speaker_id), [1, 2, 2, 2, 1])
 })

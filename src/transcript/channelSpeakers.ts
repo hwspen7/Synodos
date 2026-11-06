@@ -57,11 +57,12 @@ export function projectChannelSpeakers(canonical: Segment[]): Segment[] | null {
     if (namedIdentity && segment.speaker_id > 0 && segment.speaker_name) return segment
     const channel = channelOf(segment)
     const stream = segment.speaker_acoustic_stream_start ?? 0
-    const label = labels.get(`${stream}:${channel}`)
-    if (label === undefined) {
-      return { ...segment, speaker_id: 0, speaker_name: 'Speaker pending',
-        speaker_uncertain: false, color: '#8892a0' }
-    }
+    const identity = segment.speaker_continuity_id ?? segment.speaker_id
+    const known = priorIdentities.get(identity)
+    const label = labels.get(`${stream}:${channel}`) ??
+      (known?.size === 1 ? [...known][0] : undefined)
+    // Keep the server's existing assignment when no unique channel label exists.
+    if (label === undefined) return segment
     return { ...segment, speaker_id: label, speaker_name: `Speaker ${label}`,
       color: speakerColor(label) }
   })

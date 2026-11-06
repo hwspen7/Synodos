@@ -1029,7 +1029,9 @@ onBeforeUnmount(() => stopInternal())
           class="paragraph" :class="{ 'paragraph-unidentified': para.speaker_id <= 0,
             'paragraph-highlighted': highlightedSegmentId !== null && para.segmentIds.includes(highlightedSegmentId) }">
           <div class="para-head">
-            <span class="speaker-dot synodos-speaker-avatar" :style="{ '--synodos-speaker-accent': para.color }">{{ speakerInitials(para.speaker_name || `Speaker ${para.speaker_id}`) }}</span>
+            <span class="speaker-dot synodos-speaker-avatar" aria-hidden="true"
+              :data-initials="speakerInitials(para.speaker_name || `Speaker ${para.speaker_id}`)"
+              :style="{ '--synodos-speaker-accent': para.color }"></span>
             <span class="speaker-name">{{ para.speaker_name || `Speaker ${para.speaker_id}` }}</span>
             <span v-if="para.overlapping" class="speaker-registered-label">{{ channelSegments ? 'Overlap' : 'Primary during overlap' }}</span>
             <span v-if="para.provisional" class="speaker-registered-label">Provisional</span>

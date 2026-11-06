@@ -45,6 +45,20 @@ class SpeechEvidenceTests(unittest.TestCase):
         self.assertEqual([u.text for u in output], ["Hello"])
         self.assertEqual((output[0].start_ms, output[0].end_ms), (400, 1300))
 
+    def test_invalid_word_times_cannot_restore_unverified_text(self):
+        valid = word(.2, .55, " Hello")
+        invalid = word(.6, .6, " there")
+        outside = word(1.05, 1.15, " again")
+        mixed = segment(.2, .8, "Hello there again", words=(valid, invalid, outside))
+        no_alignment = segment(.2, .8, "there again", words=(invalid, outside))
+        verified = verify_utterances(
+            [mixed, no_alignment], [region(.1, .9)], 1000, "en",
+        )
+        self.assertEqual(
+            [(item.text, item.start_ms, item.end_ms) for item in verified],
+            [("Hello", 200, 550)],
+        )
+
     def test_words_split_at_long_silent_gap(self):
         output = verify_utterances([segment(.1, 5, "Hello world",
             words=(word(.3, 1, " Hello"), word(3.7, 4.5, " world")))],
