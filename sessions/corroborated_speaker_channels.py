@@ -58,6 +58,15 @@ class CorroboratedSpeakerChannels:
         self.distinct_candidate_similarity = distinct_candidate_similarity
         self.new_voice_min_ms = new_voice_min_ms
         self.new_voice_min_turns = new_voice_min_turns
+        # Medium-distance voices require much more corroboration than voices
+        # demonstrably unlike every existing identity. This avoids the old
+        # 0.48--0.78 dead zone without equating one new Nemotron channel to a
+        # new person.
+        self.medium_distinct_max_similarity = 0.70
+        self.medium_candidate_similarity = 0.84
+        self.medium_min_turns = 5
+        self.medium_min_ms = 9000
+        self._last_gate_reason: dict[int, str] = {}
         self._references: dict[int, list[np.ndarray]] = {}
         self._candidates: dict[int, dict[int, tuple[int, np.ndarray]]] = {}
 
@@ -68,6 +77,10 @@ class CorroboratedSpeakerChannels:
     @property
     def labels(self) -> dict[int, int]:
         return self._channels.labels
+
+    def gate_reason(self, channel: int) -> str:
+        """Anonymous, vector-free explanation for the last channel decision."""
+        return self._last_gate_reason.get(channel, "unavailable")
 
     def _remember(self, display: int, vector: np.ndarray | None) -> None:
         if vector is None:
@@ -124,12 +137,14 @@ class CorroboratedSpeakerChannels:
         vector = _unit(embedding)
         existing = self._channels.existing(channel)
         if existing is not None:
+            self._last_gate_reason[channel] = "existing_channel"
             own = [
                 float(np.dot(vector, reference))
                 for reference in self._references.get(existing, [])
                 if vector is not None and vector.shape == reference.shape
             ]
             if own and max(own) < self.distinct_voice_max_similarity:
+                self._last_gate_reason[channel] = "existing_channel_voice_conflict"
                 # The model reused an existing channel for acoustically
                 # incompatible speech. Never force the old person's label.
                 return None
@@ -139,6 +154,7 @@ class CorroboratedSpeakerChannels:
             if (vector is not None and scores
                     and scores[0][0] != existing
                     and scores[0][1] >= self.same_voice_similarity):
+                self._last_gate_reason[channel] = "existing_channel_matches_other_voice"
                 return None
             self._remember(existing, vector)
             return existing
@@ -149,14 +165,19 @@ class CorroboratedSpeakerChannels:
             )
             if label is not None:
                 self._remember(label, vector)
+                self._last_gate_reason[channel] = "first_channel_confirmed"
+            else:
+                self._last_gate_reason[channel] = "first_channel_insufficient_activity"
             return label
 
         if vector is None:
+            self._last_gate_reason[channel] = "missing_voice_embedding"
             return None
         scores = self._scores(vector)
         if not scores:
             # Without a known person's embedding there is no acoustic basis
             # for deciding whether another channel is a new human.
+            self._last_gate_reason[channel] = "missing_known_voice_references"
             return None
         best_label, similarity = scores[0]
         if (similarity >= self.same_voice_similarity
@@ -164,37 +185,87 @@ class CorroboratedSpeakerChannels:
             self._channels.bind(channel, best_label)
             self._remember(best_label, vector)
             self._candidates.pop(channel, None)
+            self._last_gate_reason[channel] = "existing_voice_reused"
             return best_label
-        if similarity > self.distinct_voice_max_similarity:
+
+        # A similarity in (0.48, 0.78) used to drop candidate evidence
+        # outright. Keep a conservative middle band, but do not allocate
+        # another person from an equivocal near-match to an existing voice.
+        if similarity > self.medium_distinct_max_similarity:
+            # A near-match to a known voice invalidates this proposed birth,
+            # rather than leaving stale strong-distinct candidates behind.
+            self._candidates.pop(channel, None)
+            self._last_gate_reason[channel] = "candidate_similar_to_existing_voice"
             return None
 
         turns = self._candidates.setdefault(channel, {})
-        # The same transcript segment is evaluated repeatedly while audio
-        # arrives. Replace its evidence instead of counting it as new turns.
+        # One segment ID can be evaluated repeatedly during streaming;
+        # it must never count as additional independent evidence.
         turns[segment_id] = (evidence_ms, vector)
-        if len(turns) < self.new_voice_min_turns:
+        while len(turns) > 32:
+            turns.pop(next(iter(turns)))
+        # The strictest band seen across the entire pending cohort wins.
+        # One momentarily distant embedding cannot bypass an earlier
+        # medium-distance, unconfirmed voice candidate.
+        medium_distance = any(
+            (score := self._scores(candidate))
+            and score[0][1] > self.distinct_voice_max_similarity
+            for _, candidate in turns.values()
+        )
+        required_turns = (self.medium_min_turns if medium_distance
+                          else self.new_voice_min_turns)
+        required_ms = (self.medium_min_ms if medium_distance
+                       else self.new_voice_min_ms)
+        required_consistency = (
+            self.medium_candidate_similarity if medium_distance
+            else self.distinct_candidate_similarity
+        )
+        maximum_known_similarity = (
+            self.medium_distinct_max_similarity if medium_distance
+            else self.distinct_voice_max_similarity
+        )
+        if len(turns) < required_turns:
+            self._last_gate_reason[channel] = "candidate_needs_more_turns"
             return None
-        if sum(duration for duration, _ in turns.values()) < self.new_voice_min_ms:
+        duration_ms = sum(duration for duration, _ in turns.values())
+        if duration_ms < required_ms:
+            self._last_gate_reason[channel] = "candidate_needs_more_audio"
             return None
         vectors = [item for _, item in turns.values()]
-        if not all(
-            float(np.dot(vectors[0], other)) >= self.distinct_candidate_similarity
-            for other in vectors[1:]
-        ):
+        # Medium-distance candidates require pairwise consistency, not just
+        # agreement with a single potentially noisy initial vector.
+        if medium_distance:
+            consistent = all(
+                float(np.dot(left, right)) >= required_consistency
+                for i, left in enumerate(vectors)
+                for right in vectors[i + 1:]
+            )
+        else:
+            consistent = all(
+                float(np.dot(vectors[0], other)) >= required_consistency
+                for other in vectors[1:]
+            )
+        if not consistent:
+            self._last_gate_reason[channel] = "candidate_voice_inconsistent"
             return None
-        # Recheck against ALL known references just before allocating.
         if any(
-            (scores := self._scores(candidate))
-            and scores[0][1] > self.distinct_voice_max_similarity
+            (known_scores := self._scores(candidate))
+            and known_scores[0][1] > maximum_known_similarity
             for candidate in vectors
         ):
+            self._last_gate_reason[channel] = "candidate_not_distinct_from_known"
             return None
         label = self._channels.resolve(
-            channel, sum(duration for duration, _ in turns.values()),
-            reserved_labels=reserved_labels,
+            channel, duration_ms, reserved_labels=reserved_labels,
         )
         if label is not None:
             for candidate in vectors:
                 self._remember(label, candidate)
             self._candidates.pop(channel, None)
+            self._last_gate_reason[channel] = (
+                "medium_voice_confirmed" if medium_distance
+                else "distinct_voice_confirmed"
+            )
+        else:
+            self._last_gate_reason[channel] = "channel_minimum_activity_pending"
         return label

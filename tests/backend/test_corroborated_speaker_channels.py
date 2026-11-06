@@ -37,6 +37,49 @@ class CorroboratedSpeakerTests(unittest.TestCase):
         self.assertIsNone(guard.observe(2, 2, 2500, None))
         self.assertEqual(guard.labels, {5: 1})
 
+    def test_medium_distance_voice_requires_sustained_consensus(self):
+        guard = CorroboratedSpeakerChannels()
+        self.assertEqual(guard.observe(1, 1, 1700, vec(1, 0)), 1)
+        results = [
+            guard.observe(2, seg_id, 2000, vec(.62, .7846))
+            for seg_id in range(2, 7)
+        ]
+        self.assertEqual(results, [None, None, None, None, 2])
+        self.assertEqual(guard.gate_reason(2), "medium_voice_confirmed")
+        self.assertEqual(guard.labels, {1: 1, 2: 2})
+
+    def test_medium_distance_voice_still_unknown_without_five_turns(self):
+        guard = CorroboratedSpeakerChannels()
+        guard.observe(1, 1, 1700, vec(1, 0))
+        for seg_id in range(2, 6):
+            self.assertIsNone(guard.observe(2, seg_id, 2000, vec(.62, .7846)))
+        self.assertEqual(guard.labels, {1: 1})
+        self.assertEqual(guard.gate_reason(2), "candidate_needs_more_turns")
+
+    def test_too_similar_never_born_as_new_even_after_many_segments(self):
+        guard = CorroboratedSpeakerChannels()
+        guard.observe(1, 1, 1700, vec(1, 0))
+        for seg_id in range(2, 17):
+            self.assertIsNone(guard.observe(2, seg_id, 2500, vec(.74, .672)))
+        self.assertEqual(guard.labels, {1: 1})
+        self.assertEqual(
+            guard.gate_reason(2), "candidate_similar_to_existing_voice"
+        )
+
+    def test_mixed_candidate_cannot_bypass_medium_consensus(self):
+        guard = CorroboratedSpeakerChannels()
+        guard.observe(1, 1, 1700, vec(1, 0))
+        vectors = [
+            vec(.65, .76), vec(0, 1), vec(.65, .76), vec(0, 1),
+            vec(.65, .76), vec(0, 1),
+        ]
+        results = [
+            guard.observe(2, seg_id, 2000, voice)
+            for seg_id, voice in enumerate(vectors, start=2)
+        ]
+        self.assertTrue(all(result is None for result in results))
+        self.assertEqual(guard.labels, {1: 1})
+
     def test_ambiguous_similarity_does_not_create_new_identity(self):
         guard = CorroboratedSpeakerChannels()
         self.assertEqual(guard.observe(1, 1, 1600, vec(1, 0)), 1)
