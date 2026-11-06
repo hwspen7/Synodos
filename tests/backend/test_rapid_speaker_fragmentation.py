@@ -49,8 +49,14 @@ class RapidSpeakerFragmentationTests(unittest.TestCase):
         ]
         result = repair_rapid_anonymous_births(rows, sample_rate=16000)
         self.assertEqual(result, {"merged": 0, "deferred": 2})
-        self.assertEqual([s["speaker_id"] for s in rows], [1, -1, -1])
+        # No evidence is not evidence of an incorrect identity. Preserve
+        # existing provisional labels until actual voice evidence arrives.
+        self.assertEqual([s["speaker_id"] for s in rows], [1, 2, 3])
         self.assertTrue(all(s["speaker_uncertain"] for s in rows[1:]))
+        self.assertTrue(all(
+            s["speaker_evidence_status"] == "rapid_cluster_unconfirmed"
+            for s in rows[1:]
+        ))
 
     def test_two_real_speakers_are_not_filtered(self):
         rows = [
