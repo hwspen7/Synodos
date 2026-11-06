@@ -65,7 +65,7 @@ from sessions.speaker_tasks import submit_speaker_analysis, submit_acoustic_wind
 from sessions.speaker_evidence import speaker_evidence
 from sessions.registered_identity import match_saved_voice
 from sessions.corroborated_speaker_channels import CorroboratedSpeakerChannels
-from sessions.rapid_speaker_fragmentation import repair_rapid_anonymous_births
+from sessions.speaker_cluster_birth import gate_new_cluster_births
 from sessions.speaker_partition_evidence import consistent_partition_embedding
 from speech.acoustic_timeline import AcousticTimeline
 from speech.diarization import resolve_diarization_mode
@@ -1751,41 +1751,20 @@ class SessionProcessor(threading.Thread):
             for idx, label in zip(pool, labels):
                 self.segments[idx]["cluster"] = int(label)
 
-        live_hybrid = getattr(
-            getattr(self, "_speech_settings", None), "engine", None
-        ) == "hybrid"
-        if live_hybrid:
-            # A single uncorroborated voiceprint must not produce Speaker 3,
-            # Speaker 4, etc. Preserve its words as Unidentified Speaker
-            # until independent turns or a long word-aligned turn support it.
-            tentative = tentative_new_clusters(
-                self.segments, self._speaker_birth_approved,
-                self.settings.sample_rate,
-            )
-            for seg in self.segments:
-                if seg.get("cluster") in tentative and seg["id"] not in matched:
-                    seg["cluster"] = UNIDENTIFIED_CLUSTER
-            if tentative:
-                metrics.increment("speaker_tentative_clusters_deferred",
-                                  len(tentative))
-        self._remap_speakers()
-        self._assign_labels(matched)
-        # Nemotron is optional. Apply a separate content-preserving guard
-        # when CAM++ alone rapidly invents several anonymous identities.
-        rapid = repair_rapid_anonymous_births(
+        # Speaker birth is an identity decision, not a raw CAM++ cluster
+        # numbering decision. Apply the same voice-evidence gate to Whisper,
+        # Hybrid, and Qwen before mapping raw clusters to visible IDs.
+        # This replaces the hybrid-only tentative gate and the post-hoc
+        # rapid-fragmentation heuristic, which allowed transient Speaker 2+
+        # labels to be published and then sometimes erased.
+        births = gate_new_cluster_births(
             self.segments, sample_rate=self.settings.sample_rate,
         )
-        if rapid["merged"]:
-            metrics.increment("speaker_rapid_births_merged", rapid["merged"])
-        if rapid["deferred"]:
-            metrics.increment("speaker_rapid_births_deferred", rapid["deferred"])
-        if live_hybrid:
-            self._speaker_birth_approved.update(
-                int(seg["speaker_id"]) for seg in self.segments
-                if type(seg.get("speaker_id")) is int and seg["speaker_id"] > 0
-                and type(seg.get("cluster")) is int and seg["cluster"] >= 0
-                and not seg.get("speaker_uncertain")
-            )
+        metrics.increment("speaker_birth_clusters_reused", births["reused"])
+        metrics.increment("speaker_birth_segments_deferred", births["deferred"])
+        metrics.increment("speaker_birth_clusters_confirmed", births["confirmed"])
+        self._remap_speakers()
+        self._assign_labels(matched)
         # Do not rewrite a user's already displayed historical transcript
         # on every later global clustering pass. Recent and uncertain
         # segments still receive new evidence and revisions.
