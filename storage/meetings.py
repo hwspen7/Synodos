@@ -194,6 +194,15 @@ class MeetingStore:
             ),
         }
 
+    @staticmethod
+    def _numbered_segments(state: dict, sample_rate: int) -> list[dict]:
+        from sessions.provisional_speakers import numbered_saved_segments
+
+        return numbered_saved_segments(
+            state.get("segments") or [], sample_rate,
+            reserved_labels=(state.get("participant_label_map") or {}).values(),
+        )
+
     def list_segments(self, meeting_id: str) -> list[dict] | None:
         """Return complete safe evidence for later summaries, no voiceprints."""
         payload = self._read_payload(meeting_id)
@@ -204,7 +213,7 @@ class MeetingStore:
         sr = int(state.get("sample_rate", meta.get("sample_rate") or 16000))
         return [
             self._segment_summary(s, sr)
-            for s in (state.get("segments") or [])
+            for s in self._numbered_segments(state, sr)
         ]
 
     def list_speech_coverage_gaps(self, meeting_id: str) -> list[dict] | None:
@@ -309,8 +318,8 @@ class MeetingStore:
             raise FileNotFoundError(meeting_id)
         meta = payload.get("meta") or {}
         state = payload.get("state") or {}
-        segments = state.get("segments") or []
         sr = int(state.get("sample_rate", meta.get("sample_rate") or 16000))
+        segments = self._numbered_segments(state, sr)
         merge_gap_s = float(state.get("merge_gap_s", meta.get("merge_gap_s") or 2.0))
         speaker_map = {int(k): int(v) for k, v in (state.get("speaker_map") or {}).items()}
         paragraphs = self._build_paragraphs(segments, sr, merge_gap_s, speaker_map)

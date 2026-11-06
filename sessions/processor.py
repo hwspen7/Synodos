@@ -66,6 +66,9 @@ from sessions.outbox import enqueue_message
 from sessions.translation_tasks import submit_translation
 from sessions.speaker_tasks import submit_speaker_analysis, submit_acoustic_window
 from sessions.speaker_evidence import speaker_evidence
+from sessions.provisional_speakers import (
+    PROVISIONAL_NEW, PROVISIONAL_RESOLUTIONS, assign_provisional_speakers, numbered_saved_segments,
+)
 from sessions.registered_identity import match_saved_voice
 from sessions.corroborated_speaker_channels import CorroboratedSpeakerChannels
 from sessions.speaker_cluster_birth import gate_new_cluster_births
@@ -177,6 +180,7 @@ class SessionProcessor(threading.Thread):
         self._independent_scores: dict[int, dict] = {}
         self._independent_support: dict[int, dict] = {}
         self._fused_final_status: dict[int, dict] = {}
+        self._provisional_published: dict[int, int] = {}
         self._content_first_projection: dict[int, dict] = {}
         self._independent_pcm_origin_samples = 0
         self._independent_id_offset = 0
@@ -517,7 +521,7 @@ class SessionProcessor(threading.Thread):
         speaker_updated = self._drain_final_speaker_analysis()
         acoustic_updated = self._collect_acoustic(wait_seconds=6.0)
         # A saved final meeting must never claim an unfinished worker is
-        # still pending. Keep the unassigned identity explicit and retain ASR.
+        # still pending. Keep the unfinished evidence explicit and retain ASR.
         incomplete_speaker_ids = (
             set(self._speaker_tasks) | set(self._speaker_deferred)
         )
@@ -560,7 +564,7 @@ class SessionProcessor(threading.Thread):
         self._rebuild_and_push()
         if self._speaker_tasks or self._acoustic_tasks or self._speaker_deferred:
             self._put({"type": "feature_warning", "feature": "diarization",
-                       "message": "Speaker analysis unfinished; uncertain speakers were kept unidentified"})
+                       "message": "Speaker analysis unfinished; uncertain assignments remain provisional"})
             self._speaker_tasks.clear()
             self._acoustic_tasks.clear()
             self._speaker_deferred.clear()
@@ -650,7 +654,7 @@ class SessionProcessor(threading.Thread):
     def snapshot_state(self) -> dict:
         """Audio transcription and speaker data handling."""
         acoustics = speaker_evidence(self.segments)
-        return {
+        state = {
             "id": self.meeting_id,
             "title": self.meeting_title,
             "sample_rate": self.settings.sample_rate,
@@ -800,15 +804,37 @@ class SessionProcessor(threading.Thread):
             "speaker_map": dict(self._speaker_map),
             "ui_settings": dict(self.ui_settings),
         }
+        for row in state["segments"]:
+            label = self._provisional_published.get(row["id"])
+            if label is not None:
+                row.update(
+                    speaker_id=label,
+                    speaker_name=self._fused_final_status.get(row["id"], {}).get(
+                        "speaker_name", row.get("speaker_name") or f"Speaker {label}",
+                    ),
+                )
+        state["segments"] = numbered_saved_segments(
+            state["segments"], self.settings.sample_rate,
+            reserved_labels=self._participant_label_map.values(),
+        )
+        return state
 
     def load_state(self, state: dict) -> None:
         """Audio transcription and speaker data handling."""
         self.segments = []
+        self._provisional_published = {}
         self._speech_coverage_gaps = [
             dict(gap) for gap in state.get("speech_coverage_gaps", [])
             if isinstance(gap, dict)
         ][:256]
         for item in state.get("segments", []) or []:
+            published = int(item.get("speaker_id", item.get("cluster", -1)))
+            provisional = (
+                item.get("speaker_final_resolution_status") in PROVISIONAL_RESOLUTIONS
+                and published > 0 and int(item.get("speaker_override_id") or 0) <= 0
+            )
+            if provisional:
+                self._provisional_published[int(item["id"])] = published
             self.segments.append(
                 {
                     "id": int(item["id"]),
@@ -816,7 +842,8 @@ class SessionProcessor(threading.Thread):
                     "end_sample": int(item["end_sample"]),
                     "emb": normalized_embedding(item.get("emb")),
                     "cluster": int(item.get("cluster", -1)),
-                    "speaker_id": int(item.get("speaker_id", item.get("cluster", -1))),
+                    "speaker_id": -1 if provisional else published,
+                    "saved_provisional_id": published if provisional else None,
                     "speaker_name": item.get("speaker_name", ""),
                     "saved_nemotron_id": (
                         int(item["speaker_id"])
@@ -2114,6 +2141,7 @@ class SessionProcessor(threading.Thread):
                 "matched_profile_name": s.get("matched_profile_name"),
                 "speaker_match_similarity": s.get("speaker_match_similarity"),
                 "speaker_evidence_status": s.get("speaker_evidence_status"),
+                "speaker_embedding_available": s.get("emb") is not None,
                 "start_ms": round(s["start_sample"] * 1000 / self.settings.sample_rate),
                 "end_ms": round(s["end_sample"] * 1000 / self.settings.sample_rate),
                 "text": s["text"],
@@ -2181,8 +2209,8 @@ class SessionProcessor(threading.Thread):
                 self._independent_published[int(item["id"])] = int(source["speaker_id"])
             elif (source.get("speaker_diarization_source") == "nemotron3_uncertain"
                   and int(source["end_sample"]) <= origin):
-                # Old resumed captions retain their saved honest unknown,
-                # even if a new session reclusters legacy CAM++ embeddings.
+                # Keep the raw decision for old frames; the visible
+                # provisional label is restored after acoustic fusion.
                 item["speaker_id"] = -1
                 item["speaker_name"] = "Unidentified Speaker"
                 item["speaker_diarization_source"] = "nemotron3_uncertain"
@@ -2535,6 +2563,42 @@ class SessionProcessor(threading.Thread):
                 "speaker_final_resolution_status": final_reason,
             }
         phase07_speaker = speaker_stats(items)
+        # Preserve saved display assignments on resume unless real evidence
+        # resolves them or a newly confirmed identity now owns the number.
+        restored = {}
+        occupied = {
+            item["speaker_id"] for item in items
+            if type(item["speaker_id"]) is int and item["speaker_id"] > 0
+        }
+        for item, source in zip(items, ordered, strict=True):
+            saved = source.get("saved_provisional_id")
+            reason = source.get("speaker_final_resolution_status")
+            label = item["speaker_id"]
+            if ((type(label) is not int or label <= 0) and saved is not None
+                    and (reason != PROVISIONAL_NEW or saved not in occupied)):
+                item.update(speaker_id=saved, speaker_name=source["speaker_name"],
+                            speaker_status="uncertain", speaker_uncertain=True,
+                            speaker_final_resolution_status=reason)
+                restored[item["id"]] = saved
+        self._provisional_published = restored | assign_provisional_speakers(
+            items,
+            previous=getattr(self, "_provisional_published", {}),
+            channel_labels=channel_mapper.labels if channel_mapper is not None else None,
+            voice_embeddings={
+                **{int(source["id"]): source["emb"] for source in ordered
+                   if source.get("emb") is not None},
+                **effective_embeddings,
+            },
+            reserved_labels=getattr(self, "_participant_label_map", {}).values(),
+        )
+        for item in items:
+            if item["id"] in self._provisional_published:
+                self._fused_final_status[item["id"]].update(
+                    speaker_status=item["speaker_status"],
+                    speaker_name=item["speaker_name"],
+                    speaker_uncertain=True,
+                    speaker_final_resolution_status=item["speaker_final_resolution_status"],
+                )
         metrics.gauge("phase07_speaker_changes", phase07_speaker["speaker_switches"])
         metrics.gauge("phase07_unidentified_segments", phase07_speaker["unidentified_segments"])
         fingerprint = tuple(

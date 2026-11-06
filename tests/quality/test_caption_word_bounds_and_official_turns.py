@@ -88,7 +88,9 @@ class CaptionProjectionTests(unittest.TestCase):
         )
         self.assertTrue(processor._rebuild_and_push())
         self.assertEqual(processor._independent_published[1], -1)
-        self.assertEqual(processor.snapshot_state()["segments"][0]["speaker_id"], -1)
+        saved = processor.snapshot_state()["segments"][0]
+        self.assertEqual(saved["speaker_id"], 1)
+        self.assertEqual(saved["speaker_final_resolution_status"], "new_speaker_provisional")
 
 
 if __name__ == "__main__":

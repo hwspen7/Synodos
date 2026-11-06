@@ -44,15 +44,19 @@ export function buildTranscriptParagraphs(
       ? seg.translation : seg.text
     const last = paragraphs[paragraphs.length - 1]
     const canonicalId = seg.source_segment_id ?? seg.id
+    const provisional = seg.speaker_diarization_source === 'nemotron3_channel_provisional' ||
+      seg.speaker_final_resolution_status === 'existing_speaker_provisional' ||
+      seg.speaker_final_resolution_status === 'new_speaker_provisional'
     if (opts.singlePrimarySpeaker && last && seg.start_ms < last.end_ms) {
       // Overlap is one display interval. Keep both original texts and
       // editing targets while showing only one primary speaker heading.
       last.overlapping = true
-      if (last.speaker_id <= 0 && seg.speaker_id > 0) {
+      if (seg.speaker_id > 0 &&
+          (last.speaker_id <= 0 || (last.provisional && !provisional))) {
         last.speaker_id = seg.speaker_id
         last.speaker_name = seg.speaker_name
         last.color = seg.color
-        last.provisional = seg.speaker_diarization_source === 'nemotron3_channel_provisional'
+        last.provisional = provisional
       }
       last.end_ms = Math.max(last.end_ms, seg.end_ms)
       if (!last.segmentIds.includes(canonicalId)) last.segmentIds.push(canonicalId)
@@ -76,6 +80,7 @@ export function buildTranscriptParagraphs(
       last.text.length + text.length + 1 <= maxChars
     )
     if (canMerge && last) {
+      last.provisional ||= provisional
       last.end_ms = Math.max(last.end_ms, seg.end_ms)
       if (!last.segmentIds.includes(canonicalId)) last.segmentIds.push(canonicalId)
       last.text = joinCaptionText(last.text, text)
@@ -85,7 +90,7 @@ export function buildTranscriptParagraphs(
         speaker_name: seg.speaker_name,
         start_ms: seg.start_ms, end_ms: seg.end_ms,
         text, segmentIds: [canonicalId], color: seg.color,
-        provisional: seg.speaker_diarization_source === 'nemotron3_channel_provisional',
+        provisional,
       })
     }
   }

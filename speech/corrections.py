@@ -46,9 +46,8 @@ def assign_segment_speaker(
 ) -> dict:
     """Persist a manual speaker label across reclustering and meeting resumes.
 
-    Assigning no participant intentionally restores the unidentified label.
-    The actual speaker's identity is supplied by the operator, not inferred
-    from insufficient acoustic evidence.
+    Clearing a participant removes the enrolled identity. The transcript
+    projection supplies an anonymous meeting-local label.
     """
     if expected_revision < 0:
         raise ValueError("Invalid revision")
@@ -100,6 +99,8 @@ def assign_segment_speaker(
         segment["speaker_override_name"] = speaker_name
         segment["speaker_profile_id"] = participant_id
         segment["speaker_status"] = "manual_override"
+        segment["speaker_final_resolution_status"] = "manual_override"
+        segment["speaker_uncertain"] = False
         segment["speaker_evidence_status"] = "human_review"
         segment["speaker_id"] = speaker_id
         segment["speaker_name"] = speaker_name

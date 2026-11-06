@@ -146,6 +146,8 @@ def apply_review(
         )
         segment["speaker_name"] = segment["speaker_override_name"]
         segment["speaker_status"] = "manual_override"
+        segment["speaker_final_resolution_status"] = "manual_override"
+        segment["speaker_uncertain"] = False
         segment["speaker_evidence_status"] = "human_review"
 
     after = {

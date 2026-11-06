@@ -213,7 +213,7 @@ async function saveManualIdentity(): Promise<void> {
         Speaker identity after listening
         <select v-model="selectedProfileId" :disabled="saving || loading"
           aria-label="Review speaker identity">
-          <option value="">Unidentified Speaker</option>
+          <option value="">No enrolled identity</option>
           <option v-for="(name, profileId) in names" :key="profileId" :value="profileId">
             {{ name }}
           </option>

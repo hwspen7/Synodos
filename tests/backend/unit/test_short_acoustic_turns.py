@@ -343,9 +343,8 @@ class ShortMixedUtteranceTests(unittest.TestCase):
             [(s["start_ms"], s["end_ms"]) for s in out],
             [(100, 800), (1320, 2260)],
         )
-        self.assertTrue(all(
-            s["speaker_name"] == "Unidentified Speaker" for s in out
-        ))
+        self.assertEqual([s["speaker_name"] for s in out], ["Speaker 1", "Speaker 2"])
+        self.assertTrue(all(s["speaker_uncertain"] for s in out))
 
     def test_invalid_window_bounds_rejected(self):
         with self.assertRaisesRegex(ValueError, "sampling bounds"):

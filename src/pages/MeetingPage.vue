@@ -341,6 +341,7 @@ async function loadSavedTranscript(): Promise<void> {
         overlap_intervals_ms: s.overlap_intervals_ms,
         caption_projection_status: s.caption_projection_status,
         speaker_diarization_source: s.speaker_diarization_source,
+        speaker_final_resolution_status: s.speaker_final_resolution_status,
         matched_profile_id: s.matched_profile_id,
         matched_profile_name: s.matched_profile_name,
         speaker_match_similarity: s.speaker_match_similarity,
@@ -744,9 +745,10 @@ async function saveSpeakerLabel(id: number): Promise<void> {
       const detail = await response.json() as { detail?: string }
       throw new Error(detail.detail || 'Speaker assignment failed')
     }
-    const result = await response.json() as { speaker_id: number, speaker_name: string, revision: number }
+    const result = await response.json() as Pick<Segment,
+      'speaker_id' | 'speaker_name' | 'speaker_final_resolution_status' | 'revision'>
     segments.value = segments.value.map((item) => item.id === id
-      ? { ...item, speaker_id: result.speaker_id, speaker_name: result.speaker_name, revision: result.revision }
+      ? { ...item, ...result, color: speakerColor(result.speaker_id) }
       : item)
     editingSpeakerId.value = null
     showToast('Speaker assignment saved')

@@ -117,9 +117,14 @@ async def edit_segment_speaker(
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from exc
             meeting_store.save_state(state)
+            projected = next(
+                row for row in meeting_store.list_segments(meeting_id) or ()
+                if row["id"] == segment_id
+            )
             return {
-                "speaker_id": result["speaker_id"],
-                "speaker_name": result["speaker_name"],
+                "speaker_id": projected["speaker_id"],
+                "speaker_name": projected["speaker_name"],
+                "speaker_final_resolution_status": projected["speaker_final_resolution_status"],
                 "revision": result["revision"],
             }
 

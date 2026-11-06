@@ -66,6 +66,7 @@ export interface TranscriptSegment {
   }>
   caption_projection_status?: string
   speaker_diarization_source?: string
+  speaker_final_resolution_status?: string
   /** A registered voiceprint is a biometric candidate, not human confirmation. */
   matched_profile_id?: string | null
   matched_profile_name?: string | null
@@ -230,6 +231,7 @@ export interface MeetingSegment {
   overlap_intervals_ms?: TranscriptSegment['overlap_intervals_ms']
   caption_projection_status?: string
   speaker_diarization_source?: string
+  speaker_final_resolution_status?: string
   /** Same saved voice-match provenance as the live transcript. */
   matched_profile_id?: TranscriptSegment['matched_profile_id']
   matched_profile_name?: TranscriptSegment['matched_profile_name']

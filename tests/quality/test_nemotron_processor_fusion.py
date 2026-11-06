@@ -133,10 +133,11 @@ class LiveFusionTests(unittest.TestCase):
         activity[100:, 1] = 0.95
         processor.independent_diarization = FakeAcoustics(activity)
         self.assertTrue(processor._rebuild_and_push())
-        # One uncorroborated second voice is NOT enough to publish Speaker 2.
-        self.assertEqual([row["speaker_id"]
-                          for row in processor.snapshot_state()["segments"]],
-                         [1, -1])
+        # An uncorroborated second voice receives a display label only.
+        state = processor.snapshot_state()
+        self.assertEqual([row["speaker_id"] for row in state["segments"]], [1, 2])
+        self.assertEqual(state["segments"][1]["speaker_final_resolution_status"],
+                         "new_speaker_provisional")
         self.assertEqual([row["speaker_id"] for row in processor.segments],
                          [17, 18])
 
@@ -317,14 +318,14 @@ class LiveFusionTests(unittest.TestCase):
         self.assertTrue(processor._rebuild_and_push())
         self.assertEqual(processor._independent_published, {1: 1, 2: -1})
         state = processor.snapshot_state()
-        self.assertEqual([row["speaker_id"] for row in state["segments"]], [1, -1])
+        self.assertEqual([row["speaker_id"] for row in state["segments"]], [1, 2])
         self.assertEqual(
             state["segments"][1]["speaker_diarization_source"],
             "nemotron3_uncertain",
         )
         self.assertEqual(
             state["segments"][1]["speaker_name"],
-            "Unidentified Speaker",
+            "Speaker 2",
         )
 
     def test_completed_nemotron_unknown_preserves_supported_camplus_identity(self):
@@ -397,7 +398,9 @@ class LiveFusionTests(unittest.TestCase):
         self.assertTrue(processor._rebuild_and_push())
         self.assertEqual(processor._independent_published[1], -1)
         state = processor.snapshot_state()
-        self.assertEqual(state["segments"][0]["speaker_id"], -1)
+        self.assertEqual(state["segments"][0]["speaker_id"], 1)
+        self.assertEqual(state["segments"][0]["speaker_final_resolution_status"],
+                         "new_speaker_provisional")
         self.assertEqual(
             state["segments"][0]["speaker_diarization_source"],
             "nemotron3_uncertain",
@@ -410,7 +413,8 @@ class LiveFusionTests(unittest.TestCase):
         processor.segments[0]["speaker_id"] = 17
         self.assertTrue(processor._rebuild_and_push())
         self.assertEqual(processor._independent_published[1], -1)
-        self.assertEqual(processor.snapshot_state()["segments"][0]["speaker_id"], -1)
+        self.assertEqual(processor.snapshot_state()["segments"][0]["speaker_id"], 1)
+        self.assertTrue(processor.snapshot_state()["segments"][0]["speaker_uncertain"])
 
     def test_unscored_activity_does_not_fabricate_speaker(self):
         processor = processor_for_test()

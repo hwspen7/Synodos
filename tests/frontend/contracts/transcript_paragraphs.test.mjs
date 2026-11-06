@@ -84,3 +84,27 @@ test('translation display and content-first canonical ids remain intact', () => 
   ], { translationTarget: 'en' })
   assert.equal(translated[0].text, 'Hello')
 })
+
+test('an overlapping provisional speaker yields the heading to a supported speaker', () => {
+  const parts = buildTranscriptParagraphs([
+    segment(1, 0, 1000, 'First', 2, {
+      speaker_final_resolution_status: 'new_speaker_provisional',
+    }),
+    segment(2, 400, 1300, 'Second', 1),
+  ], { singlePrimarySpeaker: true })
+  assert.equal(parts.length, 1)
+  assert.equal(parts[0].speaker_id, 1)
+  assert.equal(parts[0].provisional, false)
+  assert.deepEqual(parts[0].segmentIds, [1, 2])
+})
+
+test('a numbered uncertain caption retains its provisional badge when merged', () => {
+  const parts = buildTranscriptParagraphs([
+    segment(1, 0, 1000, 'First'),
+    segment(2, 1100, 1400, 'Second', 1, {
+      speaker_final_resolution_status: 'existing_speaker_provisional',
+    }),
+  ])
+  assert.equal(parts.length, 1)
+  assert.equal(parts[0].provisional, true)
+})
