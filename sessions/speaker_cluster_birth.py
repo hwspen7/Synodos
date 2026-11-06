@@ -39,7 +39,10 @@ def _observations(members: list[dict], sample_rate: int) -> int:
     )
     count, previous_end = 0, -1
     for start, end in spans:
-        if previous_end < 0 or start - previous_end >= int(.65 * sample_rate):
+        # A genuinely separate ASR utterance may follow a 300-500 ms
+        # pause. Require an audible gap, but do not reject three independent
+        # voice samples merely because the speaker responds quickly.
+        if previous_end < 0 or start - previous_end >= int(.25 * sample_rate):
             count += 1
         previous_end = max(previous_end, end)
     return count
