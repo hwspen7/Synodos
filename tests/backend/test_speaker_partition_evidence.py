@@ -49,6 +49,44 @@ class PartitionEvidenceTests(unittest.TestCase):
             part(1500, 3000, [1, 0], short_probe=True),
         ]))
 
+    def test_eight_second_single_voice_recovers_despite_one_short_missing_piece(self):
+        chunks = [
+            part(0, 2600, [1, 0]),
+            part(2600, 2950, None, short_probe=True),
+            part(2950, 5600, [.99, .10]),
+            part(5600, 8000, [.98, -.12]),
+        ]
+        embedding = consistent_partition_embedding(chunks)
+        self.assertIsNotNone(embedding)
+        self.assertGreater(float(embedding[0]), .98)
+
+    def test_one_short_real_other_voice_blocks_single_person_claim(self):
+        self.assertIsNone(consistent_partition_embedding([
+            part(0, 2500, [1, 0]),
+            part(2500, 3100, [0, 1], short_probe=True),
+            part(3100, 6100, [.99, .05]),
+        ]))
+
+    def test_long_unknown_voice_gap_is_not_silently_absorbed(self):
+        self.assertIsNone(consistent_partition_embedding([
+            part(0, 2900, [1, 0]),
+            part(2900, 4400, None),
+            part(4400, 7500, [.99, .05]),
+        ]))
+
+    def test_one_valid_piece_with_missing_subturn_remains_unknown(self):
+        self.assertIsNone(consistent_partition_embedding([
+            part(0, 3100, [1, 0]),
+            part(3100, 3500, None, short_probe=True),
+        ]))
+
+    def test_two_distinct_long_voices_in_same_asr_turn_rejected(self):
+        self.assertIsNone(consistent_partition_embedding([
+            part(0, 3200, [1, 0]),
+            part(3200, 3700, None, short_probe=True),
+            part(3700, 7600, [0, 1]),
+        ]))
+
     def test_embedding_dimension_mismatch_does_not_raise(self):
         self.assertIsNone(consistent_partition_embedding([
             part(0, 1500, [1, 0]),
