@@ -197,12 +197,11 @@ class MeetingStore:
         }
 
     @staticmethod
-    def _numbered_segments(state: dict, sample_rate: int) -> list[dict]:
-        from sessions.channels.provisional_speakers import numbered_saved_segments
+    def _projected_segments(state: dict, sample_rate: int) -> list[dict]:
+        from sessions.channels.provisional_speakers import project_saved_speaker_assignments
 
-        return numbered_saved_segments(
+        return project_saved_speaker_assignments(
             state.get("segments") or [], sample_rate,
-            reserved_labels=(state.get("participant_label_map") or {}).values(),
         )
 
     def list_segments(self, meeting_id: str) -> list[dict] | None:
@@ -215,7 +214,7 @@ class MeetingStore:
         sr = int(state.get("sample_rate", meta.get("sample_rate") or 16000))
         from sessions.channels.corroborated_speaker_channels import saved_speaker_continuity
 
-        segments = self._numbered_segments(state, sr)
+        segments = self._projected_segments(state, sr)
         aliases = saved_speaker_continuity(segments, sr)
         rows = []
         for segment in segments:
@@ -329,7 +328,7 @@ class MeetingStore:
         meta = payload.get("meta") or {}
         state = payload.get("state") or {}
         sr = int(state.get("sample_rate", meta.get("sample_rate") or 16000))
-        segments = self._numbered_segments(state, sr)
+        segments = self._projected_segments(state, sr)
         merge_gap_s = float(state.get("merge_gap_s", meta.get("merge_gap_s") or 2.0))
         speaker_map = {int(k): int(v) for k, v in (state.get("speaker_map") or {}).items()}
         paragraphs = self._build_paragraphs(segments, sr, merge_gap_s, speaker_map)

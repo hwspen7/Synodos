@@ -70,8 +70,8 @@ from sessions.translation_tasks import (
 from sessions.identity.speaker_tasks import submit_speaker_analysis, submit_acoustic_window
 from sessions.identity.speaker_evidence import speaker_evidence
 from sessions.channels.provisional_speakers import (
-    ATTRIBUTION_DEFERRED, PROVISIONAL_NEW, PROVISIONAL_RESOLUTIONS,
-    assign_provisional_speakers, numbered_saved_segments, unsupported_short_turn,
+    ATTRIBUTION_DEFERRED, PROVISIONAL_EXISTING, PROVISIONAL_RESOLUTIONS,
+    assign_provisional_speakers, project_saved_speaker_assignments,
 )
 from sessions.identity.registered_identity import match_saved_voice
 from sessions.channels.corroborated_speaker_channels import CorroboratedSpeakerChannels
@@ -828,9 +828,8 @@ class SessionProcessor(threading.Thread):
                         "speaker_name", row.get("speaker_name") or f"Speaker {label}",
                     ),
                 )
-        state["segments"] = numbered_saved_segments(
+        state["segments"] = project_saved_speaker_assignments(
             state["segments"], self.settings.sample_rate,
-            reserved_labels=self._participant_label_map.values(),
         )
         return state
 
@@ -848,7 +847,7 @@ class SessionProcessor(threading.Thread):
                 item.get("speaker_final_resolution_status") in PROVISIONAL_RESOLUTIONS
                 and published > 0 and int(item.get("speaker_override_id") or 0) <= 0
             )
-            if provisional:
+            if provisional and item.get("speaker_final_resolution_status") == PROVISIONAL_EXISTING:
                 self._provisional_published[int(item["id"])] = published
             self.segments.append(
                 {
@@ -2605,34 +2604,26 @@ class SessionProcessor(threading.Thread):
                 "speaker_final_resolution_status": final_reason,
             }
         phase07_speaker = speaker_stats(items)
-        # Preserve saved display assignments on resume unless real evidence
-        # resolves them or a newly confirmed identity now owns the number.
+        # Resume an earlier match to an existing voice, never a placeholder.
         restored = {}
-        occupied = {
-            item["speaker_id"] for item in items
-            if type(item["speaker_id"]) is int and item["speaker_id"] > 0
-        }
         for item, source in zip(items, ordered, strict=True):
             saved = source.get("saved_provisional_id")
-            reason = source.get("speaker_final_resolution_status")
             label = item["speaker_id"]
             if ((type(label) is not int or label <= 0) and saved is not None
-                    and (reason != PROVISIONAL_NEW
-                         or (saved not in occupied and not unsupported_short_turn(source)))):
+                    and source.get("speaker_final_resolution_status") == PROVISIONAL_EXISTING):
                 item.update(speaker_id=saved, speaker_name=source["speaker_name"],
                             speaker_status="uncertain", speaker_uncertain=True,
-                            speaker_final_resolution_status=reason)
+                            speaker_final_resolution_status=PROVISIONAL_EXISTING)
                 restored[item["id"]] = saved
         self._provisional_published = restored | assign_provisional_speakers(
             items,
-            previous=getattr(self, "_provisional_published", {}),
             channel_labels=channel_mapper.labels if channel_mapper is not None else None,
+            channel_stream_start=origin,
             voice_embeddings={
                 **{int(source["id"]): source["emb"] for source in ordered
                    if source.get("emb") is not None},
                 **effective_embeddings,
             },
-            reserved_labels=getattr(self, "_participant_label_map", {}).values(),
         )
         for item in items:
             if (item["id"] in self._provisional_published

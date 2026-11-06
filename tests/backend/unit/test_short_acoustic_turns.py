@@ -343,7 +343,9 @@ class ShortMixedUtteranceTests(unittest.TestCase):
             [(s["start_ms"], s["end_ms"]) for s in out],
             [(100, 800), (1320, 2260)],
         )
-        self.assertEqual([s["speaker_name"] for s in out], ["Speaker 1", "Speaker 2"])
+        self.assertEqual([s["speaker_id"] for s in out], [-1, -1])
+        self.assertTrue(all(s["speaker_final_resolution_status"] == "speaker_attribution_deferred"
+                            for s in out))
         self.assertTrue(all(s["speaker_uncertain"] for s in out))
 
     def test_invalid_window_bounds_rejected(self):

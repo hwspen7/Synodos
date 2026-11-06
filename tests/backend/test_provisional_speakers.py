@@ -46,18 +46,28 @@ def persisted(item):
 
 
 class ProvisionalSpeakerTests(unittest.TestCase):
-    def test_channel_evidence_reuses_known_voice_and_groups_new_channel(self):
+    def test_channel_evidence_reuses_known_voice_and_defers_unbound_channel(self):
         items = [
             row(1, 0, 1000, 3, speaker_diarization_source="nemotron3", **channel(7)),
             row(2, 1800, 2100, **channel(7)),
             row(3, 3500, 4100, **channel(2)),
             row(4, 8000, 8800, **channel(2)),
         ]
-        actual = assign_provisional_speakers(items, reserved_labels=[1])
-        self.assertEqual(actual, {2: 3, 3: 2, 4: 2})
+        actual = assign_provisional_speakers(items)
+        self.assertEqual(actual, {2: 3})
         self.assertEqual(items[1]["speaker_final_resolution_status"], PROVISIONAL_EXISTING)
-        self.assertEqual(items[2]["speaker_final_resolution_status"], PROVISIONAL_NEW)
+        self.assertEqual(items[2]["speaker_final_resolution_status"], ATTRIBUTION_DEFERRED)
         self.assertTrue(all(item["speaker_uncertain"] for item in items[1:]))
+
+    def test_raw_channel_does_not_cross_recording_streams(self):
+        items = [
+            row(1, 0, 1000, 1, speaker_diarization_source="nemotron3", **channel(1)),
+            row(2, 3000, 4000, **channel(1, speaker_acoustic_stream_start=32000)),
+        ]
+        self.assertEqual(assign_provisional_speakers(items), {})
+        self.assertEqual(items[1]["speaker_final_resolution_status"], ATTRIBUTION_DEFERRED)
+        self.assertEqual(assign_provisional_speakers(
+            items, channel_labels={1: 2}, channel_stream_start=32000), {2: 2})
 
     def test_conflicts_and_overlap_cannot_inherit_existing_speaker(self):
         items = [
@@ -68,7 +78,7 @@ class ProvisionalSpeakerTests(unittest.TestCase):
             row(4, 2900, 3600, overlap_intervals_ms=[[2900, 3000]]),
         ]
         assign_provisional_speakers(items, channel_labels={7: 3})
-        self.assertEqual([item["speaker_id"] for item in items], [3, 1, 3, 2])
+        self.assertEqual([item["speaker_id"] for item in items], [3, -1, 3, -1])
 
     def test_brief_bridge_uses_existing_label_but_long_gap_does_not(self):
         items = [
@@ -79,16 +89,18 @@ class ProvisionalSpeakerTests(unittest.TestCase):
             row(5, 7000, 8000, 3),
         ]
         assign_provisional_speakers(items)
-        self.assertEqual([item["speaker_id"] for item in items], [3, 3, 3, 1, 3])
+        self.assertEqual([item["speaker_id"] for item in items], [3, 3, 3, -1, 3])
         self.assertEqual(items[1]["speaker_final_resolution_status"], PROVISIONAL_EXISTING)
 
-    def test_contiguous_fragments_reuse_their_label_when_a_new_turn_arrives(self):
-        items = [row(2, 1000, 1800), row(3, 1900, 2400)]
-        first = assign_provisional_speakers(items, reserved_labels=[1])
-        later = [row(1, 0, 500), row(2, 1000, 1800), row(3, 1900, 2400)]
-        self.assertEqual(first, {2: 2, 3: 2})
-        self.assertEqual(assign_provisional_speakers(later, previous=first, reserved_labels=[1]),
-                         {1: 3, 2: 2, 3: 2})
+    def test_later_speakers_cannot_renumber_an_unsupported_turn(self):
+        items = [row(1, 0, 1000, 1), row(2, 1500, 3000)]
+        self.assertEqual(assign_provisional_speakers(items), {})
+        items[1].update(speaker_id=2, speaker_final_resolution_status=PROVISIONAL_NEW)
+        items.extend(row(i + 1, i * 2000, i * 2000 + 1000, i) for i in (2, 3, 4))
+        self.assertEqual(assign_provisional_speakers(items), {})
+        self.assertEqual(items[1]["speaker_id"], -1)
+        self.assertEqual(items[1]["speaker_final_resolution_status"], ATTRIBUTION_DEFERRED)
+        self.assertEqual([item["speaker_id"] for item in items[2:]], [2, 3, 4])
 
     def test_voice_match_requires_a_clear_lead_over_other_people(self):
         items = [
@@ -100,9 +112,9 @@ class ProvisionalSpeakerTests(unittest.TestCase):
         actual = assign_provisional_speakers(items, voice_embeddings={
             1: [1, 0], 2: [0, 1], 3: [.98, .20], 4: [1, 1],
         })
-        self.assertEqual(actual, {3: 3, 4: 1})
+        self.assertEqual(actual, {3: 3})
         self.assertEqual(items[2]["speaker_final_resolution_status"], PROVISIONAL_EXISTING)
-        self.assertEqual(items[3]["speaker_final_resolution_status"], PROVISIONAL_NEW)
+        self.assertEqual(items[3]["speaker_final_resolution_status"], ATTRIBUTION_DEFERRED)
 
     def test_unsupported_short_turn_does_not_allocate_a_new_speaker(self):
         items = [
@@ -111,7 +123,7 @@ class ProvisionalSpeakerTests(unittest.TestCase):
                 language="zh", language_confidence=.99),
             row(28, 77000, 80000, 2),
         ]
-        self.assertEqual(assign_provisional_speakers(items, previous={29: 5}), {})
+        self.assertEqual(assign_provisional_speakers(items), {})
         self.assertEqual(items[1]["speaker_id"], -1)
         self.assertEqual(items[1]["speaker_final_resolution_status"], ATTRIBUTION_DEFERRED)
         items[1].update(channel(2))
@@ -137,9 +149,9 @@ class ProvisionalSpeakerTests(unittest.TestCase):
             return items[-1]["speaker_id"]
 
         self.assertEqual(assign([.8, -.6], "zh", .99), 2)
-        self.assertEqual(assign([.8, -.6], "en", .99), 1)
-        self.assertEqual(assign([.8, -.6], "zh", .70), 1)
-        self.assertEqual(assign([.6, -.8], "zh", .99), 1)
+        self.assertEqual(assign([.8, -.6], "en", .99), -1)
+        self.assertEqual(assign([.8, -.6], "zh", .70), -1)
+        self.assertEqual(assign([.6, -.8], "zh", .99), -1)
 
     def test_saved_unsupported_placeholder_is_deferred_without_erasing_text(self):
         item = persisted(row(1, 0, 800, 5, speaker_evidence_status="short_turn",
@@ -152,7 +164,7 @@ class ProvisionalSpeakerTests(unittest.TestCase):
             self.assertEqual(shown["text"], item["text"])
             self.assertEqual(store.load_state("short-turn")["segments"][0]["speaker_id"], 5)
 
-    def test_clearing_enrolled_identity_returns_a_numbered_caption(self):
+    def test_clearing_enrolled_identity_defers_an_unsupported_caption(self):
         from api.speech_features import SpeakerCorrectionRequest, edit_segment_speaker
 
         with tempfile.TemporaryDirectory() as root:
@@ -162,18 +174,18 @@ class ProvisionalSpeakerTests(unittest.TestCase):
                 result = asyncio.run(edit_segment_speaker(
                     "clear-identity", 1, SpeakerCorrectionRequest(revision=0),
                 ))
-            self.assertGreater(result["speaker_id"], 0)
-            self.assertEqual(result["speaker_final_resolution_status"], PROVISIONAL_NEW)
+            self.assertEqual(result["speaker_id"], -1)
+            self.assertEqual(result["speaker_final_resolution_status"], ATTRIBUTION_DEFERRED)
             self.assertEqual(result["revision"], 1)
 
-    def test_saved_reads_and_exports_number_legacy_records_without_rewriting_them(self):
+    def test_saved_reads_and_exports_keep_unassigned_content_without_rewriting_it(self):
         items = [persisted(row(1, 0, 1000, 3)), persisted(row(2, 2500, 3100))]
         with tempfile.TemporaryDirectory() as root:
             store = MeetingStore(Path(root))
             store.save_state({"id": "legacy-caption", "segments": items})
             shown = store.list_segments("legacy-caption")
             exported = json.loads(store.export("legacy-caption", fmt="json"))
-            self.assertEqual([item["speaker_id"] for item in shown], [3, 1])
+            self.assertEqual([item["speaker_id"] for item in shown], [3, -1])
             self.assertEqual(exported["transcript"]["segments"], shown)
             self.assertEqual(store.load_state("legacy-caption")["segments"][1]["speaker_id"], -1)
 
@@ -194,12 +206,12 @@ class ProvisionalSpeakerTests(unittest.TestCase):
             self.assertEqual(segment["speaker_final_resolution_status"], ATTRIBUTION_DEFERRED)
             self.assertEqual(segment["text"], item["text"])
 
-    def test_resume_preserves_display_id_without_seeding_voice_clustering(self):
+    def test_resume_preserves_existing_match_without_seeding_voice_clustering(self):
         settings = Settings()
         with patch("sessions.processor.load_settings", return_value=SpeechSettings()):
             processor = SessionProcessor("resume", AudioBuffer(16000), settings,
                                          object(), asyncio.Queue())
-        item = persisted(row(1, 0, 1000, 8, speaker_final_resolution_status=PROVISIONAL_NEW,
+        item = persisted(row(1, 0, 1000, 8, speaker_final_resolution_status=PROVISIONAL_EXISTING,
                              speaker_uncertain=True))
         processor.load_state({"segments": [item]})
         self.assertEqual(processor.segments[0]["speaker_id"], -1)
@@ -207,4 +219,4 @@ class ProvisionalSpeakerTests(unittest.TestCase):
         processor._rebuild_and_push()
         shown = processor.snapshot_state()["segments"][0]
         self.assertEqual((shown["speaker_id"], shown["speaker_name"]), (8, "Speaker 8"))
-        self.assertEqual(shown["speaker_final_resolution_status"], PROVISIONAL_NEW)
+        self.assertEqual(shown["speaker_final_resolution_status"], PROVISIONAL_EXISTING)
