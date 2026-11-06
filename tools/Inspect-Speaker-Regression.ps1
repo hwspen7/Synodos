@@ -12,7 +12,9 @@ if ($MaxSeconds -lt 5 -or $MaxSeconds -gt 7200) {
 try {
     if (-not $MeetingId) {
         $all = Invoke-RestMethod -Uri "$ApiBase/api/meetings" -Method Get
-        $latest = @($all.meetings | Sort-Object updated_at -Descending |
+        $latest = @($all.meetings |
+            Where-Object { [int]($_.segments) -gt 0 } |
+            Sort-Object updated_at -Descending |
             Select-Object -First 1)
         if ($latest.Count -eq 0) { throw "No saved meetings found." }
         $MeetingId = [string]$latest[0].id
