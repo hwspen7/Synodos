@@ -50,10 +50,16 @@ $display = foreach ($s in $items) {
     $available = if ($null -eq $s.speaker_embedding_available) {
         "unknown"
     } elseif ($s.speaker_embedding_available) { "yes" } else { "no" }
+    $speaker = $s.speaker_id
+    if ($speaker -gt 0 -and -not $s.speaker_uncertain -and
+        $s.speaker_final_resolution_status -eq 'independent_acoustic_assigned' -and
+        $s.speaker_continuity_id -gt 0) {
+        $speaker = $s.speaker_continuity_id
+    }
     [PSCustomObject]@{
         Time = $start.ToString("mm\:ss")
         ID = $s.id
-        Speaker = $s.speaker_id
+        Speaker = $speaker
         Emb = $available
         Reason = $reason
         Final = [string]$s.speaker_final_resolution_status

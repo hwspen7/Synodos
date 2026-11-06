@@ -14,7 +14,7 @@ import { speakerColor } from '@/speaker/clustering'
 import { splitDisplaySentences } from '@/transcript/display'
 import { expandContentFirstSegments } from '@/transcript/contentFirst'
 import { buildTranscriptParagraphs } from '@/transcript/paragraphs'
-import { projectChannelSpeakers } from '@/transcript/channelSpeakers'
+import { projectReportedSpeakers } from '@/transcript/reportedSpeakers'
 import {
   supportedLanguages, restoredSpeechChoices,
 } from '@/config/phase1Languages'
@@ -188,14 +188,14 @@ const statusClass = computed(() => {
   return status.value === 'disconnected' ? 'bad' : 'muted'
 })
 
-/** Use acoustic report channels for headings when the meeting has them. */
-const channelSegments = computed(() => projectChannelSpeakers(segments.value))
+/** Show each report speaker separately when independent acoustic evidence is available. */
+const reportedSegments = computed(() => projectReportedSpeakers(segments.value))
 const paragraphs = computed<Paragraph[]>(() =>
-  buildTranscriptParagraphs(channelSegments.value ?? expandContentFirstSegments(
+  buildTranscriptParagraphs(reportedSegments.value ?? expandContentFirstSegments(
     segments.value, translationTarget.value,
   ), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value,
-    channelHeadings: channelSegments.value !== null,
-    singlePrimarySpeaker: channelSegments.value === null }),
+    channelHeadings: reportedSegments.value !== null,
+    singlePrimarySpeaker: reportedSegments.value === null }),
 )
 const overlapWarnings = computed(() => segments.value.reduce(
   (sum, seg) => sum + (seg.overlap_intervals_ms?.length ?? 0), 0,
@@ -1033,7 +1033,7 @@ onBeforeUnmount(() => stopInternal())
               :data-initials="speakerInitials(para.speaker_name || `Speaker ${para.speaker_id}`)"
               :style="{ '--synodos-speaker-accent': para.color }"></span>
             <span class="speaker-name">{{ para.speaker_name || `Speaker ${para.speaker_id}` }}</span>
-            <span v-if="para.overlapping" class="speaker-registered-label">{{ channelSegments ? 'Overlap' : 'Primary during overlap' }}</span>
+            <span v-if="para.overlapping" class="speaker-registered-label">{{ reportedSegments ? 'Overlap' : 'Primary during overlap' }}</span>
             <span v-if="para.provisional" class="speaker-registered-label">Provisional</span>
             <span v-if="segments.some(seg => para.segmentIds.includes(seg.id) && seg.speaker_name === para.speaker_name && seg.speaker_diarization_source === 'registered_voiceprint')"
               class="speaker-registered-label" title="Matched to a saved voiceprint. Verify important identities before relying on them.">
