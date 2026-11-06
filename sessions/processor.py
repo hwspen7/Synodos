@@ -2348,9 +2348,13 @@ class SessionProcessor(threading.Thread):
         # After the stream has established a new channel, revisit previously
         # unresolved segments of that SAME channel. Require matching CAM++
         # evidence, a strong activity share, and a strong speaker margin.
-        restored_channels = backfill_confirmed_channels(
-            items, ordered, self._nemotron_channels.labels,
-            self._nemotron_channels.match_known,
+        channel_mapper = getattr(self, "_nemotron_channels", None)
+        restored_channels = (
+            backfill_confirmed_channels(
+                items, ordered, channel_mapper.labels,
+                channel_mapper.match_known,
+            )
+            if channel_mapper is not None else {}
         )
         for segment_id, label in restored_channels.items():
             self._independent_published[int(segment_id)] = int(label)
