@@ -46,6 +46,57 @@ class SpeakerClusterBirthTests(unittest.TestCase):
              for s in turns], preserved,
         )
 
+    def test_continuous_reader_with_realistic_voice_variation_keeps_speaker_one(self):
+        # One person speaks in changing volume and prosody with natural
+        # 0-7 second pauses. Middle-confidence embeddings must not become
+        # a dozen 'Unidentified Speaker' captions.
+        turns = [
+            row(1, 0, [1.0, 0.0], 3, 6),
+            row(2, 1, [.72, .694], 13, 18),
+            row(3, 2, [.70, .714], 18.3, 19.2),
+            row(4, 3, [.69, .724], 20, 21.3),
+            row(5, 4, [.73, .683], 23, 25),
+            row(6, 5, [.71, .705], 27, 30),
+        ]
+        original = [
+            (t["text"], t["start_sample"], t["end_sample"]) for t in turns
+        ]
+        results = gate_new_cluster_births(turns, sample_rate=16000)
+        self.assertEqual(results, {"reused": 5, "deferred": 0, "confirmed": 1})
+        self.assertEqual([t["cluster"] for t in turns], [0] * 6)
+        self.assertTrue(all(t.get("speaker_uncertain") for t in turns[1:]))
+        self.assertTrue(all(
+            t["speaker_evidence_status"] == "speaker_continuity_provisional"
+            for t in turns[1:]
+        ))
+        self.assertEqual(
+            [(t["text"], t["start_sample"], t["end_sample"]) for t in turns],
+            original,
+        )
+
+    def test_continuity_does_not_merge_voice_after_long_absence(self):
+        turns = [
+            row(1, 0, [1, 0], 0, 2),
+            row(2, 1, [.70, .714], 35, 37),
+        ]
+        result = gate_new_cluster_births(turns, sample_rate=16000)
+        self.assertEqual(result, {"reused": 0, "deferred": 1, "confirmed": 1})
+        self.assertEqual(turns[1]["cluster"], -3)
+
+    def test_continuity_does_not_absorb_clear_second_person(self):
+        turns = [
+            row(1, 0, [1, 0], 0, 2),
+            row(2, 1, [0, 1], 3, 5),
+            row(3, 1, [.04, .999], 7, 10),
+            row(4, 2, [.66, .75], 10.5, 12),
+        ]
+        result = gate_new_cluster_births(turns, sample_rate=16000)
+        self.assertEqual(result["confirmed"], 2)
+        self.assertEqual([t["cluster"] for t in turns[:3]], [0, 1, 1])
+        # Borderline vector has no clear advantage against the two real
+        # voices. It must not hijack either established identity.
+        self.assertEqual(turns[3]["cluster"], -3)
+
     def test_noncorroborated_short_new_speaker_cannot_get_new_id(self):
         turns = [
             row(1, 0, [1, 0], 0, 2),
