@@ -27,7 +27,7 @@ test('report channels 1, 2, and 3 produce three numbered headings', () => {
   const before = JSON.stringify(rows)
   const projected = projectChannelSpeakers(rows)
   assert.deepEqual(projected.map(row => row.speaker_name),
-    ['Speaker 1', 'Speaker pending', 'Speaker 2', 'Speaker 1', 'Speaker 2', 'Speaker 3'])
+    ['Speaker 1', 'Speaker 4', 'Speaker 2', 'Speaker 1', 'Speaker 2', 'Speaker 3'])
   const paragraphs = buildTranscriptParagraphs(projected, {
     channelHeadings: true, singlePrimarySpeaker: false, translationTarget: 'en',
   })
@@ -59,13 +59,15 @@ test('confirmed voices keep their headings when channels swap after a pause', ()
   const first = segment(1, 0, 2000, 1, 1, confirmed)
   const second = segment(2, 2100, 4000, 2, 2, confirmed)
   const pending = segment(3, 6000, 6100, 3, 1, { speaker_acoustic_stream_start: 96000 })
+  const sameChannel = segment(6, 6120, 6180, 4, 1, { speaker_acoustic_stream_start: 96000 })
   const resumedSecond = segment(4, 6200, 7300, 2, 1, {
     ...confirmed, speaker_acoustic_stream_start: 96000,
   })
   const resumedFirst = segment(5, 7400, 8800, 1, 2, {
     ...confirmed, speaker_acoustic_stream_start: 96000,
   })
-  assert.equal(projectChannelSpeakers([first, second, pending])[2].speaker_name, 'Speaker pending')
+  assert.deepEqual(projectChannelSpeakers([first, second, pending, sameChannel])
+    .map(row => row.speaker_id), [1, 2, 3, 3])
   assert.deepEqual(projectChannelSpeakers([first, second, pending, resumedSecond, resumedFirst])
     .map(row => row.speaker_id), [1, 2, 2, 2, 1])
 })
@@ -84,4 +86,38 @@ test('saved legacy numbers follow their verified continuity aliases', () => {
   ]
   assert.deepEqual(projectChannelSpeakers(rows).map(row => row.speaker_id), [1, 2, 2, 1])
   assert.deepEqual(rows.map(row => row.speaker_id), [1, 2, 3, 4])
+})
+
+test('voice conflicts do not inherit or teach a raw channel speaker heading', () => {
+  const confirmed = { speaker_final_resolution_status: 'independent_acoustic_assigned' }
+  const rows = [
+    segment(1, 12142, 14362, 1, 1, {
+      speaker_uncertain: true,
+      speaker_final_resolution_status: 'camplus_provisional',
+      speaker_channel_gate_reason: 'existing_channel_voice_conflict',
+    }),
+    segment(2, 14362, 19482, 1, 1, confirmed),
+    segment(3, 20000, 21000, 2, 1, {
+      ...confirmed, speaker_channel_gate_reason: 'existing_channel_matches_other_voice',
+    }),
+    segment(4, 22000, 24000, 1, 2, {
+      ...confirmed, speaker_acoustic_stream_start: 352000,
+    }),
+  ]
+  const projected = projectChannelSpeakers(rows)
+  assert.deepEqual(projected.map(row => row.speaker_name),
+    ['Speaker 2', 'Speaker 1', 'Speaker 3', 'Speaker 1'])
+  assert.deepEqual(rows.map(row => row.speaker_id), [1, 1, 2, 1])
+})
+
+test('a separately confirmed voice takes precedence over a rejected channel', () => {
+  const confirmed = { speaker_final_resolution_status: 'independent_acoustic_assigned' }
+  const rows = [
+    segment(1, 0, 2000, 1, 1, confirmed),
+    segment(2, 2200, 4200, 2, 1, {
+      ...confirmed, speaker_channel_gate_reason: 'existing_channel_matches_other_voice',
+    }),
+    segment(3, 4300, 6200, 2, 2, confirmed),
+  ]
+  assert.deepEqual(projectChannelSpeakers(rows).map(row => row.speaker_id), [1, 2, 2])
 })

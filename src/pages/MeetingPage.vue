@@ -347,6 +347,7 @@ async function loadSavedTranscript(): Promise<void> {
         caption_projection_status: s.caption_projection_status,
         speaker_diarization_source: s.speaker_diarization_source,
         speaker_acoustic_channel: s.speaker_acoustic_channel,
+        speaker_channel_gate_reason: s.speaker_channel_gate_reason,
         speaker_acoustic_stream_start: s.speaker_acoustic_stream_start,
         speaker_continuity_id: s.speaker_continuity_id,
         speaker_uncertain: s.speaker_uncertain,
@@ -941,7 +942,6 @@ onBeforeUnmount(() => stopInternal())
             <span class="speaker-dot" :style="{ background: para.color }"></span>
             <span class="speaker-name">{{ para.speaker_name || `Speaker ${para.speaker_id}` }}</span>
             <span v-if="para.overlapping" class="speaker-registered-label">{{ channelSegments ? 'Overlap' : 'Primary during overlap' }}</span>
-            <span v-if="para.provisional" class="speaker-registered-label">Provisional</span>
             <span v-if="segments.some(seg => para.segmentIds.includes(seg.id) && seg.speaker_name === para.speaker_name && seg.speaker_diarization_source === 'registered_voiceprint')"
               class="speaker-registered-label" title="Matched to a saved voiceprint. Verify important identities before relying on them.">
               <AppIcon name="check" :size="12" /> Voice match
