@@ -64,6 +64,8 @@ def gate_new_cluster_births(
     sample_rate: int,
     same_voice_similarity: float = .78,
     distinct_voice_max_similarity: float = .48,
+    continuity_voice_similarity: float = .60,
+    continuity_max_gap_s: float = 12.0,
 ) -> dict[str, int]:
     """Conservatively remap unregistered raw clusters before ID allocation.
 
@@ -76,7 +78,9 @@ def gate_new_cluster_births(
     Known enrolled identities and manual overrides are never changed.
     """
     if (sample_rate <= 0 or not .5 < same_voice_similarity <= 1
-            or not 0 <= distinct_voice_max_similarity < same_voice_similarity):
+            or not 0 <= distinct_voice_max_similarity
+                < continuity_voice_similarity < same_voice_similarity
+            or not 0.5 <= continuity_max_gap_s <= 30):
         raise ValueError("Invalid speaker birth gate thresholds")
     groups: dict[int, list[dict]] = defaultdict(list)
     for segment in records:
@@ -94,6 +98,9 @@ def gate_new_cluster_births(
         ),
     )
     accepted: list[tuple[int, list[np.ndarray]]] = []
+    # Confidence and timestamps are kept separate: a plausible continuation
+    # is NOT independent confirmation of an acoustic identity.
+    latest_end: dict[int, int] = {}
     reused = deferred = confirmed = 0
     for raw in ordered:
         members = groups[raw]
@@ -124,8 +131,26 @@ def gate_new_cluster_births(
         matches.sort(reverse=True)
         top = matches[0] if matches else None
         runner_up = matches[1][0] if len(matches) > 1 else -1.0
-        if (top is not None and top[0] >= same_voice_similarity
-                and top[0] - runner_up >= .08):
+        strong_reuse = bool(
+            top is not None and top[0] >= same_voice_similarity
+            and top[0] - runner_up >= .08
+        )
+        # CAM++ can produce a weaker vector for the very same person after
+        # a pause, emphasis or a short utterance. Do not erase that person's
+        # label merely because it misses the stricter new-cluster threshold.
+        # Continuity is provisional, bounded by an acoustic similarity floor,
+        # temporal adjacency, no overlap, and an unambiguous nearest voice.
+        current_start = min(int(s["start_sample"]) for s in members)
+        continuation = False
+        if top is not None and not strong_reuse and accepted:
+            anchor_end = latest_end.get(top[1], -1)
+            gap = current_start - anchor_end
+            continuation = (
+                top[0] >= continuity_voice_similarity
+                and top[0] - runner_up >= .15
+                and 0 <= gap <= int(continuity_max_gap_s * sample_rate)
+            )
+        if strong_reuse or continuation:
             anchor = top[1]
             anchor_members = groups[anchor]
             anchored = next(
@@ -140,13 +165,23 @@ def gate_new_cluster_births(
                     record["speaker_name"] = anchored.get("speaker_name") or (
                         f"Speaker {anchored['speaker_id']}"
                     )
-                record["speaker_evidence_status"] = "speaker_birth_voice_reused"
+                record["speaker_evidence_status"] = (
+                    "speaker_continuity_provisional" if continuation
+                    else "speaker_birth_voice_reused"
+                )
+                if continuation:
+                    record["speaker_uncertain"] = True
             reused += len(members)
-            accepted = [
-                (candidate, _bounded_references(references + vectors)
-                 if candidate == anchor else references)
-                for candidate, references in accepted
-            ]
+            latest_end[anchor] = max(
+                latest_end.get(anchor, 0),
+                max(int(s["end_sample"]) for s in members),
+            )
+            if strong_reuse:
+                accepted = [
+                    (candidate, _bounded_references(references + vectors)
+                     if candidate == anchor else references)
+                    for candidate, references in accepted
+                ]
             continue
 
         first = not accepted
@@ -169,6 +204,7 @@ def gate_new_cluster_births(
         )
         if distinct and (first or observations >= 2 or long_precise):
             accepted.append((raw, _bounded_references(vectors)))
+            latest_end[raw] = max(int(s["end_sample"]) for s in members)
             confirmed += 1
             continue
 
