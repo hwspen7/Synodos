@@ -36,7 +36,7 @@ test('meeting uses a single command bar and keeps all existing tools reachable',
     meeting.indexOf('<header class="compact-meeting-header'),
     meeting.indexOf('</header>') + 9,
   )
-  assert.match(header, /class="synodos-compact-toolbar"/)
+  assert.match(header, /class="compact-meeting-header synodos-compact-toolbar"/)
   for (const operation of [
     "activeReviewTool = 'speakers'", "saveMeeting()", "recording ? stop() : start()",
     "selectMeetingTool('recordings')", "selectMeetingTool('settings')",
