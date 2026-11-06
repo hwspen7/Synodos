@@ -131,6 +131,16 @@ python -m unittest tests.quality.test_english_only
 
 The Python test suite checks basic routes and persistence, not live FunASR inference or concurrent streaming. Initial startup may require downloading models. Override model identifiers or local paths using `ASR_MODEL`, `FSMN_VAD_MODEL`, `PUNC_MODEL`, and `SPK_MODEL`.
 
+### Meeting caption translation
+
+Choose a target under **Display translation** before recording. Confirmed
+foreign-language captions are translated asynchronously, and the original
+remains visible. The translator uses installed Argos language pairs or the
+configured loopback Ollama model on the CPU. No audio is sent to the
+translator. Missing captions continue translating after a normal stop.
+Use **Translate saved transcript** to retry or translate an earlier meeting
+to a different saved target.
+
 ### Hotword libraries
 
 Enter one complete term per line, such as `Spring Boot`. Select the

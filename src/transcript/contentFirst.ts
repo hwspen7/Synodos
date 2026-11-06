@@ -46,7 +46,7 @@ export function hasStableSpeakerCues(
 }
 
 export function expandContentFirstSegments(
-  canonical: Segment[], useTranslation: boolean,
+  canonical: Segment[], translationTarget: string,
 ): Segment[] {
   const out: Segment[] = []
   for (const segment of canonical) {
@@ -57,7 +57,7 @@ export function expandContentFirstSegments(
       segment.speaker_diarization_source === 'manual_override' ||
       segment.speaker_diarization_source === 'registered_voiceprint' ||
       Boolean(segment.matched_profile_id && segment.matched_profile_name) ||
-      (useTranslation && !!segment.translation?.trim()) ||
+      (translationTarget && segment.translation_target === translationTarget && segment.translation?.trim()) ||
       !hasStableSpeakerCues(cues) ||
       !isExactContentProjection(
         segment.text, segment.start_ms, segment.end_ms, cues,

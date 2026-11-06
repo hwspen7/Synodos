@@ -83,6 +83,8 @@ const deliveredSeconds = ref(0)
 const durableSeconds = ref<number | null>(null)
 const wavRecordingEnabled = ref(false)
 const settingsSaving = ref(false)
+const translatingSaved = ref(false)
+const translationWarning = ref('')
 const appliedSettings = ref('')
 const editingSpeakerId = ref<number | null>(null)
 const identityReviewSegmentId = ref<number | null>(null)
@@ -175,15 +177,15 @@ const statusClass = computed(() => {
 /** Group neighboring same-speaker segments locally into paragraphs. */
 const paragraphs = computed<Paragraph[]>(() =>
   buildTranscriptParagraphs(expandContentFirstSegments(
-    segments.value, Boolean(translationTarget.value),
+    segments.value, translationTarget.value,
   ), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value, singlePrimarySpeaker: true }),
 )
 const overlapWarnings = computed(() => segments.value.reduce(
   (sum, seg) => sum + (seg.overlap_intervals_ms?.length ?? 0), 0,
 ))
 const untranslatedCount = computed(() => segments.value.filter((seg) =>
-  translationTarget.value && seg.language && seg.language !== 'und' &&
-  seg.language !== translationTarget.value && !seg.translation?.trim(),
+  translationTarget.value && seg.language !== translationTarget.value &&
+  (seg.translation_target !== translationTarget.value || !seg.translation?.trim()),
 ).length)
 const participantNames = computed(() => {
   const byId = new Map(speakers.value.map((s) => [s.id, s.name]))
@@ -269,7 +271,7 @@ function applyTranscript(msg: ServerTranscript): void {
   transcriptMeta.value = {
     segments: msg.segments.length,
     paragraphs: buildTranscriptParagraphs(expandContentFirstSegments(
-      segs, Boolean(translationTarget.value),
+      segs, translationTarget.value,
     ), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value, singlePrimarySpeaker: true }).length,
   }
   void scrollIfNeeded()
@@ -336,6 +338,7 @@ async function loadSavedTranscript(): Promise<void> {
         id: s.id, text: s.text, start_ms: s.start_ms, end_ms: s.end_ms,
         speaker_id: s.speaker_id ?? -1, speaker_name: s.speaker_name ?? 'Unidentified Speaker',
         language: s.language ?? 'und', translation: s.translation ?? '',
+        translation_target: s.translation_target,
         revision: s.revision ?? 0,
         caption_cues: s.caption_cues,
         overlap_intervals_ms: s.overlap_intervals_ms,
@@ -349,6 +352,30 @@ async function loadSavedTranscript(): Promise<void> {
     })
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
+  }
+}
+
+async function translateSavedTranscript(): Promise<void> {
+  const target = translationTarget.value
+  if (!target || translatingSaved.value || recording.value || status.value === 'stopping') return
+  translatingSaved.value = true
+  translationWarning.value = ''
+  try {
+    if (settingsPending.value && !(await applySpeechSettings(true))) return
+    let after = -1
+    let translated = 0
+    while (target === translationTarget.value && !recording.value) {
+      const batch = await meetingsApi.translate(props.id, target, after)
+      translated += batch.translated
+      if (!batch.has_more || batch.next_after <= after) break
+      after = batch.next_after
+    }
+    showToast(`${translated} caption(s) translated`)
+  } catch (err) {
+    translationWarning.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    if (!recording.value) await loadSavedTranscript()
+    translatingSaved.value = false
   }
 }
 
@@ -591,9 +618,10 @@ function connect(autostart = false): void {
         (result.overlap?.length || 0) > 0 ? 'Overlapping speech detected' : '']
         .filter(Boolean).join(', ')
     },
-    onFeatureWarning: (message) => {
+    onFeatureWarning: (message, feature) => {
       if (clientSeq !== mySeq) return
-      error.value = message
+      if (feature === 'translation') translationWarning.value = message
+      else error.value = message
     },
     onTranscript: (msg) => {
       if (clientSeq !== mySeq) return
@@ -658,6 +686,8 @@ function connect(autostart = false): void {
           }
         }
         if (stopRequested && recordAudio.value) void loadRecordings()
+        if (stopRequested && saved === true && audioStopAcknowledged &&
+            !realtimeError && untranslatedCount.value > 0) void translateSavedTranscript()
       } else {
         status.value = 'disconnected'
         if (!realtimeError) error.value = 'Connection lost before final confirmation.'
@@ -775,7 +805,9 @@ async function correctTranscript(seg: Segment): Promise<void> {
     })
     if (!response.ok) throw new Error(await response.text())
     const result = await response.json() as { text: string, revision: number }
-    segments.value = segments.value.map((item) => item.id === seg.id ? { ...item, text: result.text, revision: result.revision } : item)
+    segments.value = segments.value.map((item) => item.id === seg.id
+      ? { ...item, text: result.text, revision: result.revision, translation: '', translation_target: '' }
+      : item)
     showToast('Correction saved')
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
@@ -847,9 +879,15 @@ onBeforeUnmount(() => stopInternal())
       {{ selectedWithoutVoiceprints.length }} selected participant(s) have no usable voiceprints. Enroll clean voice samples before relying on identification.
       <RouterLink to="/speakers">Manage voiceprints</RouterLink>
     </p>
-    <p v-if="untranslatedCount > 0" class="hint-text warn-text" role="status">
-      {{ untranslatedCount }} segment(s) have no available translation; original text is shown.
-    </p>
+    <div v-if="untranslatedCount > 0" class="hint-text" role="status">
+      <span>{{ untranslatedCount }} caption(s) awaiting translation. Original text is shown.</span>
+      <p v-if="translationWarning" class="warn-text">{{ translationWarning }}</p>
+      <button v-if="!recording && status !== 'connecting' && status !== 'stopping'"
+        type="button" class="btn btn-ghost btn-sm" :disabled="translatingSaved || settingsSaving"
+        @click="translateSavedTranscript">
+        {{ translatingSaved ? 'Translating...' : 'Translate saved transcript' }}
+      </button>
+    </div>
     <div class="meeting-workspace" :class="{ 'tool-panel-open': activeMeetingTool !== 'transcript' }">
       <nav class="meeting-tool-sidebar" aria-label="Meeting tools">
         <div class="meeting-tool-nav-title">MEETING</div>
@@ -910,6 +948,9 @@ onBeforeUnmount(() => stopInternal())
             <p v-for="(sentence, sentenceIndex) in splitDisplaySentences(para.text)"
               :key="sentenceIndex" class="para-text transcript-sentence">{{ sentence }}</p>
           </div>
+          <p v-if="para.originalText" class="para-text hint-text">
+            <strong>Original</strong> {{ para.originalText }}
+          </p>
           <details class="transcript-edit-details" v-if="!recording">
             <summary>Edit transcript or speaker</summary>
             <div class="transcript-edit-actions">

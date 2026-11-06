@@ -128,6 +128,8 @@ def apply_review(
         if not isinstance(segment.get("original_asr_text"), str):
             segment["original_asr_text"] = original_asr_text(segment)
         segment["text"] = text
+        segment.pop("translation", None)
+        segment.pop("translation_target", None)
         segment["manually_corrected"] = True
 
     if profile_id is not UNSET:

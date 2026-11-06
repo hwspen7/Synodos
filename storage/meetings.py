@@ -140,6 +140,7 @@ class MeetingStore:
             "speaker_name": str(s.get("speaker_name") or "Unidentified Speaker"),
             "language": s.get("language", "und"),
             "translation": s.get("translation", ""),
+            "translation_target": s.get("translation_target", ""),
             "revision": int(s.get("revision", 0)),
             "speaker_profile_id": s.get("speaker_profile_id"),
             "matched_profile_id": s.get("matched_profile_id"),
@@ -356,6 +357,11 @@ class MeetingStore:
             return "\n".join(lines)
         lines.append("## Transcript")
         lines.append("")
+        target = (state.get("ui_settings") or {}).get("translate_to")
+        translations = {
+            int(segment["id"]): segment["translation"] for segment in segments
+            if target and segment.get("translation_target") == target and segment.get("translation")
+        }
         for i, p in enumerate(paragraphs, start=1):
             name = p.get("speaker_name") or f"Speaker {int(p.get('speaker_id', 0))}"
             lines.append(f"### {i}. {name}")
@@ -364,6 +370,11 @@ class MeetingStore:
             sentences = split_display_sentences(p.get("text") or "")
             lines.extend(sentences if sentences else ["(No content)"])
             lines.append("")
+            translated = [translations[s["id"]] for s in p["segments"] if s["id"] in translations]
+            if translated:
+                lines.append(f"**Translation ({target})**")
+                lines.extend(translated)
+                lines.append("")
         return "\n".join(lines)
 
     @staticmethod

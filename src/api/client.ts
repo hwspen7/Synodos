@@ -72,6 +72,12 @@ export const meetingsApi = {
   }) => request<{ ok: boolean }>(`/meetings/${id}/settings`, {
     method: 'PATCH', body: JSON.stringify(payload),
   }),
+  translate: (id: string, target: string, afterId: number) =>
+    request<{ attempted: number; translated: number; next_after: number; has_more: boolean }>(
+      `/speech/meetings/${encodeURIComponent(id)}/translations`, {
+        method: 'POST', body: JSON.stringify({ target_language: target, after_id: afterId }),
+      },
+    ),
   remove: (id: string) =>
     request<{ ok: boolean }>(`/meetings/${id}`, { method: 'DELETE' }),
   exportUrl: (id: string, format: 'md' | 'json') =>

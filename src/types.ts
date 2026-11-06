@@ -45,6 +45,7 @@ export interface TranscriptSegment {
   language?: string
   language_confidence?: number | null
   translation?: string
+  translation_target?: string
   timestamp_quality?: string
   /** Optional acoustic voice intervals, separate from the ASR text bounds. */
   speaker_activity_intervals_ms?: Array<[number, number]>
@@ -147,6 +148,7 @@ export interface Paragraph {
   start_ms: number
   end_ms: number
   text: string
+  originalText?: string
   segmentIds: number[]
   color: string
   overlapping?: boolean
@@ -244,6 +246,7 @@ export interface MeetingSegment {
   speaker_name?: string
   language?: string
   translation?: string
+  translation_target?: string
   revision?: number
   review_count?: number
   manually_corrected?: boolean

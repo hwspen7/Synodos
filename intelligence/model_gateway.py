@@ -86,7 +86,7 @@ class ModelGateway:
         return os.getenv('MEETING_AI_MODEL_' + task.upper(), self.cfg.text_model)
 
     def chat(self, system, prompt, *, model=None, json_mode=False,
-             image_bytes=None, evidence_only=False):
+             image_bytes=None, evidence_only=False, cpu_translation=False):
         model = model or self.cfg.text_model
         if not model:
             raise AIModelError('No local text model configured')
@@ -133,6 +133,9 @@ class ModelGateway:
                     body['think'] = think
                 if json_mode:
                     body['format'] = 'json'
+            if cpu_translation:
+                options.update(num_gpu=0, temperature=0.0,
+                               num_predict=min(options['num_predict'], 1536))
             out = _request(self.cfg, '/api/chat', body)
             if out.get('done_reason') == 'length':
                 raise AIModelError('Model reached output token limit; increase MEETING_AI_OLLAMA_NUM_PREDICT')
@@ -152,9 +155,11 @@ class ModelGateway:
             raise AIModelError('Model response is empty')
         return result.strip()
 
-    def structured(self, system, prompt, model=None, *, evidence_only=False):
+    def structured(self, system, prompt, model=None, *, evidence_only=False,
+                   cpu_translation=False):
+        options = {'cpu_translation': True} if cpu_translation else {}
         raw = self.chat(system, prompt, json_mode=True, model=model,
-                        evidence_only=evidence_only)
+                        evidence_only=evidence_only, **options)
         try:
             result = json.loads(raw)
         except json.JSONDecodeError as exc:

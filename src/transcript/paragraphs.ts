@@ -40,8 +40,9 @@ export function buildTranscriptParagraphs(
   const paragraphs: Paragraph[] = []
   for (const seg of ordered) {
     if (!seg.text.trim()) continue
-    const text = opts.translationTarget && seg.translation?.trim()
-      ? seg.translation : seg.text
+    const translated = opts.translationTarget && seg.translation_target === opts.translationTarget
+      ? seg.translation?.trim() : undefined
+    const text = translated || seg.text
     const last = paragraphs[paragraphs.length - 1]
     const canonicalId = seg.source_segment_id ?? seg.id
     const provisional = seg.speaker_diarization_source === 'nemotron3_channel_provisional' ||
@@ -60,6 +61,9 @@ export function buildTranscriptParagraphs(
       }
       last.end_ms = Math.max(last.end_ms, seg.end_ms)
       if (!last.segmentIds.includes(canonicalId)) last.segmentIds.push(canonicalId)
+      if (last.originalText || translated) {
+        last.originalText = joinCaptionText(last.originalText || last.text, seg.text)
+      }
       last.text = joinCaptionText(last.text, text)
       continue
     }
@@ -69,6 +73,7 @@ export function buildTranscriptParagraphs(
     const canMerge = Boolean(
       last && !last.overlapping && seg.speaker_id > 0 &&
       seg.speaker_id === last.speaker_id &&
+      Boolean(last.originalText) === Boolean(translated) &&
       (seg.speaker_name || '') === (last.speaker_name || '') &&
       !(seg.overlap_intervals_ms?.length) &&
       seg.start_ms >= last.end_ms &&
@@ -84,12 +89,14 @@ export function buildTranscriptParagraphs(
       last.end_ms = Math.max(last.end_ms, seg.end_ms)
       if (!last.segmentIds.includes(canonicalId)) last.segmentIds.push(canonicalId)
       last.text = joinCaptionText(last.text, text)
+      if (last.originalText) last.originalText = joinCaptionText(last.originalText, seg.text)
     } else {
       paragraphs.push({
         id: seg.id, speaker_id: seg.speaker_id,
         speaker_name: seg.speaker_name,
         start_ms: seg.start_ms, end_ms: seg.end_ms,
-        text, segmentIds: [canonicalId], color: seg.color,
+        text, originalText: translated ? seg.text : undefined,
+        segmentIds: [canonicalId], color: seg.color,
         provisional,
       })
     }

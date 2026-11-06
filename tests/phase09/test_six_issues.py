@@ -101,6 +101,6 @@ class Phase09PipelineTests(unittest.TestCase):
             self.assertTrue(processor._cycle(final=False))
             self.assertEqual(processor.segments[0]["text"], "Bonjour")
             self.assertFalse(pending.done())
-        pending.set_result("Hello")
+        pending.set_result({1: "Hello"})
         processor._collect_translations()
         self.assertEqual(processor.segments[0]["translation"], "Hello")

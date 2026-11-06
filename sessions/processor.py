@@ -64,7 +64,9 @@ from speech.language import normalize_language
 from speech.supported_languages import PHASE1_LANGUAGE_SET
 from phase07.recovery import autosave_seconds
 from sessions.outbox import enqueue_message
-from sessions.translation_tasks import submit_translation
+from sessions.translation_tasks import (
+    MAX_PENDING, CaptionTranslation, caption_batch, submit_translation,
+)
 from sessions.speaker_tasks import submit_speaker_analysis, submit_acoustic_window
 from sessions.speaker_evidence import speaker_evidence
 from sessions.provisional_speakers import (
@@ -220,7 +222,9 @@ class SessionProcessor(threading.Thread):
         self._phase07_last_autosave = time.monotonic()
         self._phase07_saved_segment_id = 0
         self.ui_settings: dict = {}
-        self._translation_tasks: dict[int, Future] = {}
+        self._translation_tasks: dict[Future, tuple[str, tuple[CaptionTranslation, ...]]] = {}
+        self._translation_pending: dict[int, CaptionTranslation] = {}
+        self._translation_warning = False
         self._speaker_tasks: dict[int, Future] = {}
         # A saturated global speaker queue must not silently discard the
         # voiceprint for a confirmed ASR segment. Keep only a small bounded
@@ -562,6 +566,7 @@ class SessionProcessor(threading.Thread):
                         "unconfirmed identities remain provisional."
                     ),
                 })
+        self._collect_translations()
         self._rebuild_and_push()
         if self._speaker_tasks or self._acoustic_tasks or self._speaker_deferred:
             self._put({"type": "feature_warning", "feature": "diarization",
@@ -569,10 +574,13 @@ class SessionProcessor(threading.Thread):
             self._speaker_tasks.clear()
             self._acoustic_tasks.clear()
             self._speaker_deferred.clear()
-        if self._translation_tasks:
-            self._put({"type": "feature_warning", "feature": "translation",
-                       "message": "Some translations were not completed before meeting shutdown"})
+        pending_translations = getattr(self, "_translation_pending", {})
+        if self._translation_tasks or pending_translations:
+            self._warn_translation("Some translations are unfinished. Translate the saved transcript after stopping.")
+            for future in self._translation_tasks:
+                future.cancel()
             self._translation_tasks.clear()
+            pending_translations.clear()
         self._final_save_ok = self._do_save()
         if not self._final_save_ok and self.meeting_store and self.meeting_id:
             self._put({"type": "error", "message": "Unable to save the final meeting transcript"})
@@ -790,6 +798,7 @@ class SessionProcessor(threading.Thread):
                     "timestamp_quality": s.get("timestamp_quality", "segment"),
                     "words": s.get("words", []),
                     "translation": s.get("translation", ""),
+                    "translation_target": s.get("translation_target", ""),
                     "revision": s.get("revision", 0),
                     "manually_corrected": bool(s.get("manually_corrected", False)),
                     "speaker_override": bool(s.get("speaker_override", False)),
@@ -893,6 +902,7 @@ class SessionProcessor(threading.Thread):
                     "timestamp_quality": item.get("timestamp_quality", "segment"),
                     "words": item.get("words", []),
                     "translation": item.get("translation", ""),
+                    "translation_target": item.get("translation_target", ""),
                     "revision": int(item.get("revision", 0)),
                     "manually_corrected": bool(item.get("manually_corrected", False)),
                     "speaker_override": bool(item.get("speaker_override", False)),
@@ -1253,8 +1263,7 @@ class SessionProcessor(threading.Thread):
             if speaker_task is not None:
                 self._speaker_tasks[record["id"]] = speaker_task
                 speaker_task.add_done_callback(self._notify_async_ready)
-            else:
-                self._enqueue_translation(record)
+            self._enqueue_translation(record)
             logger.info("[%s] confirmed segment %d (%.2f ~ %.2f seconds)",
                         self.session_id[:8], record["id"], s_g / sr, e_g / sr)
             metrics.increment("asr_segments_confirmed")
@@ -1574,19 +1583,36 @@ class SessionProcessor(threading.Thread):
         self._async_ready.set()
         self.buffer.wake()
 
+    def _warn_translation(self, message: str) -> None:
+        if not self._translation_warning:
+            self._translation_warning = True
+            self._put({"type": "feature_warning", "feature": "translation", "message": message})
+
     def _enqueue_translation(self, segment: dict) -> None:
-        if not self.translate_target:
+        target = self.translate_target
+        if (not target or segment.get("language") == target
+                or (segment.get("translation_target") == target and segment.get("translation"))):
             return
-        source = str(segment.get("language") or "und").lower()
-        if source == self.translate_target:
-            segment["translation"] = segment["text"]
+        caption = CaptionTranslation.from_segment(segment)
+        if any(target == queued_target and caption in batch
+               for queued_target, batch in self._translation_tasks.values()):
             return
-        task = submit_translation(segment["text"], source, self.translate_target)
+        if len(self._translation_pending) >= MAX_PENDING and caption.id not in self._translation_pending:
+            self._warn_translation("Translation is behind. Remaining captions can be translated after stopping.")
+            return
+        self._translation_pending[caption.id] = caption
+
+    def _dispatch_translation(self) -> None:
+        if self._translation_tasks or not self._translation_pending:
+            return
+        batch = caption_batch(self._translation_pending.values())
+        task = submit_translation(batch, self.translate_target)
+        for caption in batch:
+            self._translation_pending.pop(caption.id, None)
         if task is None:
-            self._put({"type": "feature_warning", "feature": "translation",
-                       "message": "Translation backlog is full; original text retained"})
+            self._warn_translation("Translation queue is busy. Retry unfinished captions after stopping.")
             return
-        self._translation_tasks[segment["id"]] = task
+        self._translation_tasks[task] = (self.translate_target, batch)
         task.add_done_callback(self._notify_async_ready)
 
     def _warn_speaker_backpressure(self) -> None:
@@ -1733,6 +1759,7 @@ class SessionProcessor(threading.Thread):
                 self._acoustic_turn_splits += additional_turns
                 metrics.increment("speaker_acoustic_turn_splits", additional_turns)
             source_words = original.get("words", [])
+            original_text = original.get("text")
             source_language = original.get("language", "und")
             for index, piece in enumerate(pieces):
                 if index == 0:
@@ -1762,7 +1789,9 @@ class SessionProcessor(threading.Thread):
                     else "turn_ambiguous" if piece.get("ambiguous")
                     else "turn_no_voiceprint"
                 )
-                segment["translation"] = ""
+                if piece["text"] != original_text:
+                    segment.pop("translation", None)
+                    segment.pop("translation_target", None)
                 if isinstance(source_words, list):
                     segment["words"] = [
                         w for w in source_words if isinstance(w, dict)
@@ -1777,24 +1806,25 @@ class SessionProcessor(threading.Thread):
         return updated
 
     def _collect_translations(self, wait_seconds: float = 0.0) -> None:
-        if not self._translation_tasks:
-            return
-        if wait_seconds > 0:
-            wait(tuple(self._translation_tasks.values()), timeout=wait_seconds)
-        completed = [(sid, future) for sid, future in self._translation_tasks.items()
-                     if future.done()]
-        for sid, future in completed:
-            self._translation_tasks.pop(sid, None)
-            try:
-                value = future.result()
-            except Exception as exc:
-                self._put({"type": "feature_warning", "feature": "translation",
-                           "message": str(exc)})
+        self._dispatch_translation()
+        if wait_seconds > 0 and self._translation_tasks:
+            wait(tuple(self._translation_tasks), timeout=wait_seconds)
+        for future, (target, batch) in tuple(self._translation_tasks.items()):
+            if not future.done():
                 continue
-            for segment in self.segments:
-                if segment["id"] == sid:
-                    segment["translation"] = value
-                    break
+            self._translation_tasks.pop(future)
+            try:
+                translated = future.result()
+            except Exception as exc:
+                self._warn_translation(str(exc))
+                continue
+            by_id = {segment["id"]: segment for segment in self.segments}
+            for caption in batch:
+                if caption.id in by_id and target == self.translate_target:
+                    caption.apply(by_id[caption.id], target, translated.get(caption.id, ""))
+            if len(translated) < len(batch):
+                self._warn_translation("Some captions could not be translated. Retry from the saved transcript.")
+        self._dispatch_translation()
 
     # --------------------------------------------------------------- cluster
     def _recluster(self, *, allow_historical_relabel: bool = False) -> None:
@@ -2150,6 +2180,7 @@ class SessionProcessor(threading.Thread):
                 "language_confidence": s.get("language_confidence"),
                 "timestamp_quality": s.get("timestamp_quality", "segment"),
                 "translation": s.get("translation", ""),
+                "translation_target": s.get("translation_target", ""),
                 "recognition_origin": s.get("recognition_origin", "primary"),
                 "text_confidence": s.get("asr_confidence"),
                 **acoustics[s["id"]],
@@ -2604,7 +2635,7 @@ class SessionProcessor(threading.Thread):
         metrics.gauge("phase07_unidentified_segments", phase07_speaker["unidentified_segments"])
         fingerprint = tuple(
             (i["id"], i["speaker_id"], i["speaker_name"], i["start_ms"], i["end_ms"], i["text"],
-             i["language"], i.get("language_confidence"), i.get("translation"),
+             i["language"], i.get("language_confidence"), i.get("translation"), i.get("translation_target"),
              i.get("recognition_origin"), i.get("text_confidence"),
              i.get("speaker_status"), i.get("speaker_similarity"),
              i.get("speaker_margin"), i.get("speaker_evidence_count"),

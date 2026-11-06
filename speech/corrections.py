@@ -35,6 +35,8 @@ def correct_segment(state: dict, segment_id: int, text: str, expected_revision: 
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
         segment["text"] = text.strip()
+        segment.pop("translation", None)
+        segment.pop("translation_target", None)
         segment["revision"] = previous + 1
         segment["manually_corrected"] = True
         return segment

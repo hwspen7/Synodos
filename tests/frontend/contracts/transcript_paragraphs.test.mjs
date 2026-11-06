@@ -80,7 +80,7 @@ test('translation display and content-first canonical ids remain intact', () => 
   assert.equal(parts.length, 1)
   assert.deepEqual(parts[0].segmentIds, [12])
   const translated = buildTranscriptParagraphs([
-    segment(5, 0, 1000, 'Bonjour', 1, { translation: 'Hello' }),
+    segment(5, 0, 1000, 'Bonjour', 1, { translation: 'Hello', translation_target: 'en' }),
   ], { translationTarget: 'en' })
   assert.equal(translated[0].text, 'Hello')
 })
@@ -107,4 +107,15 @@ test('a numbered uncertain caption retains its provisional badge when merged', (
   ])
   assert.equal(parts.length, 1)
   assert.equal(parts[0].provisional, true)
+})
+
+test('display keeps the original and ignores translations for a different target', () => {
+  const rows = [segment(7, 0, 1000, 'Bonjour', 1, {
+    translation: 'Hello', translation_target: 'en',
+  })]
+  assert.equal(buildTranscriptParagraphs(rows, { translationTarget: 'en' })[0].originalText, 'Bonjour')
+  const wrongTarget = buildTranscriptParagraphs(rows, { translationTarget: 'zh' })[0]
+  assert.equal(wrongTarget.text, 'Bonjour')
+  assert.equal(wrongTarget.originalText, undefined)
+  assert.equal(buildTranscriptParagraphs(rows)[0].text, 'Bonjour')
 })

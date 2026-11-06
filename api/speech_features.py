@@ -11,6 +11,8 @@ from core.runtime import meeting_store, meeting_sessions, speaker_store
 from speech.config import load_settings
 from speech.corrections import correct_segment, assign_segment_speaker, RevisionConflict
 from speech.translation import translate, TranslationUnavailable
+from speech.supported_languages import translation_target
+from sessions.translation_tasks import CaptionTranslation, caption_batch, submit_translation
 
 router = APIRouter(prefix="/api/speech", tags=["speech"])
 
@@ -19,6 +21,11 @@ class TranslationRequest(BaseModel):
     text: str = Field(min_length=1, max_length=10000)
     source_language: str = Field(min_length=2, max_length=24)
     target_language: str = Field(min_length=2, max_length=24)
+
+
+class SavedTranslationRequest(BaseModel):
+    target_language: str = Field(min_length=2, max_length=24)
+    after_id: int = Field(default=-1, ge=-1)
 
 
 class CorrectionRequest(BaseModel):
@@ -53,6 +60,68 @@ async def translate_text(payload: TranslationRequest) -> dict:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"text": result, "source_language": payload.source_language,
             "target_language": payload.target_language}
+
+
+@router.post("/meetings/{meeting_id}/translations")
+async def translate_saved_meeting(meeting_id: str, payload: SavedTranslationRequest) -> dict:
+    """Translate one bounded page, then persist only still-current captions."""
+    from api.session_lifecycle import meeting_connection_lock
+    from sessions.manual_review import ReviewConflict
+
+    if not meeting_store.valid_id(meeting_id):
+        raise HTTPException(400, "Invalid meeting ID")
+    try:
+        target = translation_target(payload.target_language)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    async def load_saved() -> dict:
+        session = meeting_sessions.get(meeting_id)
+        if session is not None and not (session.processor.stopped and session.processor._final_save_ok):
+            raise HTTPException(409, "Stop recording before translating saved captions")
+        state = await asyncio.to_thread(meeting_store.load_state, meeting_id)
+        if state is None:
+            raise HTTPException(404, "Meeting not found")
+        if (state.get("ui_settings") or {}).get("translate_to") != target:
+            raise HTTPException(409, "Save the selected translation language first")
+        return state
+
+    async with meeting_connection_lock(meeting_id):
+        state = await load_saved()
+        pending = sorted(
+            (CaptionTranslation.from_segment(segment) for segment in state.get("segments") or []
+             if int(segment["id"]) > payload.after_id
+             and segment.get("language") != target
+             and not (segment.get("translation_target") == target and segment.get("translation"))),
+            key=lambda caption: caption.id,
+        )
+    batch = caption_batch(pending)
+    if not batch:
+        return {"attempted": 0, "translated": 0, "next_after": payload.after_id, "has_more": False}
+    future = submit_translation(batch, target)
+    if future is None:
+        raise HTTPException(503, "Translation queue is busy. Try again shortly.")
+    try:
+        translations = await asyncio.wrap_future(future)
+    except TranslationUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+    async with meeting_connection_lock(meeting_id):
+        state = await load_saved()
+        by_id = {int(segment["id"]): segment for segment in state.get("segments") or []}
+        count = sum(
+            caption.apply(by_id[caption.id], target, translations.get(caption.id, ""))
+            for caption in batch if caption.id in by_id
+        )
+        if count:
+            revision = (state.pop("meta", {}) or {}).get("_store_version")
+            try:
+                await asyncio.to_thread(meeting_store.save_state, state,
+                                        expected_store_revision=revision)
+            except ReviewConflict as exc:
+                raise HTTPException(409, str(exc)) from exc
+    return {"attempted": len(batch), "translated": count, "next_after": batch[-1].id,
+            "has_more": len(pending) > len(batch)}
 
 
 @router.patch("/meetings/{meeting_id}/segments/{segment_id}")
