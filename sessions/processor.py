@@ -877,7 +877,7 @@ class SessionProcessor(threading.Thread):
             self._send_state()
             return False
         absolute_end = start_offset + len(audio)
-        if (self._speech_settings.engine == "hybrid"
+        if (self._speech_settings.engine in ("whisper", "hybrid")
                 and uninformative_audio(audio, sr)):
             # Do not feed sustained microphone noise to either decoder or
             # the speaker extractor. Keep a short tail for the next genuine
@@ -968,7 +968,7 @@ class SessionProcessor(threading.Thread):
             # into a permanent caption or a new speaker cluster.
             a_local = max(0, min(len(audio), int(start_ms * sr / 1000)))
             b_local = max(0, min(len(audio), int(end_ms * sr / 1000)))
-            if (self._speech_settings.engine == "hybrid"
+            if (self._speech_settings.engine in ("whisper", "hybrid")
                     and b_local > a_local
                     and uninformative_audio(audio[a_local:b_local], sr)):
                 commit_receipt["acoustic_rejected"] += 1
@@ -988,7 +988,7 @@ class SessionProcessor(threading.Thread):
                 metrics.increment("asr_temporal_duplicate_skipped")
                 local_end = max(local_end, e_g - start_offset)
                 continue
-            if (self._speech_settings.engine == "hybrid"
+            if (self._speech_settings.engine in ("whisper", "hybrid")
                     and is_adjacent_tail_echo(
                         s_g, e_g, text, self.segments, sample_rate=sr,
                         timestamp_quality=sentence.get(
@@ -1007,7 +1007,7 @@ class SessionProcessor(threading.Thread):
                     and buffer_s < self._min_commit_context_s
                 )
                 or (
-                    self._speech_settings.engine == "hybrid"
+                    self._speech_settings.engine in ("whisper", "hybrid")
                     and unclosed_voice_turn(
                         start_ms, end_ms, len(audio) * 1000 // sr,
                         recognition.speech_intervals_ms,
@@ -1199,15 +1199,18 @@ class SessionProcessor(threading.Thread):
                 coverage_limited = local_end < proposed_drop
                 for gap in exhausted:
                     self._record_untranscribed_voice(gap)
-        # A committed word timestamp is not proof that the acoustic turn has
-        # ended. After the VAD speech-off event settles, retire the complete
+        # VAD provenance from Whisper and Hybrid can safely close a
+        # completed speech island. A committed text timestamp alone cannot
+        # prove voice-off; without VAD intervals the buffer cursor is unchanged.
+        # After the VAD speech-off event settles, retire the complete
         # acoustic island only when the same cycle committed enough aligned
         # content, no pending words lie in it, and no other voice is nearby.
         # The retention guard takes precedence over this optimization.
-        if (self._speech_settings.engine == "hybrid"
+        if (self._speech_settings.engine in ("whisper", "hybrid")
                 and local_end > 0
                 and commit_receipt["published_new"] > 0
-                and not final and not coverage_limited):
+                and not final and not coverage_limited
+                and recognition.speech_intervals_ms):
             verified_end = completed_island_drop(
                 local_end, len(audio), recognition.speech_intervals_ms,
                 published_intervals_ms=published_intervals_ms,
