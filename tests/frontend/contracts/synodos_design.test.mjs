@@ -59,3 +59,24 @@ test('responsive design style rules remain balanced', () => {
   assert.match(css, /prefers-reduced-motion:reduce/)
   assert.equal((css.match(/\{/g) || []).length, (css.match(/\}/g) || []).length)
 })
+
+test('compact meeting chrome prioritizes transcript space without hiding controls', () => {
+  const meeting = read('src/pages/MeetingPage.vue')
+  const styles = read('src/assets/synodos-theme.css')
+  const compact = styles.slice(styles.indexOf('/* Compact meeting chrome:'))
+  const topControls = meeting.indexOf('class="synodos-top-controls"')
+  const speakers = meeting.indexOf('class="synodos-participant-stage"', topControls)
+  const recorder = meeting.indexOf('class="synodos-session-bar"', topControls)
+  const transcript = meeting.indexOf('class="meeting-workspace"', topControls)
+  assert.ok(topControls >= 0 && topControls < speakers && speakers < recorder && recorder < transcript)
+  assert.match(meeting, /class="synodos-speaker-strip-label"/)
+  assert.match(compact, /grid-template-rows:58px minmax\(0,1fr\)/)
+  assert.match(compact, /grid-template-columns:minmax\(235px,1fr\) max-content/)
+  assert.match(compact, /flex:0 1 172px/)
+  assert.match(compact, /height:33px/)
+  assert.match(compact, /@media\(max-width:760px\)/)
+  assert.doesNotMatch(compact, /height:113px|min-height:110px/)
+  for (const operation of ["saveMeeting()", "recording ? stop() : start()", "exportMeeting('md')"]) {
+    assert.ok(meeting.includes(operation), 'Missing meeting operation: ' + operation)
+  }
+})

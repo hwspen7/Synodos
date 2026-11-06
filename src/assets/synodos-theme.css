@@ -436,3 +436,182 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
 @media (prefers-reduced-motion:reduce) {
   .synodos-shell * { transition-duration:0s!important;animation-duration:0s!important; }
 }
+
+
+/* Compact meeting chrome: preserve controls, prioritize transcript viewport. */
+.synodos-shell {
+  grid-template-rows:58px minmax(0,1fr);
+}
+.synodos-shell .synodos-topbar {
+  height:58px;min-height:58px;padding:4px clamp(14px,1.7vw,26px);box-shadow:none;
+}
+.synodos-topbar-branding { gap:15px; }
+.synodos-shell .synodos-brand { min-height:36px;gap:8px; }
+.synodos-brand-mark { width:35px;height:35px;filter:none; }
+.synodos-brand-name { font-size:clamp(20px,1.7vw,25px);font-weight:830; }
+.synodos-brand-divider { height:24px; }
+.synodos-topbar-actions { gap:13px; }
+.synodos-shell .workspace-sidebar {
+  top:58px;height:calc(100dvh - 58px);min-height:0;
+  padding:14px 10px 12px;
+}
+.synodos-shell.meeting-route .workspace-main-column {
+  height:calc(100dvh - 58px);
+}
+.synodos-shell.meeting-route .meeting-page {
+  padding:8px clamp(12px,1.4vw,22px) 10px!important;
+}
+.synodos-shell.meeting-route .compact-meeting-header {
+  min-height:0;padding:8px 12px;gap:11px;margin-bottom:6px;
+  border-radius:11px;box-shadow:none;
+}
+.synodos-shell.meeting-route .compact-meeting-titles {
+  display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;
+  min-width:0;gap:2px 12px;
+}
+.synodos-shell.meeting-route .compact-meeting-titles h1 {
+  max-width:min(480px,46vw);overflow:hidden;white-space:nowrap;
+  text-overflow:ellipsis;font-size:clamp(18px,1.55vw,22px);line-height:1.16;
+}
+.synodos-shell.meeting-route .meeting-running-status {
+  display:flex;align-items:center;gap:8px;font-size:10px;
+}
+.synodos-shell.meeting-route .meeting-header-context {
+  flex-basis:100%;margin-top:1px;gap:3px 11px;line-height:1.25;
+}
+.synodos-shell.meeting-route .meeting-back {
+  min-width:30px;width:30px;height:30px;
+}
+.synodos-shell.meeting-route .synodos-meeting-heading-actions { gap:6px; }
+.synodos-shell.meeting-route .synodos-participants-button {
+  min-height:31px;padding:5px 9px;
+}
+.synodos-shell.meeting-route .workspace-export-menu>summary {
+  min-height:31px;padding:5px 9px;
+}
+.synodos-top-controls {
+  display:grid;grid-template-columns:minmax(235px,1fr) max-content;
+  gap:7px;align-items:stretch;flex:none;min-height:0;margin-bottom:7px;
+}
+.synodos-participant-stage {
+  display:flex;align-items:center;gap:10px;min-height:0;
+  padding:5px 8px;margin:0;min-width:0;
+  background:#fff;border:1px solid #e9e1d8;border-radius:10px;box-shadow:none;
+}
+.synodos-speaker-strip-label {
+  flex:none;color:#83776b;font-size:10px;font-weight:770;letter-spacing:.025em;
+}
+.synodos-participant-grid {
+  display:flex;align-items:center;gap:6px;height:34px;min-width:0;overflow:hidden;
+}
+.synodos-participant-card,
+.synodos-participant-card:nth-child(2),
+.synodos-participant-card:nth-child(3) {
+  display:flex;align-items:center;justify-content:flex-start;gap:7px;
+  flex:0 1 172px;min-width:0;max-width:185px;height:33px;
+  padding:3px 8px;border:1px solid #ede5dc;border-radius:8px;
+  background:#fffaf6;text-align:left;
+}
+.synodos-participant-card:not(:disabled):hover {
+  border-color:#e7b084;background:#fff1e5;box-shadow:none;
+}
+.synodos-participant-avatar {
+  position:static;display:flex;align-items:center;justify-content:center;
+  flex:none;width:25px;height:25px;border-radius:50%;
+  color:#fff;font-size:10px;font-weight:770;letter-spacing:0;box-shadow:none;
+}
+.synodos-participant-caption {
+  position:static;display:flex;align-items:baseline;gap:6px;flex:1;z-index:auto;
+  left:auto;right:auto;bottom:auto;min-width:0;margin:0;padding:0;
+  border:0;border-radius:0;background:transparent;color:#342f2b;
+  font-size:10px;white-space:nowrap;
+}
+.synodos-participant-caption strong {
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:750;
+}
+.synodos-participant-caption small {
+  flex:none;margin:0;color:#8e8377;font-size:9px;
+}
+.synodos-participant-wave,.synodos-participant-orbit { display:none; }
+.synodos-participant-extra {
+  flex:none;width:30px;height:30px;border-radius:8px;font-size:10px;
+}
+.synodos-participants-empty { justify-content:flex-start;min-height:32px;gap:8px; }
+.synodos-participants-empty strong { font-size:10px;color:#817468;font-weight:650; }
+.synodos-participants-empty p { display:none; }
+.synodos-empty-avatar { width:25px;height:25px;border-radius:8px; }
+.synodos-empty-avatar svg { width:15px;height:15px; }
+.synodos-session-bar {
+  min-height:45px;margin:0;padding:5px 8px;gap:8px;
+  border-radius:10px;box-shadow:none;
+}
+.synodos-session-indicators { gap:8px;flex-wrap:nowrap; }
+.synodos-live-pill { padding:5px 9px; }
+.synodos-language-control { padding-left:8px;gap:5px; }
+.synodos-language-control select { min-height:30px;padding:4px 7px; }
+.synodos-shell.meeting-route .compact-meeting-toolbar { gap:6px; }
+.synodos-shell.meeting-route .compact-meeting-toolbar .btn {
+  min-height:32px;padding:6px 10px;
+}
+.synodos-shell.meeting-route .compact-meeting-toolbar .compact-record-action,
+.synodos-shell.meeting-route .compact-meeting-toolbar .compact-record-action:hover:not(:disabled) {
+  min-height:32px;min-width:124px;
+}
+.synodos-shell.meeting-route .meeting-tool-sidebar {
+  min-height:0!important;padding:4px 11px;
+}
+.synodos-shell.meeting-route .meeting-tool-link {
+  min-height:33px;padding:7px 11px;
+}
+.synodos-transcript-heading { padding:10px 15px 8px; }
+.synodos-shell.meeting-route .meeting-primary .transcript {
+  padding:5px 15px 17px!important;
+}
+.synodos-shell.meeting-route .meeting-detail-header { padding:11px 14px 10px; }
+.synodos-shell.meeting-route .meeting-detail-scroll .meeting-review-tools {
+  margin-bottom:10px;padding:4px;
+}
+.synodos-shell.meeting-route .meeting-detail-scroll .meeting-review-tools button {
+  min-height:32px;padding:5px 4px;
+}
+@media(max-width:1340px) {
+  .synodos-top-controls { grid-template-columns:minmax(0,1fr);gap:5px; }
+  .synodos-shell.meeting-route .synodos-session-bar { justify-content:space-between; }
+}
+@media(max-width:760px) {
+  .synodos-shell,.synodos-shell.meeting-route {
+    grid-template-rows:56px minmax(0,1fr);
+  }
+  .synodos-shell .synodos-topbar { height:56px;min-height:56px;padding:4px 13px; }
+  .synodos-brand-mark { width:33px;height:33px; }
+  .synodos-brand-name { font-size:22px; }
+  .synodos-shell .workspace-sidebar {
+    position:fixed;top:56px;height:calc(100dvh - 56px);
+  }
+  .synodos-shell .workspace-mobile-scrim { inset:56px 0 0; }
+  .synodos-shell.meeting-route .workspace-main-column { height:auto; }
+  .synodos-shell.meeting-route .meeting-page { padding:8px 10px 15px!important; }
+  .synodos-shell.meeting-route .compact-meeting-header {
+    padding:8px 10px;gap:7px;
+  }
+  .synodos-shell.meeting-route .compact-meeting-titles h1 {
+    max-width:calc(100vw - 110px);font-size:19px;
+  }
+  .synodos-top-controls { display:flex;flex-direction:column;gap:5px; }
+  .synodos-participant-grid {
+    flex-wrap:nowrap;height:34px;overflow-x:auto;scrollbar-width:none;
+  }
+  .synodos-participant-card,
+  .synodos-participant-card:nth-child(2),
+  .synodos-participant-card:nth-child(3) {
+    flex:0 0 153px;height:33px;min-height:0;
+  }
+  .synodos-participant-avatar { width:25px;height:25px;font-size:10px; }
+  .synodos-participant-caption { padding:0;font-size:10px; }
+  .synodos-participant-caption small { display:none; }
+  .synodos-participant-extra { width:30px; }
+  .synodos-shell.meeting-route .synodos-session-bar {
+    flex-wrap:wrap;justify-content:space-between;gap:5px;
+  }
+  .synodos-session-indicators { flex-wrap:wrap; }
+}

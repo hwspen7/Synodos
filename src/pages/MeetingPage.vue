@@ -912,7 +912,9 @@ onBeforeUnmount(() => stopInternal())
       </div>
     </header>
 
-    <section class="synodos-participant-stage" aria-label="Meeting speakers">
+    <div class="synodos-top-controls">
+      <section class="synodos-participant-stage" aria-label="Meeting speakers">
+        <span class="synodos-speaker-strip-label">Speakers</span>
       <div v-if="meetingCast.length" class="synodos-participant-grid">
         <button v-for="speaker in meetingCast.slice(0, 3)" :key="speaker.id"
           class="synodos-participant-card" type="button"
@@ -962,6 +964,7 @@ onBeforeUnmount(() => stopInternal())
           {{ recording ? 'Stop recording' : 'Start recording' }}
         </button>
       </div>
+    </div>
     </div>
     <p v-if="settingsPending && !recording" class="hint-text warn-text" role="status">Settings changed. Apply to save them, or start recording to use these values.</p>
     <p v-if="selectedWithoutVoiceprints.length" class="hint-text warn-text" role="status">
