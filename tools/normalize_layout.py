@@ -171,6 +171,14 @@ def main() -> None:
     mapping = {old: destination(old) for old in files}
     duplicates = [name for name, count in Counter(mapping.values()).items() if count != 1]
     if duplicates: raise RuntimeError("Destination collisions: " + str(duplicates))
+    # Version markers belong in metadata, not permanent source paths.
+    bad_names = [
+        p for p in mapping.values()
+        if not p.startswith("tests/frontend/")
+        and re.search(r"(?:^|[/_-])phase\d|(?:^|[_.-])v\d+(?:[_.-]|$)", p, re.I)
+    ]
+    if bad_names:
+        raise RuntimeError("Unnormalized source paths: " + repr(bad_names))
     replacements = {
         "phase07.": "runtime_quality.", "phase07/": "runtime_quality/",
         "tests.phase06c.": "tests.runtime_compat.", "tests.phase07.": "tests.runtime_quality.",
