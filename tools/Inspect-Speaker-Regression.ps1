@@ -56,6 +56,7 @@ $display = foreach ($s in $items) {
         Speaker = $s.speaker_id
         Emb = $available
         Reason = $reason
+        Final = [string]$s.speaker_final_resolution_status
         Upstream = $upstream
         Birth = $birth
         Source = $source

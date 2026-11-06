@@ -67,6 +67,7 @@ from sessions.registered_identity import match_saved_voice
 from sessions.corroborated_speaker_channels import CorroboratedSpeakerChannels
 from sessions.speaker_cluster_birth import gate_new_cluster_births
 from sessions.short_turn_identity import recover_short_turn_identity
+from sessions.fused_short_turn_recovery import recover_fused_short_turns
 from sessions.speaker_partition_evidence import consistent_partition_embedding
 from sessions.speaker_resolution import preserve_supported_camplus
 from speech.acoustic_timeline import AcousticTimeline
@@ -166,6 +167,7 @@ class SessionProcessor(threading.Thread):
         self._independent_published: dict[int, int] = {}
         self._independent_scores: dict[int, dict] = {}
         self._independent_support: dict[int, dict] = {}
+        self._fused_final_status: dict[int, dict] = {}
         self._content_first_projection: dict[int, dict] = {}
         self._independent_pcm_origin_samples = 0
         self._independent_id_offset = 0
@@ -684,6 +686,18 @@ class SessionProcessor(threading.Thread):
                     ),
                     "speaker_birth_decision": s.get("speaker_birth_decision"),
                     **acoustics[s["id"]],
+                    "speaker_status": self._fused_final_status.get(int(s["id"]), {}).get(
+                        "speaker_status", acoustics[s["id"]]["speaker_status"]),
+                    "speaker_uncertain": self._fused_final_status.get(int(s["id"]), {}).get(
+                        "speaker_uncertain", bool(s.get("speaker_uncertain", False))),
+                    "speaker_diarization_source": self._fused_final_status.get(int(s["id"]), {}).get(
+                        "speaker_diarization_source", (
+                            "nemotron3" if self._independent_published.get(int(s["id"]), 0) > 0
+                            else "nemotron3_uncertain" if int(s["id"]) in self._independent_published
+                            else s.get("speaker_diarization_source", "camplus")
+                        )),
+                    "speaker_final_resolution_status": self._fused_final_status.get(int(s["id"]), {}).get(
+                        "speaker_final_resolution_status", s.get("speaker_final_resolution_status")),
                     "timestamp_quality": s.get("timestamp_quality", "segment"),
                     "words": s.get("words", []),
                     "translation": s.get("translation", ""),
@@ -759,6 +773,7 @@ class SessionProcessor(threading.Thread):
                         "speaker_upstream_evidence_status",
                     ),
                     "speaker_birth_decision": item.get("speaker_birth_decision"),
+                    "speaker_final_resolution_status": item.get("speaker_final_resolution_status"),
                     "timestamp_quality": item.get("timestamp_quality", "segment"),
                     "words": item.get("words", []),
                     "translation": item.get("translation", ""),
@@ -2012,6 +2027,7 @@ class SessionProcessor(threading.Thread):
         self._independent_published = {}
         self._independent_scores = {}
         self._independent_support = {}
+        self._fused_final_status = {}
         self._content_first_projection = {}
         origin = getattr(self, "_independent_pcm_origin_samples", 0)
         for item, source in zip(items, ordered):
@@ -2031,6 +2047,16 @@ class SessionProcessor(threading.Thread):
                 item["speaker_name"] = f"Speaker {saved}"
                 item["speaker_diarization_source"] = "nemotron3"
                 self._independent_published[int(item["id"])] = saved
+            elif (source.get("speaker_diarization_source") == "camplus_bidirectional_recovery"
+                  and int(source["end_sample"]) <= origin
+                  and type(source.get("speaker_id")) is int
+                  and source["speaker_id"] > 0):
+                item["speaker_id"] = source["speaker_id"]
+                item["speaker_name"] = f"Speaker {source['speaker_id']}"
+                item["speaker_status"] = "short_voice_recovered_provisional"
+                item["speaker_uncertain"] = True
+                item["speaker_diarization_source"] = "camplus_bidirectional_recovery"
+                self._independent_published[int(item["id"])] = int(source["speaker_id"])
             elif (source.get("speaker_diarization_source") == "nemotron3_uncertain"
                   and int(source["end_sample"]) <= origin):
                 # Old resumed captions retain their saved honest unknown,
@@ -2268,6 +2294,50 @@ class SessionProcessor(threading.Thread):
                         # CAM++ output until acoustic frames arrive. This
                         # also preserves legacy fallbacks on model failure.
                         item["speaker_diarization_source"] = "camplus_provisional"
+        # MEETING_FUSED_SHORT_RECOVERY_V1
+        recovered_short = recover_fused_short_turns(
+            items, ordered, sample_rate=self.settings.sample_rate,
+        )
+        for segment_id, label in recovered_short.items():
+            self._independent_published[int(segment_id)] = int(label)
+        # A final speaker ID and CAM++ evidence are separate facts.
+        # Keep both, while persisting the displayed fusion decision.
+        self._fused_final_status = {}
+        for item, source in zip(items, ordered):
+            ident = item.get("speaker_id")
+            origin_kind = str(item.get("speaker_diarization_source") or "camplus")
+            if source.get("speaker_override"):
+                final_reason = "manual_override"
+                uncertain = False
+            elif source.get("matched_profile_id"):
+                final_reason = "registered_identity"
+                uncertain = False
+            elif type(ident) is not int or ident <= 0:
+                final_reason = "unresolved"
+                uncertain = True
+                item["speaker_status"] = "uncertain"
+            elif origin_kind == "camplus_bidirectional_recovery":
+                final_reason = "voice_recovered_provisional"
+                uncertain = True
+                item["speaker_status"] = "short_voice_recovered_provisional"
+            elif origin_kind == "nemotron3":
+                final_reason = "independent_acoustic_assigned"
+                uncertain = False
+                item["speaker_status"] = "acoustic_primary"
+            elif origin_kind == "camplus_independent_unresolved":
+                final_reason = "camplus_provisional"
+                uncertain = True
+            else:
+                final_reason = "camplus_" + str(item.get("speaker_status") or "tentative")
+                uncertain = bool(source.get("speaker_uncertain", False))
+            item["speaker_uncertain"] = uncertain
+            item["speaker_final_resolution_status"] = final_reason
+            self._fused_final_status[int(item["id"])] = {
+                "speaker_status": item.get("speaker_status", "unknown"),
+                "speaker_uncertain": uncertain,
+                "speaker_diarization_source": origin_kind,
+                "speaker_final_resolution_status": final_reason,
+            }
         phase07_speaker = speaker_stats(items)
         metrics.gauge("phase07_speaker_changes", phase07_speaker["speaker_switches"])
         metrics.gauge("phase07_unidentified_segments", phase07_speaker["unidentified_segments"])
