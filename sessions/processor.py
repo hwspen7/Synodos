@@ -2070,6 +2070,25 @@ class SessionProcessor(threading.Thread):
                     )
                     if start_ms < 0:
                         continue
+                    # Reuse independent acoustic windows when a short ASR
+                    # segment has no usable voice embedding. The audio must
+                    # cover the actual utterance and agree across windows.
+                    # Explicit mixed-speaker evidence must not be collapsed
+                    # into a single person's embedding.
+                    voice_embedding = source.get("emb")
+                    if (voice_embedding is None
+                            and source.get("speaker_evidence_status")
+                                != "multi_turn_acoustic_evidence_only"
+                            and source["end_sample"] - source["start_sample"]
+                                >= round(self.settings.sample_rate * 1.2)):
+                        timeline = getattr(self, "_acoustic_timeline", None)
+                        if timeline is not None:
+                            voice_embedding = timeline.embedding_for(
+                                int(source["start_sample"]),
+                                int(source["end_sample"]),
+                                min_coverage=0.75,
+                                min_consistency=0.78,
+                            )
                     # Safe content-first display projection is secondary to
                     # the canonical, never-rewritten ASR segment. Words from
                     # this inference window are relative to _audio_base_sample.
@@ -2150,8 +2169,17 @@ class SessionProcessor(threading.Thread):
                         published = self._display_nemotron_channel(
                             decision.speaker_id, acoustic_support_ms,
                             segment_id=int(item["id"]),
-                            embedding=source.get("emb"),
+                            embedding=voice_embedding,
                         )
+                        if published is None and acoustic_support_ms >= 500:
+                            # A new raw channel is not a new person if its
+                            # independent voice vector strongly matches a
+                            # speaker already established in this meeting.
+                            published = self._nemotron_channels.match_known(
+                                voice_embedding
+                            )
+                            if published is not None:
+                                item["speaker_status"] = "voice_reuse_confirmed"
                         if published is None:
                             # An uncorroborated acoustic channel is unknown,
                             # never a new person based on a CAM++ cluster ID.
@@ -2193,16 +2221,25 @@ class SessionProcessor(threading.Thread):
                         self._independent_published[int(item["id"])] = published
                     elif (decision.status == "acoustically_ambiguous"
                           or independent_complete):
-                        # Complete-window ambiguity, or a completed model
-                        # that still lacks local evidence, must never import
-                        # an unrelated CAM++ anonymous speaker ID. During
-                        # streaming, partial model coverage remains provisional.
-                        # This is an honest unknown, not a guessed speaker.
-                        item["speaker_id"] = -1
-                        item["speaker_name"] = "Unidentified Speaker"
-                        item["speaker_status"] = "uncertain"
-                        item["speaker_diarization_source"] = "nemotron3_uncertain"
-                        self._independent_published[int(item["id"])] = -1
+                        # A missing or ambiguous Nemotron frame does not
+                        # invalidate an independent matching voiceprint.
+                        # Reuse only a speaker already corroborated from
+                        # acoustic evidence, never a raw CAM++ cluster ID.
+                        matched_known = self._nemotron_channels.match_known(
+                            voice_embedding
+                        )
+                        if matched_known is not None:
+                            item["speaker_id"] = matched_known
+                            item["speaker_name"] = f"Speaker {matched_known}"
+                            item["speaker_status"] = "known_voice_recovered"
+                            item["speaker_diarization_source"] = "camplus_voice_reuse"
+                            self._independent_published[int(item["id"])] = matched_known
+                        else:
+                            item["speaker_id"] = -1
+                            item["speaker_name"] = "Unidentified Speaker"
+                            item["speaker_status"] = "uncertain"
+                            item["speaker_diarization_source"] = "nemotron3_uncertain"
+                            self._independent_published[int(item["id"])] = -1
                     else:
                         # Incomplete Nemotron timeline: retain provisional
                         # CAM++ output until acoustic frames arrive. This
