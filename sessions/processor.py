@@ -679,6 +679,10 @@ class SessionProcessor(threading.Thread):
                     "matched_profile_id": s.get("matched_profile_id"),
                     "matched_profile_name": s.get("matched_profile_name"),
                     "speaker_evidence_status": s.get("speaker_evidence_status", "unavailable"),
+                    "speaker_upstream_evidence_status": s.get(
+                        "speaker_upstream_evidence_status",
+                    ),
+                    "speaker_birth_decision": s.get("speaker_birth_decision"),
                     **acoustics[s["id"]],
                     "timestamp_quality": s.get("timestamp_quality", "segment"),
                     "words": s.get("words", []),
@@ -751,6 +755,10 @@ class SessionProcessor(threading.Thread):
                     "matched_profile_id": item.get("matched_profile_id"),
                     "matched_profile_name": item.get("matched_profile_name"),
                     "speaker_evidence_status": item.get("speaker_evidence_status", "unavailable"),
+                    "speaker_upstream_evidence_status": item.get(
+                        "speaker_upstream_evidence_status",
+                    ),
+                    "speaker_birth_decision": item.get("speaker_birth_decision"),
                     "timestamp_quality": item.get("timestamp_quality", "segment"),
                     "words": item.get("words", []),
                     "translation": item.get("translation", ""),
