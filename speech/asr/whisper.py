@@ -189,6 +189,7 @@ class WhisperEngine:
                     kwargs, language=language,
                     max_windows=3 if quality_candidate else 2,
                     min_uncovered_ms=350 if quality_candidate else 900,
+                    preserve_disputed_text=preserve_disputed,
                 )
             else:
                 recovery = {
