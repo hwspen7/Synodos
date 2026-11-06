@@ -238,7 +238,7 @@ onBeforeUnmount(() => {
           Read the following passage for at least {{ minAudioS }} seconds.
         </div>
         <blockquote class="read-passage">
-          Meeting of Pioneers provides local speech transcription, speaker identification, and meeting archiving. Please read this paragraph clearly for voiceprint enrollment.
+          Synodos provides local meeting transcription, speaker identification, and meeting archiving. Please read this paragraph clearly for voiceprint enrollment.
         </blockquote>
       </div>
       <button

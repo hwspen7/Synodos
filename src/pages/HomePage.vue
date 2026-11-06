@@ -99,7 +99,7 @@ function fmtDuration(ms: number): string {
 function fmtDate(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleString('zh-CN', {
+  return d.toLocaleString('en-US', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -116,9 +116,9 @@ onMounted(load)
     <section class="home-compact-hero">
       <div class="home-compact-hero-inner">
         <div>
-          <p class="home-eyebrow">MEETING OF PIONEERS · WORKSPACE</p>
-          <h1>Your meetings, organized.</h1>
-          <p>Record conversations, follow speakers and review a clear transcript.</p>
+          <p class="home-eyebrow">SYNODOS · YOUR MEETING WORKSPACE</p>
+          <h1>Every conversation, in focus.</h1>
+          <p>Meet, transcribe, and turn important conversations into clear next steps.</p>
         </div>
         <button class="btn btn-primary btn-lg" @click="showCreate = true">
           <AppIcon name="plus" :size="18" /> Start a meeting

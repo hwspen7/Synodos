@@ -18,12 +18,16 @@ test('global workspace has accessible primary routes and a responsive sidebar', 
   assert.match(shell, /sidebarCollapsed/)
 })
 
-test('design system uses warm orange palette rather than previous purple primary', () => {
-  const base = read('src/assets/main.css')
-  const shared = read('src/assets/workspace-system.css')
-  assert.match(base, /--mop-primary:\s*#eb7100/i)
-  assert.match(shared, /--ui-orange:#eb7100/i)
-  assert.doesNotMatch(shared, /#68389a/i)
+test('Synodos establishes purple-and-orange identity without the previous M logo', () => {
+  const tokens = read('src/assets/synodos-theme.css')
+  const app = read('src/App.vue')
+  const favicon = read('public/favicon.svg')
+  assert.match(tokens, /--mop-primary:\s*#68389a/i)
+  assert.match(tokens, /--mop-accent:\s*#fd621b/i)
+  assert.match(app, /<SynodosMark /)
+  assert.match(app, /Synodos/)
+  assert.match(favicon, /#FD621B/i)
+  assert.doesNotMatch(favicon, />M</)
 })
 
 test('meeting controls preserve all critical operations after redesign', () => {

@@ -13,7 +13,8 @@ const toolHandler = source.slice(start, end)
 
 test('meeting tools share exactly one active destination', () => {
   assert.match(toolHandler, /activeMeetingTool\.value = tool/)
-  assert.match(source, /activeMeetingTool = ref<MeetingTool>\('transcript'\)/)
+  assert.match(source, /activeMeetingTool = ref<MeetingTool>\(/)
+  assert.match(source, /: 'review',/)
   assert.doesNotMatch(source, /const showReviewPanel = ref/)
   assert.doesNotMatch(source, /const showRecordings = ref/)
   assert.doesNotMatch(source, /const showAdvancedControls = ref/)

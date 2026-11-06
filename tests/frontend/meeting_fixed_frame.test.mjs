@@ -8,15 +8,20 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const page = readFileSync(path.join(root, 'src/pages/MeetingPage.vue'), 'utf8')
 const css = readFileSync(path.join(root, 'src/assets/meeting-tool-layout.css'), 'utf8')
 
-test('meeting header combines title, metadata, export and recording controls', () => {
+test('Synodos meeting header, real speaker cards and recording bar preserve actions', () => {
   const header = page.slice(page.indexOf('<header class="compact-meeting-header">'), page.indexOf('</header>') + 9)
+  const session = page.slice(page.indexOf('class="synodos-session-bar"'), page.indexOf('class="meeting-workspace"'))
   for (const value of [
     'meetingTitle', 'statusText', 'meeting-header-context',
     'translationTarget', 'durableSeconds', 'workspace-export-menu',
-    "saveMeeting()", "recording ? stop() : start()",
+    'showParticipants = true',
   ]) assert.ok(header.includes(value), 'Missing header content: ' + value)
+  for (const value of ["saveMeeting()", "recording ? stop() : start()", 'supportedLanguages']) {
+    assert.ok(session.includes(value), 'Missing session action: ' + value)
+  }
+  assert.match(page, /class="synodos-participant-stage"/)
+  assert.match(page, /meetingCast\.slice\(0, 3\)/)
   assert.doesNotMatch(page, /class="meeting-workspace-summary"/)
-  assert.doesNotMatch(page, /class="transcript-panel-heading"/)
   assert.match(header, /\{\{ paragraphs\.length \}\} turns/)
 })
 
