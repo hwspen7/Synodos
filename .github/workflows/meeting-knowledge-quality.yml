@@ -25,13 +25,13 @@ jobs:
       - name: Compile new release tools
         run: >-
           python -m compileall -q
-          tools/meeting_knowledge_contract.py
-          tools/meeting_release_gate.py
-          tools/meeting_knowledge_benchmark.py
-          tools/meeting_audio_review_export.py
+          tools/validation/meeting_knowledge_contract.py
+          tools/validation/meeting_release_gate.py
+          tools/maintenance/meeting_knowledge_benchmark.py
+          tools/diagnostics/meeting_audio_review_export.py
       - name: Assert no secrets or fabricated GPU acceptance in hosted CI
         run: |
           python - <<'PY'
-          from tools.meeting_knowledge_contract import release_decision
+          from tools.validation.meeting_knowledge_contract import release_decision
           assert not release_decision({"schema":"meeting-knowledge-baseline-freeze","pass": True,"reports":{"lexical":{},"hybrid":{}}})["overall_product_release_pass"]
           PY

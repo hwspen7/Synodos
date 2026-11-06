@@ -23,19 +23,19 @@ jobs:
       - name: Install minimal test dependencies
         run: python -m pip install "fastapi>=0.141.1" "numpy>=1.26" "scipy>=1.12" "soundfile>=0.12"
       - name: Compile Python source
-        run: python -m compileall -q main.py api core inference intelligence phase07 sessions speech storage tools example tests
+        run: python -m compileall -q main.py api core inference intelligence runtime_quality sessions speech storage tools example tests
       - name: Verify Phase 1 content preservation and human-reference gates
-        run: python -m unittest tests.quality.test_phase1_text_acceptance tests.quality.test_phase1_fixed195_text_gate tests.quality.test_phase1_language_policy tests.quality.test_ami_human_text_reference tests.quality.test_content_first_projection tests.quality.test_live_caption_segment_audit -v
+        run: python -m unittest tests.quality.recognition.test_text_acceptance tests.quality.recognition.test_fixed195_text_gate tests.quality.recognition.test_language_policy tests.quality.ami.test_ami_human_text_reference tests.quality.integrity.test_content_first_projection tests.quality.integrity.test_live_caption_segment_audit -v
       - name: Verify Phase 2 identity and review invariants
-        run: python -m unittest tests.backend.unit.test_phase2_identity_matcher tests.backend.integration.test_phase2_manual_review -v
+        run: python -m unittest tests.backend.unit.test_identity_matcher tests.backend.integration.test_manual_review -v
       - name: Phase 1B and Phase 2 deterministic experiment protocol checks
-        run: python -m unittest tests.quality.test_phase1b_diarization tests.quality.test_phase1b_qwen_shadow tests.quality.test_phase2_cross_session_acceptance -v
+        run: python -m unittest tests.quality.recognition.test_diarization tests.quality.recognition.test_qwen_shadow_review tests.quality.integrity.test_cross_session_acceptance -v
       - name: Verify Phase 1/2 verified enrollment and strict release decision
-        run: python -m unittest tests.quality.test_phase2_build_trials tests.quality.test_phase12_release_gate tests.backend.integration.test_phase2_verified_enrollment tests.backend.unit.test_phase2_identity_consensus -v
+        run: python -m unittest tests.quality.integrity.test_identity_trial_builder tests.quality.integrity.test_integrated_release_gate tests.backend.integration.test_verified_enrollment tests.backend.unit.test_identity_consensus -v
       - name: Phase 1A recovery candidate paired-evidence regression gate
-        run: python -m unittest tests.quality.test_phase1a_quality_pair tests.quality.test_asr_quality_candidate tests.backend.unit.test_speech_gap_recovery tests.multilingual.test_quality_guard_04d -v
+        run: python -m unittest tests.quality.recognition.test_asr_quality_pair tests.quality.recognition.test_asr_quality_candidate tests.backend.unit.test_speech_gap_recovery tests.multilingual.test_quality_guard_recovery -v
       - name: Phase 1A paired Whisper ablation regression gate
-        run: python -m unittest tests.quality.test_phase1a_compare -v
+        run: python -m unittest tests.quality.integrity.test_asr_pair_comparison -v
       - name: Run backend and English-only tests
         run: python -m unittest discover -s tests -t . -v
 

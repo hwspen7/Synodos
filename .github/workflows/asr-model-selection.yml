@@ -5,7 +5,7 @@ on:
     branches:
       - feature/meeting-knowledge-quality
     paths:
-      - 'tools/asr_model_selection.py'
+      - 'tools/evaluation/asr/asr_model_selection.py'
       - 'speech/hybrid.py'
       - 'speech/qwen_bridge.py'
       - 'tests/release/test_asr_model_selection.py'
@@ -26,4 +26,4 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install "numpy>=1.26" "soundfile>=0.13" scipy
       - run: python -m unittest tests.release.test_fleurs_asr_corpus tests.release.test_asr_model_selection -v
-      - run: python -m compileall -q tools/freeze_fleurs_asr_corpus.py tools/asr_model_selection.py
+      - run: python -m compileall -q tools/evaluation/corpora/freeze_fleurs_asr_corpus.py tools/evaluation/asr/asr_model_selection.py
