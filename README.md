@@ -66,10 +66,9 @@ meeting/
 │   ├── speakers.py
 │   ├── hotwords.py
 │   └── websocket.py
-├── core/                      Settings and runtime dependencies
-├── audio/                     Backend audio buffer
-├── inference/                 ASR and speaker models
-├── sessions/                  Connection and transcription processing
+├── core/                      Configuration, security, validation and metrics
+├── inference/                 Model inference and bounded scheduling
+├── sessions/                  Session processing, PCM buffering and identity
 ├── storage/                   Meeting, speaker, and hotword persistence
 ├── example/                   Manual audio test scripts
 ├── tests/                     Basic backend contract tests
@@ -89,6 +88,8 @@ meeting/
 ├── uv.lock                    Backend lock file
 └── PROJECT_CONTEXT.md         Detailed architecture reference
 ```
+
+See [backend source layout](docs/backend_layout.md) for module ownership and the updated import paths.
 
 The frontend and backend use the same repository root; there are no separate `frontend/` or `backend/` working directories.
 

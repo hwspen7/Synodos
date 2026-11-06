@@ -5,7 +5,7 @@ import asyncio
 import os
 from typing import Optional
 from fastapi import WebSocket
-from audio.buffer import AudioBuffer
+from sessions.audio_buffer import AudioBuffer
 from core.config import Settings
 from core.runtime import models, settings
 from sessions.processor import SessionProcessor

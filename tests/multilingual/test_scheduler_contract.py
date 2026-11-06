@@ -41,7 +41,7 @@ class SchedulerContractTests(unittest.TestCase):
 
     def test_session_processor_calls_public_gateway_for_multilingual_asr(self):
         import asyncio
-        from audio.buffer import AudioBuffer
+        from sessions.audio_buffer import AudioBuffer
         from core.config import Settings
         from sessions.processor import SessionProcessor
 

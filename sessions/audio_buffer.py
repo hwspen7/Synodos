@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import threading
 from typing import Tuple
-from foundation.settings import load_infrastructure_settings
-from observability.metrics import metrics
+from core.infrastructure_settings import load_infrastructure_settings
+from core.metrics import metrics
 
 import numpy as np
 

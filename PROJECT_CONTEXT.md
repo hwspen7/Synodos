@@ -35,11 +35,13 @@ meeting/
 │   └── websocket.py            Live audio protocol and connection lifecycle
 ├── core/
 │   ├── config.py               Settings, thresholds, and model paths
-│   └── runtime.py              Shared model/store objects and active sessions
-├── audio/buffer.py             Thread-safe PCM buffer
+│   ├── runtime.py              Shared model/store objects and active sessions
+│   ├── infrastructure_settings.py, security.py, validation.py
+│   └── logging_setup.py, metrics.py
 ├── inference/models.py         ASR, CAM++ embeddings, speaker clustering
 ├── sessions/
 │   ├── session.py              Per-connection Session
+│   ├── audio_buffer.py         Thread-safe session PCM buffer
 │   └── processor.py            Per-session transcription thread
 ├── storage/
 │   ├── meetings.py             Meeting pickle snapshots and transcript export

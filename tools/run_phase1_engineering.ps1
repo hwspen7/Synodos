@@ -62,7 +62,7 @@ Write-Host "Phase 1 contract checks from $root"
 & $PythonExe -c "import sys; assert sys.version_info >= (3, 12); print(sys.executable)"
 Require-Pass "Python 3.12 check"
 
-& $PythonExe -m compileall -q main.py api audio core foundation inference intelligence observability phase07 sessions speech storage tools example ops tests
+& $PythonExe -m compileall -q main.py api core inference intelligence phase07 sessions speech storage tools example ops tests
 Require-Pass "Python compilation"
 
 $phase1Tests = @(

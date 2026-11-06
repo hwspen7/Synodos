@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
-from audio.buffer import AudioBuffer
+from sessions.audio_buffer import AudioBuffer
 from core.config import Settings
 from inference.models import ModelManager
 from sessions.processor import SessionProcessor

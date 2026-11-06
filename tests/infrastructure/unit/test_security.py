@@ -1,6 +1,6 @@
 import unittest
-from foundation.settings import load_infrastructure_settings
-from foundation.security import origin_allowed
+from core.infrastructure_settings import load_infrastructure_settings
+from core.security import origin_allowed
 
 
 class SecurityTests(unittest.TestCase):

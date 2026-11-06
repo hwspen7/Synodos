@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 import numpy as np
 
-from audio.buffer import AudioBuffer
+from sessions.audio_buffer import AudioBuffer
 from core.config import Settings
 from sessions.processor import SessionProcessor
 from speech.contracts import Recognition

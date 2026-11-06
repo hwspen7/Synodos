@@ -6,7 +6,7 @@ import json
 import logging
 import unittest
 
-from observability.logging_setup import JsonFormatter
+from core.logging_setup import JsonFormatter
 
 
 class JsonLoggingTracebackTests(unittest.TestCase):

@@ -8,8 +8,8 @@ from inference.models import ModelManager
 from storage.meetings import MeetingStore
 from storage.speakers import SpeakerStore
 from storage.hotwords import HotwordStore
-from foundation.settings import load_infrastructure_settings
-from foundation.validation import validate_application_settings
+from core.infrastructure_settings import load_infrastructure_settings
+from core.validation import validate_application_settings
 
 if TYPE_CHECKING:
     from sessions.session import Session

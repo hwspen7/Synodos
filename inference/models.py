@@ -20,7 +20,7 @@ import numpy as np
 
 from core.config import Settings
 from speech.quality_profile import speaker_candidate_enabled
-from foundation.settings import InfrastructureSettings, load_infrastructure_settings
+from core.infrastructure_settings import InfrastructureSettings, load_infrastructure_settings
 from inference.scheduler import InferenceScheduler
 
 logger = logging.getLogger(__name__)

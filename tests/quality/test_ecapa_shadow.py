@@ -12,7 +12,7 @@ import unittest
 
 import numpy as np
 
-from audio.buffer import AudioBuffer
+from sessions.audio_buffer import AudioBuffer
 from core.config import Settings
 from sessions.processor import SessionProcessor
 from sessions.speaker_shadow import create_shadow_session, select_shadow_window

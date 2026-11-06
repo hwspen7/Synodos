@@ -5,7 +5,7 @@ import os
 from speech.config import load_settings as load_speech_settings
 from fastapi import APIRouter, HTTPException
 from core.runtime import infra
-from observability.metrics import metrics
+from core.metrics import metrics
 from phase07.telemetry import telemetry
 from core.runtime import settings, models, sessions, meeting_sessions
 

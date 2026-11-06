@@ -23,7 +23,7 @@ jobs:
       - name: Install minimal test dependencies
         run: python -m pip install "fastapi>=0.141.1" "numpy>=1.26" "scipy>=1.12" "soundfile>=0.12"
       - name: Compile Python source
-        run: python -m compileall -q main.py api audio core foundation inference intelligence observability phase07 sessions speech storage tools example tests
+        run: python -m compileall -q main.py api core inference intelligence phase07 sessions speech storage tools example tests
       - name: Verify Phase 1 content preservation and human-reference gates
         run: python -m unittest tests.quality.test_phase1_text_acceptance tests.quality.test_phase1_fixed195_text_gate tests.quality.test_phase1_language_policy tests.quality.test_ami_human_text_reference tests.quality.test_content_first_projection tests.quality.test_live_caption_segment_audit -v
       - name: Verify Phase 2 identity and review invariants

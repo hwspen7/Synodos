@@ -31,7 +31,7 @@ from typing import Optional
 
 import numpy as np
 
-from audio.buffer import AudioBuffer
+from sessions.audio_buffer import AudioBuffer
 from speech.config import load_settings
 from speech.vocabulary import prompt_terms
 from speech.streaming import PreviewTracker
@@ -41,7 +41,7 @@ from inference.models import ModelManager
 from storage.speakers import SpeakerStore
 from storage.meetings import MeetingStore
 from sessions.save_queue import SaveQueue
-from observability.metrics import metrics
+from core.metrics import metrics
 from phase07.telemetry import telemetry
 from phase07.speakers import speaker_stats, find_distinct_participant
 from speech.commit_guard import is_temporal_duplicate, is_adjacent_tail_echo

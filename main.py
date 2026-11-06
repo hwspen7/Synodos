@@ -6,8 +6,8 @@ import time
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from observability.logging_setup import configure_logging, request_id
-from observability.metrics import metrics
+from core.logging_setup import configure_logging, request_id
+from core.metrics import metrics
 from api.health import router as health_router
 from api.speech_features import router as speech_router
 from api.meetings import router as meeting_router

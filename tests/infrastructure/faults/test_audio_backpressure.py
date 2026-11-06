@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from audio.buffer import AudioBuffer, AudioBackpressureError
+from sessions.audio_buffer import AudioBuffer, AudioBackpressureError
 
 
 class AudioPressureTests(unittest.TestCase):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from urllib.parse import urlsplit
 
-from foundation.settings import InfrastructureSettings
+from core.infrastructure_settings import InfrastructureSettings
 
 
 def origin_allowed(origin: str | None, settings: InfrastructureSettings) -> bool:
