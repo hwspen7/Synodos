@@ -31,11 +31,11 @@ def repair_rapid_anonymous_births(
     window_seconds: int = 30,
     same_voice_similarity: float = 0.80,
 ) -> dict[str, int]:
-    """Merge only strongly matching short-lived speaker labels.
+    """Merge strongly matching short-lived labels without erasing others.
 
-    An unverified label without equivalent voice evidence becomes unknown
-    rather than an asserted fifth person. Distinct, independently repeated
-    labels remain separate. This does not infer the true number of speakers.
+    In uncertain cases, preserve the current provisional label rather than
+    turning every subsequent sentence into an unknown identity.
+    This does not infer the true number of speakers.
     """
     if (sample_rate <= 0 or not 10 <= window_seconds <= 60
             or not 0.5 <= same_voice_similarity <= 1):
@@ -117,9 +117,12 @@ def repair_rapid_anonymous_births(
                 row["speaker_evidence_status"] = "rapid_cluster_voice_match"
                 merged += 1
             else:
-                row["speaker_id"] = -1
-                row["speaker_name"] = "Unidentified Speaker"
+                # Do not erase an already published clustering label merely
+                # because a short burst contains multiple provisional voices.
+                # Absence of corroboration is not evidence that the previous
+                # identity is wrong. Keep it marked for review; independent
+                # diarization may update it with actual voice evidence.
                 row["speaker_uncertain"] = True
-                row["speaker_evidence_status"] = "rapid_cluster_birth_unconfirmed"
+                row["speaker_evidence_status"] = "rapid_cluster_unconfirmed"
                 deferred += 1
     return {"merged": merged, "deferred": deferred}
