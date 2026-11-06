@@ -83,16 +83,16 @@ class ContentFirstLongTurnTests(unittest.TestCase):
     def test_eight_second_monologue_with_short_unvoiced_fragment_keeps_voice(self):
         # The confirmed ASR turn remains one record even when acoustic turn
         # detection inserts a 350 ms unknown probe between voiced portions.
-        original = "前面说过了中间很短然后继续讲下去"
+        original = "\u524d\u9762\u8bf4\u8fc7\u4e86\u4e2d\u95f4\u5f88\u77ed\u7136\u540e\u7ee7\u7eed\u8bb2\u4e0b\u53bb"
         future = Future()
         future.set_result([
-            {"start": 0, "end": 2600, "text": "前面说过了",
+            {"start": 0, "end": 2600, "text": "\u524d\u9762\u8bf4\u8fc7\u4e86",
              "emb": [1.0, 0.0], "ambiguous": False},
-            {"start": 2600, "end": 2950, "text": "中间很短",
+            {"start": 2600, "end": 2950, "text": "\u4e2d\u95f4\u5f88\u77ed",
              "emb": None, "ambiguous": False, "short_probe": True},
-            {"start": 2950, "end": 5600, "text": "然后继续",
+            {"start": 2950, "end": 5600, "text": "\u7136\u540e\u7ee7\u7eed",
              "emb": [.99, .10], "ambiguous": False},
-            {"start": 5600, "end": 8000, "text": "讲下去",
+            {"start": 5600, "end": 8000, "text": "\u8bb2\u4e0b\u53bb",
              "emb": [.98, -.12], "ambiguous": False},
         ])
         proc = object.__new__(SessionProcessor)
