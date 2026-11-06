@@ -66,6 +66,7 @@ from sessions.speaker_evidence import speaker_evidence
 from sessions.registered_identity import match_saved_voice
 from sessions.corroborated_speaker_channels import CorroboratedSpeakerChannels
 from sessions.rapid_speaker_fragmentation import repair_rapid_anonymous_births
+from sessions.speaker_partition_evidence import consistent_partition_embedding
 from speech.acoustic_timeline import AcousticTimeline
 from speech.diarization import resolve_diarization_mode
 from speech.turn_integrity import valid_turn_partition
@@ -1538,12 +1539,24 @@ class SessionProcessor(threading.Thread):
                      "end_ms": int(piece["end"])}
                     for piece in pieces
                 ]
-                original["speaker_uncertain"] = True
-                original["speaker_evidence_status"] = (
-                    "multi_turn_acoustic_evidence_only"
-                )
-                original["emb"] = None  # Mixed voices cannot define one identity.
-                original["cluster"] = -3
+                compatible_voice = consistent_partition_embedding(pieces)
+                if compatible_voice is not None:
+                    # Acoustic cuts can arise from pauses or model flicker,
+                    # even when the full ASR turn contains one human voice.
+                    # Retain a shared embedding only after all parts agree.
+                    original["emb"] = compatible_voice
+                    original["cluster"] = -2
+                    original["speaker_uncertain"] = False
+                    original["speaker_evidence_status"] = (
+                        "multi_turn_same_voice_supported"
+                    )
+                else:
+                    original["speaker_uncertain"] = True
+                    original["speaker_evidence_status"] = (
+                        "multi_turn_acoustic_evidence_only"
+                    )
+                    original["emb"] = None
+                    original["cluster"] = -3
                 self._enqueue_translation(original)
                 updated = True
                 metrics.increment("speaker_async_content_first_retained")
