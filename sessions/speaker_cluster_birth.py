@@ -59,6 +59,18 @@ def _observations(members: list[dict], sample_rate: int) -> int:
     return count
 
 
+def _set_birth_reason(record: dict, reason: str) -> None:
+    """Keep upstream evidence provenance separate from publishing policy."""
+    upstream = str(record.get("speaker_evidence_status") or "unavailable")
+    if upstream not in {
+        "speaker_birth_awaiting_voice", "speaker_birth_voice_reused",
+        "speaker_continuity_provisional", "speaker_birth_unconfirmed",
+    }:
+        record["speaker_upstream_evidence_status"] = upstream
+    record["speaker_birth_decision"] = reason
+    record["speaker_evidence_status"] = reason
+
+
 def gate_new_cluster_births(
     records: list[dict], *,
     sample_rate: int,
@@ -113,7 +125,7 @@ def gate_new_cluster_births(
                 record["speaker_id"] = -1
                 record["speaker_name"] = "Unidentified Speaker"
                 record["speaker_uncertain"] = True
-                record["speaker_evidence_status"] = "speaker_birth_awaiting_voice"
+                _set_birth_reason(record, "speaker_birth_awaiting_voice")
             deferred += len(members)
             continue
 
@@ -165,9 +177,10 @@ def gate_new_cluster_births(
                     record["speaker_name"] = anchored.get("speaker_name") or (
                         f"Speaker {anchored['speaker_id']}"
                     )
-                record["speaker_evidence_status"] = (
+                _set_birth_reason(
+                    record,
                     "speaker_continuity_provisional" if continuation
-                    else "speaker_birth_voice_reused"
+                    else "speaker_birth_voice_reused",
                 )
                 if continuation:
                     record["speaker_uncertain"] = True
@@ -213,6 +226,6 @@ def gate_new_cluster_births(
             record["speaker_id"] = -1
             record["speaker_name"] = "Unidentified Speaker"
             record["speaker_uncertain"] = True
-            record["speaker_evidence_status"] = "speaker_birth_unconfirmed"
+            _set_birth_reason(record, "speaker_birth_unconfirmed")
         deferred += len(members)
     return {"reused": reused, "deferred": deferred, "confirmed": confirmed}
