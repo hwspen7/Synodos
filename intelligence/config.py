@@ -26,6 +26,29 @@ class AIConfig:
     enable_audio_import: bool
 
 
+def _media_root() -> Path:
+    """Resolve the media directory without requiring a Windows user profile.
+
+    Some isolated Python installations do not expose HOME or USERPROFILE.
+    Only compute the home-directory default when no explicit path was supplied.
+    In a profile-less process, keep fallback data under the repository root.
+    """
+    configured = os.getenv('MEETING_AI_MEDIA_ROOT')
+    if configured:
+        base = Path(configured)
+    else:
+        try:
+            base = Path.home() / 'MeetingMedia'
+        except RuntimeError:
+            base = Path(__file__).resolve().parents[1] / 'MeetingMedia'
+    try:
+        return base.expanduser().resolve()
+    except RuntimeError as exc:
+        raise ValueError(
+            'Cannot resolve MEETING_AI_MEDIA_ROOT; configure an absolute path'
+        ) from exc
+
+
 def load_config() -> AIConfig:
     provider = os.getenv('MEETING_AI_PROVIDER', 'ollama').strip().lower()
     if provider not in ('ollama', 'openai_compatible'):
@@ -36,7 +59,7 @@ def load_config() -> AIConfig:
         raise ValueError('Invalid AI endpoint')
     if parsed.hostname not in ('localhost', '127.0.0.1', '::1') and not _flag('MEETING_AI_ALLOW_REMOTE'):
         raise ValueError('Remote AI endpoints require explicit MEETING_AI_ALLOW_REMOTE=1')
-    base = Path(os.getenv('MEETING_AI_MEDIA_ROOT', str(Path.home() / 'MeetingMedia'))).expanduser().resolve()
+    base = _media_root()
     return AIConfig(
         enabled=_flag('MEETING_AI_ENABLED'), provider=provider, endpoint=endpoint,
         text_model=os.getenv('MEETING_AI_TEXT_MODEL', 'qwen3:8b'),
