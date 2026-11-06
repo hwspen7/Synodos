@@ -13,6 +13,17 @@ import numpy as np
 
 
 UNKNOWN_CLUSTER = -3
+MAX_ANCHOR_VECTORS = 16
+
+
+def _bounded_references(vectors: list[np.ndarray]) -> list[np.ndarray]:
+    """Bound repeated voice comparisons during long, fast meetings."""
+    if len(vectors) <= MAX_ANCHOR_VECTORS:
+        return list(vectors)
+    return [
+        vectors[round(index * (len(vectors) - 1) / (MAX_ANCHOR_VECTORS - 1))]
+        for index in range(MAX_ANCHOR_VECTORS)
+    ]
 
 
 def _unit(raw: object) -> np.ndarray | None:
@@ -132,7 +143,8 @@ def gate_new_cluster_births(
                 record["speaker_evidence_status"] = "speaker_birth_voice_reused"
             reused += len(members)
             accepted = [
-                (candidate, references + vectors if candidate == anchor else references)
+                (candidate, _bounded_references(references + vectors)
+                 if candidate == anchor else references)
                 for candidate, references in accepted
             ]
             continue
@@ -156,7 +168,7 @@ def gate_new_cluster_births(
             )
         )
         if distinct and (first or observations >= 2 or long_precise):
-            accepted.append((raw, vectors))
+            accepted.append((raw, _bounded_references(vectors)))
             confirmed += 1
             continue
 
