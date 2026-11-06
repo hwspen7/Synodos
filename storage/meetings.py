@@ -156,6 +156,12 @@ class MeetingStore:
             "speaker_margin": s.get("speaker_margin"),
             "speaker_evidence_count": s.get("speaker_evidence_count", 0),
             "speaker_evidence_status": s.get("speaker_evidence_status", "unavailable"),
+            "speaker_upstream_evidence_status": s.get(
+                "speaker_upstream_evidence_status",
+            ),
+            "speaker_birth_decision": s.get("speaker_birth_decision"),
+            # Only publish a boolean, never raw private voiceprint vectors.
+            "speaker_embedding_available": s.get("emb") is not None,
             "speaker_score_kind": (
                 "nemotron_official_turn_coverage_not_probability"
                 if str(s.get("speaker_activity_status", "")).startswith(
