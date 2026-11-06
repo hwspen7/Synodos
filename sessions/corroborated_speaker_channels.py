@@ -92,6 +92,26 @@ class CorroboratedSpeakerChannels:
                 ranked.append((display, max(sims)))
         return sorted(ranked, key=lambda row: (-row[1], row[0]))
 
+    def match_known(self, embedding: object) -> int | None:
+        """Reuse an established speaker only with strong voice evidence.
+
+        Unlike channel allocation, this does not create or bind a new channel.
+        Useful when a later Nemotron activity frame is missing or ambiguous
+        but an independent CAM++ embedding is available.
+        """
+        vector = _unit(embedding)
+        if vector is None:
+            return None
+        ranked = self._scores(vector)
+        if not ranked:
+            return None
+        best_label, best_score = ranked[0]
+        if best_score < self.same_voice_similarity:
+            return None
+        if len(ranked) > 1 and best_score - ranked[1][1] < 0.08:
+            return None
+        return best_label
+
     def observe(
         self, channel: int, segment_id: int, evidence_ms: int,
         embedding: object = None, *,
