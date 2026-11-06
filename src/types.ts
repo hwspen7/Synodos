@@ -148,6 +148,8 @@ export interface Paragraph {
   text: string
   segmentIds: number[]
   color: string
+  overlapping?: boolean
+  provisional?: boolean
 }
 
 /* Audio processing and UI rendering. */

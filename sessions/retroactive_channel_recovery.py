@@ -67,3 +67,77 @@ def backfill_confirmed_channels(
         )
         changed[int(item["id"])] = stable
     return changed
+
+
+def reconcile_final_channels(
+    items: list[dict], original: list[dict], official_turns: list[dict],
+    channel_labels: Mapping[int, int], *, offset: int = 0,
+) -> dict[int, int]:
+    """Project sustained, exclusive finalized activity to provisional IDs.
+
+    Only one label is allocated per supported unbound channel. Conflicting
+    voiceprints on an already bound channel and human edits stay untouched.
+    """
+    events = []
+    for turn in official_turns:
+        channel, start, end = (turn.get(k) for k in ("speaker_id", "start_ms", "end_ms"))
+        if (type(channel) is int and 1 <= channel <= 8
+                and type(start) is int and type(end) is int and 0 <= start < end):
+            events.extend(((start, channel, 1), (end, channel, -1)))
+    exclusive_ms = {}
+    active = {}
+    previous = 0
+    for time, channel, delta in sorted(events):
+        if time > previous and len(active) == 1:
+            sole = next(iter(active))
+            exclusive_ms[sole] = exclusive_ms.get(sole, 0) + time - previous
+        previous = time
+        active[channel] = active.get(channel, 0) + delta
+        if not active[channel]:
+            del active[channel]
+
+    groups = {}
+    for item, source in zip(items, original, strict=True):
+        channel = item.get("speaker_acoustic_channel")
+        if (source.get("speaker_override") or source.get("matched_profile_id")
+                or type(channel) is not int or channel in channel_labels
+                or exclusive_ms.get(channel, 0) < 3000
+                or item.get("speaker_activity_status") != "official_turn_primary"
+                or item.get("speaker_diarization_source") not in (
+                    "nemotron3_uncertain", "camplus_independent_unresolved",
+                )):
+            continue
+        groups.setdefault(channel, []).append(item)
+
+    # Require two separate, dominant caption intervals. Repeated ASR rows
+    # at one timestamp do not establish another visible person.
+    supported = []
+    for group in groups.values():
+        strong = sorted(
+            (item for item in group if (item.get("speaker_activity_score") or 0) >= .60
+             and (item.get("speaker_activity_margin") or 0) >= .25),
+            key=lambda item: item["end_ms"],
+        )
+        if strong and any(item["start_ms"] >= strong[0]["end_ms"] for item in strong[1:]):
+            supported.append(group)
+
+    replaced_ids = {item["id"] for group in supported for item in group}
+    used = set(channel_labels.values())
+    used.update(item["speaker_id"] for item in items
+                if item["id"] not in replaced_ids
+                and type(item.get("speaker_id")) is int and item["speaker_id"] > 0)
+    resolved = {}
+    for group in supported:
+        label = offset + 1
+        while label in used:
+            label += 1
+        used.add(label)
+        for item in group:
+            item.update(
+                speaker_id=label, speaker_name=f"Speaker {label}",
+                speaker_diarization_source="nemotron3_channel_provisional",
+                speaker_status="acoustic_channel_provisional",
+                speaker_uncertain=True,
+            )
+            resolved[int(item["id"])] = label
+    return resolved

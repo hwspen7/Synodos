@@ -27,6 +27,7 @@ export function buildTranscriptParagraphs(
     translationTarget?: string
     maxParagraphMs?: number
     maxParagraphChars?: number
+    singlePrimarySpeaker?: boolean
   } = {},
 ): Paragraph[] {
   // The previous 750 ms hard cap fragmented continuous conversations
@@ -43,11 +44,26 @@ export function buildTranscriptParagraphs(
       ? seg.translation : seg.text
     const last = paragraphs[paragraphs.length - 1]
     const canonicalId = seg.source_segment_id ?? seg.id
+    if (opts.singlePrimarySpeaker && last && seg.start_ms < last.end_ms) {
+      // Overlap is one display interval. Keep both original texts and
+      // editing targets while showing only one primary speaker heading.
+      last.overlapping = true
+      if (last.speaker_id <= 0 && seg.speaker_id > 0) {
+        last.speaker_id = seg.speaker_id
+        last.speaker_name = seg.speaker_name
+        last.color = seg.color
+        last.provisional = seg.speaker_diarization_source === 'nemotron3_channel_provisional'
+      }
+      last.end_ms = Math.max(last.end_ms, seg.end_ms)
+      if (!last.segmentIds.includes(canonicalId)) last.segmentIds.push(canonicalId)
+      last.text = joinCaptionText(last.text, text)
+      continue
+    }
     // A genuine speaker switch, overlapping speech or an unknown identity
     // remains separate. Sentence punctuation alone is not a speaker switch:
     // multiple sentences from the same voice form one readable paragraph.
     const canMerge = Boolean(
-      last && seg.speaker_id > 0 &&
+      last && !last.overlapping && seg.speaker_id > 0 &&
       seg.speaker_id === last.speaker_id &&
       (seg.speaker_name || '') === (last.speaker_name || '') &&
       !(seg.overlap_intervals_ms?.length) &&
@@ -69,6 +85,7 @@ export function buildTranscriptParagraphs(
         speaker_name: seg.speaker_name,
         start_ms: seg.start_ms, end_ms: seg.end_ms,
         text, segmentIds: [canonicalId], color: seg.color,
+        provisional: seg.speaker_diarization_source === 'nemotron3_channel_provisional',
       })
     }
   }

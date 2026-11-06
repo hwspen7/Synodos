@@ -70,7 +70,9 @@ from sessions.corroborated_speaker_channels import CorroboratedSpeakerChannels
 from sessions.speaker_cluster_birth import gate_new_cluster_births
 from sessions.short_turn_identity import recover_short_turn_identity
 from sessions.fused_short_turn_recovery import recover_fused_short_turns
-from sessions.retroactive_channel_recovery import backfill_confirmed_channels
+from sessions.retroactive_channel_recovery import (
+    backfill_confirmed_channels, reconcile_final_channels,
+)
 from sessions.speaker_partition_evidence import consistent_partition_embedding
 from sessions.speaker_resolution import preserve_supported_camplus
 from speech.acoustic_timeline import AcousticTimeline
@@ -747,7 +749,9 @@ class SessionProcessor(threading.Thread):
                             "caption_projection_status", "disabled",
                         ))
                     ),
-                    "speaker_uncertain": bool(s.get("speaker_uncertain", False)),
+                    "speaker_uncertain": bool(self._fused_final_status.get(
+                        int(s["id"]), {},
+                    ).get("speaker_uncertain", s.get("speaker_uncertain", False))),
                     "emb": s["emb"],  # Preserve behavior.
                     "language": s.get("language", "und"),
                     "language_confidence": s.get("language_confidence"),
@@ -812,7 +816,9 @@ class SessionProcessor(threading.Thread):
                     "speaker_name": item.get("speaker_name", ""),
                     "saved_nemotron_id": (
                         int(item["speaker_id"])
-                        if item.get("speaker_diarization_source") == "nemotron3"
+                        if item.get("speaker_diarization_source") in (
+                            "nemotron3", "nemotron3_channel_provisional",
+                        )
                         and type(item.get("speaker_id")) is int
                         and item["speaker_id"] > 0
                         else None
@@ -2138,10 +2144,15 @@ class SessionProcessor(threading.Thread):
             if type(saved) is int and saved > 0:
                 item["speaker_id"] = saved
                 item["speaker_name"] = f"Speaker {saved}"
-                item["speaker_diarization_source"] = "nemotron3"
+                item["speaker_diarization_source"] = (
+                    "nemotron3_channel_provisional"
+                    if source.get("speaker_diarization_source") == "nemotron3_channel_provisional"
+                    else "nemotron3"
+                )
                 self._independent_published[int(item["id"])] = saved
             elif (source.get("speaker_diarization_source") in (
-                      "camplus_bidirectional_recovery", "nemotron3_backfilled")
+                      "camplus_bidirectional_recovery", "nemotron3_backfilled",
+                      "nemotron3_channel_provisional")
                   and int(source["end_sample"]) <= origin
                   and type(source.get("speaker_id")) is int
                   and source["speaker_id"] > 0):
@@ -2151,6 +2162,8 @@ class SessionProcessor(threading.Thread):
                 item["speaker_status"] = (
                     "acoustic_backfilled_provisional"
                     if restored_source == "nemotron3_backfilled"
+                    else "acoustic_channel_provisional"
+                    if restored_source == "nemotron3_channel_provisional"
                     else "short_voice_recovered_provisional"
                 )
                 item["speaker_uncertain"] = True
@@ -2164,6 +2177,7 @@ class SessionProcessor(threading.Thread):
                 item["speaker_name"] = "Unidentified Speaker"
                 item["speaker_diarization_source"] = "nemotron3_uncertain"
                 self._independent_published[int(item["id"])] = -1
+        official_turns = None
         if independent is not None:
             activity = independent.activity_snapshot()
             completed_check = getattr(independent, "is_complete", None)
@@ -2453,6 +2467,12 @@ class SessionProcessor(threading.Thread):
         )
         for segment_id, label in restored_channels.items():
             self._independent_published[int(segment_id)] = int(label)
+        if official_turns is not None and channel_mapper is not None:
+            projected_channels = reconcile_final_channels(
+                items, ordered, official_turns, channel_mapper.labels, offset=self._independent_id_offset,
+            )
+            for segment_id, label in projected_channels.items():
+                self._independent_published[segment_id] = label
         # MEETING_FUSED_SHORT_RECOVERY_V1
         recovered_short = recover_fused_short_turns(
             items, ordered, sample_rate=self.settings.sample_rate,
@@ -2483,6 +2503,9 @@ class SessionProcessor(threading.Thread):
                 final_reason = "independent_acoustic_backfilled_provisional"
                 uncertain = True
                 item["speaker_status"] = "acoustic_backfilled_provisional"
+            elif origin_kind == "nemotron3_channel_provisional":
+                final_reason = "independent_channel_provisional"
+                uncertain = True
             elif origin_kind == "nemotron3":
                 final_reason = "independent_acoustic_assigned"
                 uncertain = False

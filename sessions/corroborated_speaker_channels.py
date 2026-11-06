@@ -204,57 +204,51 @@ class CorroboratedSpeakerChannels:
         turns[segment_id] = (evidence_ms, vector)
         while len(turns) > 32:
             turns.pop(next(iter(turns)))
-        # The strictest band seen across the entire pending cohort wins.
-        # One momentarily distant embedding cannot bypass an earlier
-        # medium-distance, unconfirmed voice candidate.
-        medium_distance = any(
-            (score := self._scores(candidate))
-            and score[0][1] > self.distinct_voice_max_similarity
-            for _, candidate in turns.values()
-        )
-        required_turns = (self.medium_min_turns if medium_distance
-                          else self.new_voice_min_turns)
-        required_ms = (self.medium_min_ms if medium_distance
-                       else self.new_voice_min_ms)
-        required_consistency = (
-            self.medium_candidate_similarity if medium_distance
-            else self.distinct_candidate_similarity
-        )
-        maximum_known_similarity = (
-            self.medium_distinct_max_similarity if medium_distance
-            else self.distinct_voice_max_similarity
-        )
-        if len(turns) < required_turns:
-            self._last_gate_reason[channel] = "candidate_needs_more_turns"
-            return None
-        duration_ms = sum(duration for duration, _ in turns.values())
-        if duration_ms < required_ms:
-            self._last_gate_reason[channel] = "candidate_needs_more_audio"
-            return None
-        vectors = [item for _, item in turns.values()]
-        # Medium-distance candidates require pairwise consistency, not just
-        # agreement with a single potentially noisy initial vector.
-        if medium_distance:
-            consistent = all(
-                float(np.dot(left, right)) >= required_consistency
-                for i, left in enumerate(vectors)
-                for right in vectors[i + 1:]
-            )
-        else:
-            consistent = all(
-                float(np.dot(vectors[0], other)) >= required_consistency
-                for other in vectors[1:]
-            )
-        if not consistent:
-            self._last_gate_reason[channel] = "candidate_voice_inconsistent"
-            return None
-        if any(
-            (known_scores := self._scores(candidate))
-            and known_scores[0][1] > maximum_known_similarity
-            for candidate in vectors
+        # A stray clip must not poison a channel forever. Select a
+        # mutually consistent, duration-weighted majority, and never use
+        # an equally supported rival voice to confirm a new identity.
+        members = list(turns.items())
+        scores = [self._scores(candidate) for _, (_, candidate) in members]
+        similarities = np.array([
+            [float(np.dot(left, right)) if left.shape == right.shape else -1.0
+             for _, (_, right) in members]
+            for _, (_, left) in members
+        ])
+        order = sorted(range(len(members)), key=lambda i: (-members[i][1][0], members[i][0]))
+        total_ms = sum(duration for _, (duration, _) in members)
+        winner = None
+        for medium, limit, minimum, count, duration in (
+            (False, self.distinct_voice_max_similarity,
+             self.distinct_candidate_similarity, self.new_voice_min_turns, self.new_voice_min_ms),
+            (True, self.medium_distinct_max_similarity,
+             self.medium_candidate_similarity, self.medium_min_turns, self.medium_min_ms),
         ):
-            self._last_gate_reason[channel] = "candidate_not_distinct_from_known"
+            eligible = [i for i in order if scores[i] and scores[i][0][1] <= limit]
+            for anchor in eligible:
+                cohort = [anchor]
+                for i in eligible:
+                    if i != anchor and all(similarities[i, j] >= minimum for j in cohort):
+                        cohort.append(i)
+                support = sum(members[i][1][0] for i in cohort)
+                if (len(cohort) < count or support < duration
+                        or len(cohort) * 2 <= len(members) or support * 2 <= total_ms):
+                    continue
+                if winner is None or support > winner[0]:
+                    winner = (support, cohort, medium)
+        if winner is None:
+            medium = any(score and score[0][1] > self.distinct_voice_max_similarity
+                         for score in scores)
+            required_turns = self.medium_min_turns if medium else self.new_voice_min_turns
+            required_ms = self.medium_min_ms if medium else self.new_voice_min_ms
+            self._last_gate_reason[channel] = (
+                "candidate_needs_more_turns" if len(turns) < required_turns
+                else "candidate_needs_more_audio" if total_ms < required_ms
+                else "candidate_voice_inconsistent"
+            )
             return None
+        duration_ms, cohort, medium_distance = winner
+        vectors = [members[i][1][1] for i in cohort]
+        current_supported = any(members[i][0] == segment_id for i in cohort)
         label = self._channels.resolve(
             channel, duration_ms, reserved_labels=reserved_labels,
         )
@@ -268,4 +262,7 @@ class CorroboratedSpeakerChannels:
             )
         else:
             self._last_gate_reason[channel] = "channel_minimum_activity_pending"
+        if label is not None and not current_supported:
+            self._last_gate_reason[channel] = "candidate_voice_outlier"
+            return None
         return label

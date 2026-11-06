@@ -106,6 +106,15 @@ class CorroboratedSpeakerTests(unittest.TestCase):
         self.assertIsNone(guard.observe(2, 3, 1700, vec(0, -1)))
         self.assertEqual(guard.labels, {1: 1})
 
+    def test_one_incompatible_clip_does_not_poison_a_real_channel(self):
+        guard = CorroboratedSpeakerChannels()
+        self.assertEqual(guard.observe(1, 1, 2000, vec(1, 0)), 1)
+        self.assertIsNone(guard.observe(2, 2, 1400, vec(0, -1)))
+        self.assertIsNone(guard.observe(2, 3, 1600, vec(0, 1)))
+        self.assertEqual(guard.observe(2, 4, 1600, vec(.06, .99)), 2)
+        self.assertEqual(guard.observe(2, 3, 1600, vec(0, 1)), 2)
+        self.assertIsNone(guard.observe(2, 2, 1400, vec(0, -1)))
+
     def test_same_voice_reuse_does_not_consume_a_new_label(self):
         guard = CorroboratedSpeakerChannels(offset=4)
         self.assertEqual(guard.observe(5, 1, 1300, vec(1, 0)), 5)

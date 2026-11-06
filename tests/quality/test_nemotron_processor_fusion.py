@@ -140,6 +140,42 @@ class LiveFusionTests(unittest.TestCase):
         self.assertEqual([row["speaker_id"] for row in processor.segments],
                          [17, 18])
 
+    def test_four_final_channels_reconcile_missing_and_provisional_captions(self):
+        processor = processor_for_test()
+        original = processor.segments[0]
+        turns = [{"speaker_id": 1, "start_ms": 0, "end_ms": 1000}]
+        for channel in range(2, 5):
+            start_ms = (channel - 1) * 5000
+            turns.append({
+                "speaker_id": channel, "start_ms": start_ms, "end_ms": start_ms + 4000,
+            })
+            for offset in range(2):
+                begin = start_ms + offset * 2000
+                processor.segments.append({
+                    **original, "id": len(processor.segments) + 1,
+                    "start_sample": begin * 16, "end_sample": (begin + 2000) * 16,
+                    "emb": None if offset == 0 else np.array([.74, .672], dtype=np.float32),
+                    "cluster": -3 if offset == 0 else channel,
+                    "speaker_id": -1 if offset == 0 else 20 + channel,
+                    "speaker_evidence_status": (
+                        "multi_turn_acoustic_evidence_only" if offset == 0 else "turn_voiceprint"
+                    ),
+                })
+        processor.independent_diarization = SimpleNamespace(
+            activity_snapshot=lambda: None,
+            is_complete=lambda: True,
+            final_turns_snapshot=lambda: turns,
+        )
+        self.assertTrue(processor._rebuild_and_push())
+        first = processor.snapshot_state()
+        processor._rebuild_and_push()
+        state = processor.snapshot_state()
+        expected = [1, 2, 2, 3, 3, 4, 4]
+        self.assertEqual([row["speaker_id"] for row in first["segments"]], expected)
+        self.assertEqual([row["speaker_id"] for row in state["segments"]], expected)
+        self.assertTrue(all(row["speaker_uncertain"] for row in state["segments"][1:]))
+        self.assertTrue(all(row["text"] == original["text"] for row in state["segments"]))
+
     def test_one_human_stays_speaker_one_across_five_nemotron_channels(self):
         processor = processor_for_test()
         for index in range(2, 6):

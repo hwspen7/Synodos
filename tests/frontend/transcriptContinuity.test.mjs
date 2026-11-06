@@ -70,3 +70,19 @@ test('does not glue speakers across overlap, long pauses or paragraph limits', (
   ])
   assert.equal(bounded.length, 2)
 })
+
+test('the meeting shows one primary speaker for overlapping turns without dropping text or edit IDs', () => {
+  const input = [
+    turn(26, 4, 1000, 2400, 'Physics was my first love.'),
+    turn(27, 5, 2100, 3000, 'Awesome.'),
+    turn(28, 4, 3000, 4600, 'Today, I still love physics.'),
+  ]
+  const result = buildTranscriptParagraphs(input, { singlePrimarySpeaker: true })
+  assert.deepEqual(result.map(item => [item.speaker_id, item.start_ms, item.end_ms]), [
+    [4, 1000, 3000], [4, 3000, 4600],
+  ])
+  assert.deepEqual(result[0].segmentIds, [26, 27])
+  assert.equal(result[0].text, 'Physics was my first love. Awesome.')
+  assert.equal(result[0].overlapping, true)
+  assert.equal(input[1].speaker_id, 5)
+})

@@ -176,7 +176,7 @@ const statusClass = computed(() => {
 const paragraphs = computed<Paragraph[]>(() =>
   buildTranscriptParagraphs(expandContentFirstSegments(
     segments.value, Boolean(translationTarget.value),
-  ), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value }),
+  ), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value, singlePrimarySpeaker: true }),
 )
 const overlapWarnings = computed(() => segments.value.reduce(
   (sum, seg) => sum + (seg.overlap_intervals_ms?.length ?? 0), 0,
@@ -270,7 +270,7 @@ function applyTranscript(msg: ServerTranscript): void {
     segments: msg.segments.length,
     paragraphs: buildTranscriptParagraphs(expandContentFirstSegments(
       segs, Boolean(translationTarget.value),
-    ), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value }).length,
+    ), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value, singlePrimarySpeaker: true }).length,
   }
   void scrollIfNeeded()
 }
@@ -894,13 +894,15 @@ onBeforeUnmount(() => stopInternal())
           <div class="para-head">
             <span class="speaker-dot" :style="{ background: para.color }"></span>
             <span class="speaker-name">{{ para.speaker_name || `Speaker ${para.speaker_id}` }}</span>
-            <span v-if="segments.some(seg => para.segmentIds.includes(seg.id) && seg.speaker_diarization_source === 'registered_voiceprint')"
+            <span v-if="para.overlapping" class="speaker-registered-label">Primary during overlap</span>
+            <span v-if="para.provisional" class="speaker-registered-label">Provisional</span>
+            <span v-if="segments.some(seg => para.segmentIds.includes(seg.id) && seg.speaker_id === para.speaker_id && seg.speaker_diarization_source === 'registered_voiceprint')"
               class="speaker-registered-label" title="Matched to a saved voiceprint. Verify important identities before relying on them.">
               <AppIcon name="check" :size="12" /> Voice match
             </span>
             <!-- Caption chunk count stays internal; a badge next to Speaker 1
                  looked like a phantom Speaker 12 or Speaker 13. -->
-            <span class="para-time">{{ formatTime(para.start_ms) }} \u2013 {{ formatTime(para.end_ms) }}</span>
+            <span class="para-time">{{ formatCaptionTime(para.start_ms, para.end_ms) }}</span>
           </div>
           <div class="transcript-utterance-lines">
             <p v-for="(sentence, sentenceIndex) in splitDisplaySentences(para.text)"
@@ -914,7 +916,7 @@ onBeforeUnmount(() => stopInternal())
               @click="editSegmentById(segmentId)">Edit #{{ segmentId }}</button>
             <button v-for="segmentId in para.segmentIds" :key="`speaker-${segmentId}`"
               class="btn btn-ghost btn-sm" :disabled="status === 'stopping'"
-              @click="editSpeakerById(segmentId)">Speaker #{{ segmentId }}</button>
+              @click="editSpeakerById(segmentId)">Edit speaker for segment #{{ segmentId }}</button>
             <button v-for="segmentId in para.segmentIds" :key="`identity-${segmentId}`"
               class="btn btn-ghost btn-sm" :disabled="status === 'stopping'"
               @click="openIdentityEvidence(segmentId)">Evidence #{{ segmentId }}</button>
