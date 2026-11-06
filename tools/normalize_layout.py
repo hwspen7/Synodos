@@ -149,8 +149,18 @@ def destination(path: str) -> str:
     return path
 
 def replace_all(content: str, values: dict[str, str]) -> str:
-    for old, new in sorted(values.items(), key=lambda item: -len(item[0])):
-        content = re.sub(r"(?<![\w])" + re.escape(old) + r"(?![\w])", lambda _: new, content)
+    # A single regex pass prevents rewriting already-rewritten import paths.
+    keys = sorted(values, key=len, reverse=True)
+    pattern = re.compile("|".join(
+        r"(?<![\\w])" + re.escape(key) + r"(?![\\w])" for key in keys
+    ))
+    content = pattern.sub(lambda match: values[match.group(0)], content)
+    # Legacy 'from tools import module' imports cannot follow a file move
+    # through dotted/path replacement alone.
+    content = content.replace(
+        "from tools import meeting_knowledge_synthetic as acceptance",
+        "from tools.maintenance import meeting_knowledge_synthetic as acceptance",
+    )
     return content
 
 def main() -> None:
