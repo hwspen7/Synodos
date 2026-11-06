@@ -117,7 +117,7 @@ if ($FullEvaluation.IsPresent) {
     if ($HumanReferenceVerified.IsPresent) {
         $ablation.HumanReferenceVerified = $true
     }
-    & (Join-Path $PSScriptRoot "run_phase1a_ablation.ps1") @ablation
+    & (Join-Path $PSScriptRoot "run_asr_ablation.ps1") @ablation
 
     Write-Host "Phase 1B: paired, independent open-source diarization"
     $comparison = @{
@@ -134,7 +134,7 @@ if ($FullEvaluation.IsPresent) {
         $comparison.DiarizenEmbeddingModelPath = $DiarizenEmbeddingModelPath
     }
     if ($AllowModelDownload.IsPresent) { $comparison.AllowModelDownload = $true }
-    & (Join-Path $PSScriptRoot "run_phase1b_compare.ps1") @comparison
+    & (Join-Path $PSScriptRoot "run_diarization_comparison.ps1") @comparison
 
     Write-Host "Phase 1B: private, non-mutating Qwen3-ASR gap hypotheses"
     $qwenArgs = @(
@@ -178,7 +178,7 @@ if ($Fixed195Results) {
 }
 $closureFailure = $null
 try {
-    & (Join-Path $PSScriptRoot "run_phase1_closure.ps1") @args
+    & (Join-Path $PSScriptRoot "run_content_closure.ps1") @args
 } catch {
     $closureFailure = $_.Exception.Message
     Write-Warning ("Phase 1 closure did not pass: " + $closureFailure)

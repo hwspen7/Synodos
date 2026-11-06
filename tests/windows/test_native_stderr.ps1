@@ -3,7 +3,7 @@
 # proves a real failing exit status remains a failure.
 $ErrorActionPreference = "Stop"
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$runner = Join-Path $repo "tools\check_phase12_integrity.ps1"
+$runner = Join-Path $repo "tools\check_integrated_integrity.ps1"
 $work = Join-Path $env:TEMP ("phase12-stderr-check-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $work -Force | Out-Null
 $original = [Environment]::GetEnvironmentVariable("MEETING_PHASE12_SMOKE_EXIT", "Process")
