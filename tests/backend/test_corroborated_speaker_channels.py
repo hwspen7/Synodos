@@ -71,6 +71,14 @@ class CorroboratedSpeakerTests(unittest.TestCase):
         self.assertEqual(guard.observe(2, 4, 1600, vec(.04, .99)), 6)
         self.assertEqual(guard.labels, {5: 5, 7: 5, 2: 6})
 
+    def test_reuse_known_voice_without_relying_on_nemotron_channel(self):
+        guard = CorroboratedSpeakerChannels()
+        self.assertEqual(guard.observe(1, 1, 1700, vec(1, 0)), 1)
+        self.assertEqual(guard.match_known(vec(.99, .10)), 1)
+        self.assertIsNone(guard.match_known(vec(0, 1)))
+        self.assertIsNone(guard.match_known(None))
+        self.assertEqual(guard.labels, {1: 1})
+
     def test_same_channel_reused_for_other_voice_is_not_misattributed(self):
         guard = CorroboratedSpeakerChannels()
         self.assertEqual(guard.observe(1, 1, 1800, vec(1, 0)), 1)
