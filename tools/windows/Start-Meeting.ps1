@@ -134,6 +134,7 @@ function Set-DatabaseEnvironment {
 
 function Get-ListeningPid([int]$Port) {
     $entry = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+        Where-Object { $_.OwningProcess -gt 0 } |
         Select-Object -First 1
     if ($null -eq $entry) { return $null }
     return [int]$entry.OwningProcess
@@ -161,7 +162,7 @@ function Test-MeetingFrontendIdentity {
     try {
         $response = Invoke-WebRequest -Uri 'http://127.0.0.1:5173' -TimeoutSec 3 -UseBasicParsing
         return ($response.StatusCode -eq 200 -and
-            $response.Content -like '*<title>Meeting of Pioneers</title>*' -and
+            $response.Content -match '<title>Synodos(?:\s[^<]*)?</title>' -and
             $response.Content -like '*/src/main.ts*')
     } catch {
         return $false
@@ -439,10 +440,7 @@ function Start-Launcher {
     } else {
         Start-RoleWindow 'frontend'
     }
-    if (-not (Wait-For {
-        $response = Invoke-WebRequest -Uri 'http://127.0.0.1:5173' -TimeoutSec 3 -UseBasicParsing
-        $response.StatusCode -eq 200 -and $response.Content -like '*Meeting of Pioneers*'
-    } 50 'frontend')) {
+    if (-not (Wait-For { Test-MeetingFrontendIdentity } 50 'frontend')) {
         throw 'Frontend did not start on port 5173. Inspect the frontend window.'
     }
 
