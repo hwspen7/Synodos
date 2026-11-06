@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from sessions.registered_identity import match_saved_voice, resolved_speaker_identity
+from sessions.identity.registered_identity import match_saved_voice, resolved_speaker_identity
 from storage.speakers import SpeakerStore
 
 

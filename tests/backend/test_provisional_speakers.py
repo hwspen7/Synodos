@@ -12,7 +12,7 @@ from unittest.mock import patch
 from sessions.audio_buffer import AudioBuffer
 from core.config import Settings
 from sessions.processor import SessionProcessor
-from sessions.provisional_speakers import (
+from sessions.channels.provisional_speakers import (
     PROVISIONAL_EXISTING, PROVISIONAL_NEW, assign_provisional_speakers,
 )
 from speech.config import SpeechSettings

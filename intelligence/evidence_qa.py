@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from phase07.evidence import referenced_hits
+from runtime_quality.evidence import referenced_hits
 
 MAX_QUOTES = 5
 MAX_QUOTE_CHARS = 600

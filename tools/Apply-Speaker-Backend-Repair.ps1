@@ -18,7 +18,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Push-Location $ProjectRoot
 try {
-    & $PythonExe -m py_compile "sessions/processor.py" "sessions/session.py" "sessions/stable_speaker_channels.py"
+    & $PythonExe -m py_compile "sessions/processor.py" "sessions/session.py" "sessions/channels/stable_speaker_channels.py"
     if ($LASTEXITCODE -ne 0) {
         throw "Backend Python syntax check failed."
     }

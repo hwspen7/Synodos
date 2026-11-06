@@ -14,7 +14,7 @@ from api.session_lifecycle import meeting_connection_lock, stop_and_join
 from sessions.manual_review import (
     ReviewConflict, ReviewValidationError, apply_review, original_asr_text,
 )
-from sessions.identity_matcher import match_enrolled_voice
+from sessions.identity.identity_matcher import match_enrolled_voice
 
 router = APIRouter()
 

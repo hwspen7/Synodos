@@ -1,7 +1,7 @@
 """Static checks for reproducible local twelve-language acceptance fixtures."""
 import unittest
 
-from tools.meeting_knowledge_synthetic import fixtures, percentile
+from tools.maintenance.meeting_knowledge_synthetic import fixtures, percentile
 
 
 class MeetingKnowledgeAcceptanceHarnessTests(unittest.TestCase):

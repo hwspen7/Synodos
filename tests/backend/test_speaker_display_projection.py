@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import unittest
 
-from sessions.stable_speaker_channels import StableSpeakerChannels
-from speech.content_first_projection import project_confirmed_caption
-from speech.overlap_content_risk import overlap_content_risk
+from sessions.channels.stable_speaker_channels import StableSpeakerChannels
+from speech.captions.content_first_projection import project_confirmed_caption
+from speech.diarization.overlap_content_risk import overlap_content_risk
 
 
 class SpeakerDisplayProjectionTests(unittest.TestCase):

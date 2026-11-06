@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import numpy as np
 from speech.config import SpeechSettings
 from speech.contracts import Recognition, Utterance, Word
-from speech.hybrid import (
+from speech.asr.hybrid import (
     HybridEngine, preferred_backend, WHISPER_LANGUAGES, QWEN_LANGUAGES,
 )
 

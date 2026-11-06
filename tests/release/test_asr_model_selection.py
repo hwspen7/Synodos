@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from tools.asr_model_selection import (
+from tools.evaluation.asr.asr_model_selection import (
     PREDICTIONS_SCHEMA, SCORE_SCHEMA, compare_reports, distance, normalize,
     p95, score_predictions, hybrid_operational_error, record_predictions,
 )
@@ -57,15 +57,15 @@ class ASRModelSelectionTests(unittest.TestCase):
                 recognize=lambda audio, language: fake,
                 _get_model=lambda: None,
             )
-            with patch("tools.asr_model_selection.require_e_drive",
+            with patch("tools.evaluation.asr.asr_model_selection.require_e_drive",
                        side_effect=lambda path: path), patch(
-                "tools.asr_model_selection.ROOT", root
-            ), patch("tools.asr_model_selection.load_corpus",
+                "tools.evaluation.asr.asr_model_selection.ROOT", root
+            ), patch("tools.evaluation.asr.asr_model_selection.load_corpus",
                      return_value=(manifest, "b" * 64)), patch(
-                "tools.asr_model_selection.load_audio",
+                "tools.evaluation.asr.asr_model_selection.load_audio",
                 return_value=np.zeros(16000, dtype=np.float32)
-            ), patch("tools.asr_model_selection.configure_cache"), patch(
-                "tools.asr_model_selection.engine_for", return_value=engine
+            ), patch("tools.evaluation.asr.asr_model_selection.configure_cache"), patch(
+                "tools.evaluation.asr.asr_model_selection.engine_for", return_value=engine
             ):
                 destination = root / "trial.json"
                 trial = record_predictions(
@@ -83,7 +83,7 @@ class ASRModelSelectionTests(unittest.TestCase):
             self.assertTrue(destination.is_file())
 
     def test_hybrid_model_is_an_explicit_candidate(self):
-        from tools.asr_model_selection import MODELS, engine_for
+        from tools.evaluation.asr.asr_model_selection import MODELS, engine_for
         self.assertEqual(MODELS["hybrid-whisper-qwen17"][0], "hybrid")
         self.assertEqual(
             MODELS["hybrid-whisper-qwen17-context-v2"][0], "hybrid"
@@ -105,7 +105,7 @@ class ASRModelSelectionTests(unittest.TestCase):
             root = Path(td)
             manifest_path = root / "manifest.json"
             prediction_path = root / "pred.json"
-            from tools.freeze_fleurs_asr_corpus import LANGUAGES
+            from tools.evaluation.corpora.freeze_fleurs_asr_corpus import LANGUAGES
             cases = [
                 {"id": "id_" + lang, "language": lang,
                  "audio_sha256": "a" * 64,
@@ -127,11 +127,11 @@ class ASRModelSelectionTests(unittest.TestCase):
                 "production_asr_modified": False, "observations": observations,
             }
             prediction_path.write_text(json.dumps(pred))
-            with patch("tools.asr_model_selection.load_corpus",
+            with patch("tools.evaluation.asr.asr_model_selection.load_corpus",
                        return_value=(manifest, "b" * 64)), patch(
-                "tools.asr_model_selection.require_e_drive", side_effect=lambda p: p
+                "tools.evaluation.asr.asr_model_selection.require_e_drive", side_effect=lambda p: p
             ):
-                with patch("tools.asr_model_selection.file_hash", return_value="c" * 64):
+                with patch("tools.evaluation.asr.asr_model_selection.file_hash", return_value="c" * 64):
                     report = score_predictions(manifest_path, prediction_path)
                 self.assertEqual(report["macro_primary_error_rate"], 0)
                 self.assertFalse(report["production_release_pass"])
@@ -144,7 +144,7 @@ class ASRModelSelectionTests(unittest.TestCase):
     def test_cross_corpus_ranking_is_rejected(self):
         with TemporaryDirectory() as td:
             a, b = Path(td) / "a.json", Path(td) / "b.json"
-            from tools.freeze_fleurs_asr_corpus import LANGUAGES
+            from tools.evaluation.corpora.freeze_fleurs_asr_corpus import LANGUAGES
             report = {
                 "schema": SCORE_SCHEMA, "source_manifest_sha256": "a" * 64,
                 "language_mode": "auto", "benchmark_role": "sealed_test",
@@ -161,13 +161,13 @@ class ASRModelSelectionTests(unittest.TestCase):
             report["source_manifest_sha256"] = "b" * 64
             report["model"] = "qwen3-asr-1.7b"
             b.write_text(json.dumps(report))
-            with patch("tools.asr_model_selection.require_e_drive", side_effect=lambda p: p):
+            with patch("tools.evaluation.asr.asr_model_selection.require_e_drive", side_effect=lambda p: p):
                 with self.assertRaises(ValueError):
                     compare_reports([a, b])
 
     def test_compatible_pair_ranks_without_production_approval(self):
         with TemporaryDirectory() as td:
-            from tools.freeze_fleurs_asr_corpus import LANGUAGES
+            from tools.evaluation.corpora.freeze_fleurs_asr_corpus import LANGUAGES
             paths = []
             for i, model in enumerate(("whisper-large-v3", "qwen3-asr-1.7b")):
                 row = {
@@ -187,7 +187,7 @@ class ASRModelSelectionTests(unittest.TestCase):
                 path = Path(td) / (str(i) + ".json")
                 path.write_text(json.dumps(row))
                 paths.append(path)
-            with patch("tools.asr_model_selection.require_e_drive", side_effect=lambda p: p):
+            with patch("tools.evaluation.asr.asr_model_selection.require_e_drive", side_effect=lambda p: p):
                 result = compare_reports(paths)
             self.assertEqual(result["best_on_this_published_read_speech_cohort"], "qwen3-asr-1.7b")
             self.assertIsNone(result["best_production_meeting_model"])

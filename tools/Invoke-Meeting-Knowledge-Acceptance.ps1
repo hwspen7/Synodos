@@ -87,7 +87,7 @@ $HybridReport = Join-Path $ReportRoot "meeting_knowledge_hybrid.json"
 if (-not $HybridOnly) {
     Write-Host "Meeting knowledge local acceptance (lexical mode)"
     $env:MEETING_AI_EMBEDDINGS = "0"
-    & $Python -m tools.meeting_knowledge_synthetic --mode lexical --output $LexicalReport
+    & $Python -m tools.maintenance.meeting_knowledge_synthetic --mode lexical --output $LexicalReport
     if ($LASTEXITCODE -ne 0) {
         throw "Lexical acceptance failed. Inspect $LexicalReport"
     }
@@ -98,7 +98,7 @@ if ($LexicalOnly) {
 }
 Write-Host "Meeting knowledge local acceptance (hybrid mode)"
 $env:MEETING_AI_EMBEDDINGS = "1"
-& $Python -m tools.meeting_knowledge_synthetic --mode hybrid --output $HybridReport
+& $Python -m tools.maintenance.meeting_knowledge_synthetic --mode hybrid --output $HybridReport
 if ($LASTEXITCODE -ne 0) {
     throw "Hybrid acceptance failed. Inspect $HybridReport"
 }
@@ -108,7 +108,7 @@ if ($LASTEXITCODE -ne 0) {
 if (-not (Test-Path -LiteralPath $LexicalReport)) {
     throw "Lexical report missing: $LexicalReport. Run -LexicalOnly first."
 }
-& $Python -m tools.meeting_release_gate verify --lexical $LexicalReport --hybrid $HybridReport
+& $Python -m tools.validation.meeting_release_gate verify --lexical $LexicalReport --hybrid $HybridReport
 if ($LASTEXITCODE -ne 0) {
     throw "Combined lexical/hybrid verification failed. See saved reports."
 }

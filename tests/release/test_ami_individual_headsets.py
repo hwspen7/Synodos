@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 import wave
 
-from tools.prepare_ami_individual_headsets import (
+from tools.evaluation.ami.prepare_ami_individual_headsets import (
     OFFICIAL_PREFIX, official_url, verify_channel,
 )
 

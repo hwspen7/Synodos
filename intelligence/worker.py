@@ -12,7 +12,7 @@ from intelligence.contracts import build_chunks, safe_artifact, ALLOWED_MODES
 from intelligence.model_gateway import ModelGateway
 from intelligence.prompts import SYSTEM, transcript_prompt, answer_prompt
 from intelligence import store, retrieval, media
-from phase07.evidence import evidence_audit, referenced_hits
+from runtime_quality.evidence import evidence_audit, referenced_hits
 
 log=logging.getLogger('meeting.intelligence')
 
@@ -162,7 +162,7 @@ def process(job, gateway):
         return output
     if kind == 'speaker_refine':
         # Second opinion only, never mutate a transcript or speaker registry.
-        from speech.offline_speaker import run_offline_refinement
+        from speech.diarization.offline_speaker import run_offline_refinement
         from speech.config import load_settings as load_speech_settings
         data = job.get('payload') or {}
         filename = data.get('filename')

@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from tools.meeting_knowledge_contract import (
+from tools.validation.meeting_knowledge_contract import (
     FREEZE_SCHEMA, LEGACY_SYNTHETIC_SCHEMA, strict_synthetic, validate_manifest, score_answerable,
     score_negative, real_summary, release_decision,
 )
@@ -51,7 +51,7 @@ def make_manifest():
 
 class SyntheticPairVerification(unittest.TestCase):
     def test_rejects_missing_hybrid_report(self):
-        from tools.meeting_release_gate import verify_pair
+        from tools.validation.meeting_release_gate import verify_pair
         with TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "lexical.json").write_text(__import__("json").dumps(make_synthetic("lexical")))
@@ -59,7 +59,7 @@ class SyntheticPairVerification(unittest.TestCase):
                 verify_pair(root / "lexical.json", root / "hybrid.json")
 
     def test_rejects_wrong_text_model_between_modes(self):
-        from tools.meeting_release_gate import verify_pair
+        from tools.validation.meeting_release_gate import verify_pair
         with TemporaryDirectory() as temp:
             root = Path(temp)
             lexical = make_synthetic("lexical")
@@ -71,7 +71,7 @@ class SyntheticPairVerification(unittest.TestCase):
                 verify_pair(root / "lexical.json", root / "hybrid.json")
 
     def test_accepts_independently_passing_pair(self):
-        from tools.meeting_release_gate import verify_pair
+        from tools.validation.meeting_release_gate import verify_pair
         with TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "lexical.json").write_text(__import__("json").dumps(make_synthetic("lexical")))
@@ -201,13 +201,13 @@ class RealAnswerScoringContract(unittest.TestCase):
 
 class RealAudioWitnessContract(unittest.TestCase):
     def test_missing_transcribed_gold_is_not_accepted(self):
-        from tools.meeting_knowledge_benchmark import source_gate
+        from tools.maintenance.meeting_knowledge_benchmark import source_gate
         case = make_manifest()["cases"][0]
         self.assertFalse(source_gate(case, [{"id": 1, "start_ms": 0,
                                             "end_ms": 200, "text": "incorrect ASR"}]))
 
     def test_cross_scope_requires_foreign_only_fact(self):
-        from tools.meeting_knowledge_benchmark import negative_witness_gate
+        from tools.maintenance.meeting_knowledge_benchmark import negative_witness_gate
         case = make_manifest()["cases"][20]
         state = {"m0": (1, [{"id": 1, "text": "unrelated"}]),
                  "m1": (1, [{"id": 2, "text": "foreign verified fact"}]),

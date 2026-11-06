@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 import numpy as np
 
-from sessions.corroborated_speaker_channels import CorroboratedSpeakerChannels
+from sessions.channels.corroborated_speaker_channels import CorroboratedSpeakerChannels
 
 
 def vec(x: float, y: float) -> np.ndarray:

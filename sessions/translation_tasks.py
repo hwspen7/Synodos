@@ -6,7 +6,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 import threading
 
-from speech.translation import translate_batch
+from speech.captions.translation import translate_batch
 
 BATCH_SIZE = 6
 MAX_PENDING = 48

@@ -10,11 +10,11 @@ import numpy as np
 
 from sessions.audio_buffer import AudioBuffer
 from core.config import Settings
-from speech.diarization import (
+from speech.diarization.diarization import (
     SpeakerCentroidTracker, resolve_diarization_mode,
 )
 from sessions.processor import SessionProcessor
-from sessions.speaker_stability import (
+from sessions.identity.speaker_stability import (
     collect_mature_labels, restore_mature_labels, stabilized_cluster_ids,
     summarize_cluster_fragmentation, diagnose_cluster_merge_thresholds,
     anonymous_speaker_timeline,

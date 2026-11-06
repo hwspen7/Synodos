@@ -33,8 +33,8 @@ import numpy as np
 
 from sessions.audio_buffer import AudioBuffer
 from speech.config import load_settings
-from speech.vocabulary import prompt_terms
-from speech.streaming import PreviewTracker
+from speech.captions.vocabulary import prompt_terms
+from speech.asr.streaming import PreviewTracker
 from core.config import Settings
 from storage.hotwords import HotwordStore
 from inference.models import ModelManager
@@ -42,53 +42,53 @@ from storage.speakers import SpeakerStore
 from storage.meetings import MeetingStore
 from sessions.save_queue import SaveQueue
 from core.metrics import metrics
-from phase07.telemetry import telemetry
-from phase07.speakers import speaker_stats, find_distinct_participant
-from speech.commit_guard import is_temporal_duplicate, is_adjacent_tail_echo
-from speech.commit_boundary import completed_island_drop, unclosed_voice_turn
-from speech.acoustic_guard import uninformative_audio
-from speech.adaptive_audio import AdaptiveAudio
-from sessions.speaker_birth_guard import tentative_new_clusters
-from speech.coverage_retention import choose_safe_drop
-from speech.quality_profile import (
+from runtime_quality.telemetry import telemetry
+from runtime_quality.speakers import speaker_stats, find_distinct_participant
+from speech.captions.commit_guard import is_temporal_duplicate, is_adjacent_tail_echo
+from speech.captions.commit_boundary import completed_island_drop, unclosed_voice_turn
+from speech.audio.acoustic_guard import uninformative_audio
+from speech.audio.adaptive_audio import AdaptiveAudio
+from sessions.identity.speaker_birth_guard import tentative_new_clusters
+from speech.captions.coverage_retention import choose_safe_drop
+from speech.captions.quality_profile import (
     quality_candidate_enabled, speaker_candidate_enabled,
 )
-from speech.nemotron_activity import (
+from speech.diarization.nemotron_activity import (
     activity_turns, choose_caption_speaker, choose_caption_speaker_from_turns,
 )
-from speech.caption_acoustic_alignment import caption_support_summary
-from speech.content_first_projection import project_confirmed_caption
-from speech.asr_stage_trace import shifted
+from speech.captions.caption_acoustic_alignment import caption_support_summary
+from speech.captions.content_first_projection import project_confirmed_caption
+from speech.captions.asr_stage_trace import shifted
 from speech.contracts import Utterance
 from speech.language import normalize_language
 from speech.supported_languages import PHASE1_LANGUAGE_SET
-from phase07.recovery import autosave_seconds
+from runtime_quality.recovery import autosave_seconds
 from sessions.outbox import enqueue_message
 from sessions.translation_tasks import (
     MAX_PENDING, CaptionTranslation, caption_batch, submit_translation,
 )
-from sessions.speaker_tasks import submit_speaker_analysis, submit_acoustic_window
-from sessions.speaker_evidence import speaker_evidence
-from sessions.provisional_speakers import (
+from sessions.identity.speaker_tasks import submit_speaker_analysis, submit_acoustic_window
+from sessions.identity.speaker_evidence import speaker_evidence
+from sessions.channels.provisional_speakers import (
     PROVISIONAL_NEW, PROVISIONAL_RESOLUTIONS, assign_provisional_speakers, numbered_saved_segments,
 )
-from sessions.registered_identity import match_saved_voice
-from sessions.corroborated_speaker_channels import CorroboratedSpeakerChannels
-from sessions.speaker_cluster_birth import gate_new_cluster_births
-from sessions.short_turn_identity import recover_short_turn_identity
-from sessions.fused_short_turn_recovery import recover_fused_short_turns
-from sessions.retroactive_channel_recovery import (
+from sessions.identity.registered_identity import match_saved_voice
+from sessions.channels.corroborated_speaker_channels import CorroboratedSpeakerChannels
+from sessions.identity.speaker_cluster_birth import gate_new_cluster_births
+from sessions.channels.short_turn_identity import recover_short_turn_identity
+from sessions.channels.fused_short_turn_recovery import recover_fused_short_turns
+from sessions.channels.retroactive_channel_recovery import (
     backfill_confirmed_channels, reconcile_final_channels,
 )
-from sessions.speaker_partition_evidence import consistent_partition_embedding
-from sessions.speaker_resolution import preserve_supported_camplus
-from speech.acoustic_timeline import AcousticTimeline
-from speech.diarization import resolve_diarization_mode
-from speech.turn_integrity import valid_turn_partition
-from sessions.speaker_fallback import (
+from sessions.channels.speaker_partition_evidence import consistent_partition_embedding
+from sessions.identity.speaker_resolution import preserve_supported_camplus
+from speech.audio.acoustic_timeline import AcousticTimeline
+from speech.diarization.diarization import resolve_diarization_mode
+from speech.captions.turn_integrity import valid_turn_partition
+from sessions.identity.speaker_fallback import (
     UNIDENTIFIED_CLUSTER, fallback_speaker_id, normalized_embedding,
 )
-from sessions.speaker_stability import (
+from sessions.identity.speaker_stability import (
     collect_mature_labels, restore_mature_labels, stabilized_cluster_ids,
     summarize_cluster_fragmentation, diagnose_cluster_merge_thresholds,
     diagnose_fresh_cluster_candidates,
@@ -293,7 +293,7 @@ class SessionProcessor(threading.Thread):
             # Lazily admit one optional background ECAPA session. This does
             # not load its model and cannot affect the live CAM++ path.
             try:
-                from sessions.speaker_shadow import create_shadow_session
+                from sessions.identity.speaker_shadow import create_shadow_session
                 self._ecapa_shadow = create_shadow_session()
             except Exception:
                 logger.warning("Optional ECAPA shadow unavailable; CAM++ unchanged")
@@ -384,7 +384,7 @@ class SessionProcessor(threading.Thread):
                         ),
                     })
                 try:
-                    from speech.overlap_content_risk import overlap_content_risk
+                    from speech.diarization.overlap_content_risk import overlap_content_risk
                     official = independent.final_turns_snapshot()
                     if official is not None:
                         sr = self.settings.sample_rate
@@ -415,7 +415,7 @@ class SessionProcessor(threading.Thread):
                         # Derive the actual display-level voice hypothesis
                         # independently, without counting a split caption's
                         # parent as an additional simultaneous speaker.
-                        from speech.content_first_projection import (
+                        from speech.captions.content_first_projection import (
                             project_caption_activity_for_audit,
                         )
                         projection = project_caption_activity_for_audit(
@@ -1313,7 +1313,7 @@ class SessionProcessor(threading.Thread):
                         self._put({"type": "partial", **vars(cleared)})
         if final and (self._speech_settings.enable_events or self._speech_settings.enable_overlap):
             try:
-                from speech.analysis import analyze
+                from speech.diarization.analysis import analyze
                 result = analyze(audio, self._speech_settings)
                 base_ms = round(start_offset * 1000 / sr)
                 result["audio_window_start_ms"] = base_ms
@@ -1456,7 +1456,7 @@ class SessionProcessor(threading.Thread):
             # Reclaim only very-low-energy LEADING silence when ASR returned
             # no utterances. Preserve all uncertain or voice-like samples.
             if os.getenv("MEETING_SAFE_SILENCE_RECLAIM", "1").strip().lower() in ("1", "true", "yes"):
-                from speech.silence_retention import safe_silence_prefix
+                from speech.audio.silence_retention import safe_silence_prefix
                 drop = safe_silence_prefix(audio, sr)
                 if drop:
                     self.buffer.drop_before(drop)
@@ -1844,7 +1844,7 @@ class SessionProcessor(threading.Thread):
                 record["speaker_name"] = "Speaker 1"
             return
         if mode == "centroid":
-            from speech.diarization import SpeakerCentroidTracker
+            from speech.diarization.diarization import SpeakerCentroidTracker
             tracker = SpeakerCentroidTracker(threshold=float(os.getenv("MEETING_SPEAKER_SIMILARITY", "0.72")))
             for record in self.segments:
                 stable = record.get("speaker_id")
@@ -2113,7 +2113,7 @@ class SessionProcessor(threading.Thread):
                     note()
                 continue
             try:
-                from sessions.speaker_shadow import select_shadow_window
+                from sessions.identity.speaker_shadow import select_shadow_window
                 audio = select_shadow_window(raw_audio)
                 if audio is None:
                     note = getattr(shadow, "note_no_active_window", None)

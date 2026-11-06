@@ -6,8 +6,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from tools.live_caption_ws_replay import capture_event, new_capture
-from tools.replay_transcript_score import (
+from tools.diagnostics.live_caption_ws_replay import capture_event, new_capture
+from tools.maintenance.replay_transcript_score import (
     edit_distance, finalized_transcript, score_reference,
     write_private_transcript,
 )

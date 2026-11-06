@@ -19,10 +19,10 @@ depends on installed local language-pair packages.
 
 The original 12-language / 130-single-clip Fixed195 archive is frozen
 and unchanged. Phase 1 scores the **110 selected clips** through
-`tools.phase1_ten_language_gate`, preserving the original 130-case
+`tools.validation.language_gate`, preserving the original 130-case
 score as historical evidence. This subset is *not* a retrained or improved
-Whisper result. See [Phase 1 text acceptance](docs/phase1_text_acceptance.md) and
-[final AMI mixed-audio / GitHub CI release procedure](docs/phase1_final_ami_ci_closure.md).
+Whisper result. See [Phase 1 text acceptance](docs/validation/text_acceptance.md) and
+[final AMI mixed-audio / GitHub CI release procedure](docs/validation/ami_ci_closure.md).
 The latter gathers the original official human-word annotations and
 authenticated GitHub check-run annotations without altering saved captions
 or claiming release acceptance before real field metrics and hosted CI pass.
@@ -32,7 +32,7 @@ or claiming release acceptance before real field metrics and hosted CI pass.
 The integrated upgrade implements versioned human transcript review, enrolled
 speaker identity suggestions that abstain on ambiguous evidence, original-ASR
 provenance, and an AMI word-timestamp parser repair. See
-[Phase 1/2 acceptance and E-drive instructions](docs/phase12_integrated_upgrade.md).
+[Phase 1/2 acceptance and E-drive instructions](docs/validation/integrated_upgrade.md).
 
 **Release status is evidence-gated.** Existing 10-language ASR results do not
 prove real meeting DER/CER or GitHub Actions success; no model quality
@@ -42,7 +42,7 @@ have been replayed and checked.
 The complete optional Phase 1A/Phase 1B/Phase 2 research protocol (three
 speaker diarization models, independent Qwen3-ASR gap review, held-out
 speaker verification, E-drive model isolation, and Phase 3 release gates)
-is documented in [the full Phase 1/2 upgrade guide](docs/phase12_research_release.md).
+is documented in [the full Phase 1/2 upgrade guide](docs/validation/research_release.md).
 These experiments are opt-in and require independently prepared datasets.
 
 ## Capabilities
@@ -89,7 +89,7 @@ meeting/
 └── PROJECT_CONTEXT.md         Detailed architecture reference
 ```
 
-See [backend source layout](docs/backend_layout.md) for module ownership and the updated import paths.
+See [backend source layout](docs/architecture/backend_layout.md) for module ownership and the updated import paths.
 
 The frontend and backend use the same repository root; there are no separate `frontend/` or `backend/` working directories.
 
@@ -127,7 +127,7 @@ pnpm build
 To verify that all tracked source and documentation text remains free of CJK characters, run:
 
 ```powershell
-python -m unittest tests.quality.test_english_only
+python -m unittest tests.quality.integrity.test_english_only
 ```
 
 The Python test suite checks basic routes and persistence, not live FunASR inference or concurrent streaming. Initial startup may require downloading models. Override model identifiers or local paths using `ASR_MODEL`, `FSMN_VAD_MODEL`, `PUNC_MODEL`, and `SPK_MODEL`.
@@ -180,7 +180,7 @@ See [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for protocol details, settings, sto
 
 ## Stage 1 optional speaker-model architecture
 
-See [Stage 1 speaker model interfaces and paired evaluation](docs/speaker_stage1_architecture.md).
+See [Stage 1 speaker model interfaces and paired evaluation](docs/architecture/speaker_stage1_architecture.md).
 It adds opt-in CAM++ / ECAPA speaker verification comparisons and a
 Nemotron 3 offline diarization comparison. Candidates run in isolated
 environments and cannot silently replace production speaker identity or
@@ -195,4 +195,4 @@ frozen, independently annotated audio set has been evaluated.
 
 ## Phase 08 quality hardening
 
-See [Phase 08 repair status](docs/phase08_repair_status.md) for confirmed fixes, known limitations, and required real-audio acceptance tests. CI validates software contracts and does not establish Zoom-equivalent acoustic performance.
+See [Phase 08 repair status](docs/validation/recovery_status.md) for confirmed fixes, known limitations, and required real-audio acceptance tests. CI validates software contracts and does not establish Zoom-equivalent acoustic performance.

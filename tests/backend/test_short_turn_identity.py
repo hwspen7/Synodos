@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 import numpy as np
 
-from sessions.short_turn_identity import recover_short_turn_identity
+from sessions.channels.short_turn_identity import recover_short_turn_identity
 
 
 def clip(ident, label, start, end, vector, *, short=False, **fields):

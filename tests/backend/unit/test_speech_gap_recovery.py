@@ -7,10 +7,10 @@ import unittest
 import numpy as np
 
 from speech.contracts import Utterance
-from speech.gap_recovery import (
+from speech.captions.gap_recovery import (
     recover_missing_voice, uncovered_voice_intervals,
 )
-from speech.quality_guard import verify_utterances
+from speech.captions.quality_guard import verify_utterances
 
 
 def vad(*spans):

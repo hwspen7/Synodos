@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tools import meeting_knowledge_synthetic as acceptance
+from tools.maintenance import meeting_knowledge_synthetic as acceptance
 
 
 @unittest.skipUnless(os.environ.get("TEST_DATABASE_URL"),
@@ -79,7 +79,7 @@ class MeetingKnowledgeRunnerPostgresTests(unittest.TestCase):
                     "MEETING_AI_ENABLED": "1",
                 }
                 with patch.dict(os.environ, environ), patch(
-                    "tools.meeting_knowledge_synthetic.guard_environment"
+                    "tools.maintenance.meeting_knowledge_synthetic.guard_environment"
                 ), patch(
                     "intelligence.config.load_config", return_value=config
                 ), patch(

@@ -9,7 +9,7 @@ import re
 import threading
 import uuid
 from functools import reduce
-from speech.text_format import join_transcript_text, split_display_sentences, ends_finished_thought
+from speech.captions.text_format import join_transcript_text, split_display_sentences, ends_finished_thought
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -198,7 +198,7 @@ class MeetingStore:
 
     @staticmethod
     def _numbered_segments(state: dict, sample_rate: int) -> list[dict]:
-        from sessions.provisional_speakers import numbered_saved_segments
+        from sessions.channels.provisional_speakers import numbered_saved_segments
 
         return numbered_saved_segments(
             state.get("segments") or [], sample_rate,
@@ -213,7 +213,7 @@ class MeetingStore:
         meta = payload.get("meta") or {}
         state = payload.get("state") or {}
         sr = int(state.get("sample_rate", meta.get("sample_rate") or 16000))
-        from sessions.corroborated_speaker_channels import saved_speaker_continuity
+        from sessions.channels.corroborated_speaker_channels import saved_speaker_continuity
 
         segments = self._numbered_segments(state, sr)
         aliases = saved_speaker_continuity(segments, sr)

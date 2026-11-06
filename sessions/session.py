@@ -9,8 +9,8 @@ from sessions.audio_buffer import AudioBuffer
 from core.config import Settings
 from core.runtime import models, settings
 from sessions.processor import SessionProcessor
-from sessions.corroborated_speaker_channels import CorroboratedSpeakerChannels
-from speech.diarization import resolve_diarization_mode
+from sessions.channels.corroborated_speaker_channels import CorroboratedSpeakerChannels
+from speech.diarization.diarization import resolve_diarization_mode
 from sessions.lifecycle import SessionLifecycle, SessionPhase
 from storage.meetings import MeetingStore
 from storage.speakers import SpeakerStore
@@ -82,7 +82,7 @@ class Session:
         if backend == "nemotron3" and resolve_diarization_mode(
             os.getenv("MEETING_DIARIZATION_MODE")
         ) != "single":
-            from speech.nemotron_stream import NemotronRealtimeWorker
+            from speech.diarization.nemotron_stream import NemotronRealtimeWorker
 
             def notify_acoustic_updates():
                 self.processor._async_ready.set()

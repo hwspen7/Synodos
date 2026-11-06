@@ -17,8 +17,8 @@ from sessions.audio_buffer import AudioBuffer
 from core.config import Settings
 from sessions.processor import SessionProcessor
 from speech.config import SpeechSettings
-from speech.text_format import join_transcript_text
-from speech.turn_split import split_by_acoustic_turns
+from speech.captions.text_format import join_transcript_text
+from speech.captions.turn_split import split_by_acoustic_turns
 
 
 RATE = 16000
@@ -48,7 +48,7 @@ class SyntheticSpeakerEmbedding:
 
 class ShortMixedUtteranceTests(unittest.TestCase):
     def test_new_speaker_requires_two_independent_acoustic_turns(self):
-        from sessions.speaker_birth_guard import tentative_new_clusters
+        from sessions.identity.speaker_birth_guard import tentative_new_clusters
         def row(number, a, b, quality="window_estimate"):
             return {
                 "id": number, "cluster": 2, "speaker_id": -number,
@@ -71,7 +71,7 @@ class ShortMixedUtteranceTests(unittest.TestCase):
         self.assertEqual(tentative_new_clusters([first], {5}), set())
 
     def test_contiguous_tail_fragments_cannot_birth_a_new_speaker(self):
-        from sessions.speaker_birth_guard import tentative_new_clusters
+        from sessions.identity.speaker_birth_guard import tentative_new_clusters
         rows = [
             {"id": 1, "cluster": 4, "speaker_id": -1,
              "emb": np.array([1.0, 0.0], dtype=np.float32),
@@ -91,7 +91,7 @@ class ShortMixedUtteranceTests(unittest.TestCase):
         self.assertEqual(tentative_new_clusters(rows, set()), set())
 
     def test_new_speaker_single_long_precise_turn_can_be_verified(self):
-        from sessions.speaker_birth_guard import tentative_new_clusters
+        from sessions.identity.speaker_birth_guard import tentative_new_clusters
         case = {
             "id": 1, "cluster": 0, "speaker_id": -1,
             "emb": np.array([1.0, 0.0], dtype=np.float32),

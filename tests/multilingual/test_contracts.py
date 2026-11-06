@@ -1,6 +1,6 @@
 import unittest
 from speech.contracts import Recognition, Utterance, Word
-from speech.streaming import PreviewTracker
+from speech.asr.streaming import PreviewTracker
 from speech.config import SpeechSettings
 from speech.language import normalize_language
 

@@ -102,7 +102,7 @@ foreach ($case in $cases) {
     Write-Host ("Saved detailed model log: " + $logPath)
 }
 $report = Join-Path $root ("phase1a_quality_pair_$label.json")
-& $PythonExe -m tools.phase1a_quality_pair `
+& $PythonExe -m tools.evaluation.asr.asr_quality_pair `
     --root $root --baseline-tag "$label-baseline" `
     --candidate-tag "$label-quality" --output $report
 if ($LASTEXITCODE -ne 0) {

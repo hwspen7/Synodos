@@ -12,7 +12,7 @@ import unittest
 import wave
 import zipfile
 
-from tools.prepare_real_meeting_evaluation import (
+from tools.evaluation.corpora.prepare_real_meeting_evaluation import (
     PREDICTION_SCHEMA, REFERENCE_SCHEMA, check_root, evaluation_id,
     make_state, parse_reference_archive, transcribe, validate_prediction, write_private_json,
 )
@@ -22,7 +22,7 @@ class RealMeetingEvaluationTests(unittest.TestCase):
     def sample_prediction(self):
         return {"schema": PREDICTION_SCHEMA, "meeting": "ES2004a",
                 "source_audio_sha256": "b" * 64, "model": "large-v3",
-                "pipeline": "speech.whisper.WhisperEngine",
+                "pipeline": "speech.asr.whisper.WhisperEngine",
                 "reference_used_for_inference": False,
                 "independently_audio_reviewed": False,
                 "segments": [{"id": i, "start_ms": i * 1000,
@@ -117,12 +117,12 @@ class RealMeetingEvaluationTests(unittest.TestCase):
                 wav.setsampwidth(2)
                 wav.setframerate(16000)
                 wav.writeframes(b"\x00\x00" * (16000 * 60))
-            fake_whisper = types.ModuleType("speech.whisper")
+            fake_whisper = types.ModuleType("speech.asr.whisper")
             fake_whisper.WhisperEngine = FakeEngine
-            import tools.prepare_real_meeting_evaluation as module
+            import tools.evaluation.corpora.prepare_real_meeting_evaluation as module
             with (mock.patch.object(module, "source_audio", return_value=(audio, 60.0)),
                   mock.patch.object(module, "sha256_file", return_value="a" * 64),
-                  mock.patch.dict(sys.modules, {"speech.whisper": fake_whisper}),
+                  mock.patch.dict(sys.modules, {"speech.asr.whisper": fake_whisper}),
                   mock.patch.dict(os.environ, {"HF_HOME": str(root)})):
                 transcribe(root, "large-v3", "cpu", "int8", 30)
             prediction = json.loads((root / "predictions" / "EN2002a_whisper.json").read_text())
@@ -137,8 +137,8 @@ class RealMeetingEvaluationTests(unittest.TestCase):
         # Regresses the real-world Connection.executemany AttributeError.
         # A fake Connection intentionally has no executemany method.
         import contextlib
-        import tools.prepare_real_meeting_evaluation as module
-        from tools.prepare_meeting_reference_corpus import MEETINGS
+        import tools.evaluation.corpora.prepare_real_meeting_evaluation as module
+        from tools.evaluation.corpora.prepare_meeting_reference_corpus import MEETINGS
 
         class Cursor:
             def __init__(self):

@@ -12,7 +12,7 @@ from core.config import Settings
 from sessions.processor import SessionProcessor
 from speech.config import SpeechSettings
 from speech.contracts import Recognition, Utterance
-from speech.streaming import PreviewTracker
+from speech.asr.streaming import PreviewTracker
 
 
 class FakeMultilingualModels:

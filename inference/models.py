@@ -19,7 +19,7 @@ from typing import Any
 import numpy as np
 
 from core.config import Settings
-from speech.quality_profile import speaker_candidate_enabled
+from speech.captions.quality_profile import speaker_candidate_enabled
 from core.infrastructure_settings import InfrastructureSettings, load_infrastructure_settings
 from inference.scheduler import InferenceScheduler
 
@@ -245,7 +245,7 @@ class ModelManager:
             or (requested == "candidate" and n < 4)
         )
         if use_strict:
-            from speech.adaptive_cluster import complete_link_clusters
+            from speech.diarization.adaptive_cluster import complete_link_clusters
             try:
                 labels = complete_link_clusters(data, threshold=threshold)
                 receipt["strategy_executed"] = "complete_link"
@@ -257,7 +257,7 @@ class ModelManager:
                 )
 
         if requested == "candidate" and 4 <= n <= 256:
-            from speech.spherical_cluster import spherical_speaker_candidates
+            from speech.diarization.spherical_cluster import spherical_speaker_candidates
             try:
                 candidate = spherical_speaker_candidates(data)
                 receipt["candidate"] = candidate.details
@@ -292,7 +292,7 @@ class ModelManager:
         Keep scheduler and inference-lock ownership inside ModelManager rather
         than requiring processors to access private implementation details.
         """
-        from speech.engine import recognize
+        from speech.asr.engine import recognize
 
         def inference_job():
             with self._infer_lock:
@@ -315,7 +315,7 @@ class ModelManager:
         if speech_config.engine == "legacy":
             self._load_asr()
         elif os.getenv("MEETING_PREWARM_ASR", "1").strip().lower() in ("1", "true", "yes"):
-            from speech.engine import prewarm_multilingual
+            from speech.asr.engine import prewarm_multilingual
             prewarm_multilingual(speech_config)
         self._load_spk()
         self._load_cluster()

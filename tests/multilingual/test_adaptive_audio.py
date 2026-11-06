@@ -11,7 +11,7 @@ import numpy as np
 from sessions.audio_buffer import AudioBuffer
 from core.config import Settings
 from sessions.processor import SessionProcessor
-from speech.adaptive_audio import AdaptiveAudio
+from speech.audio.adaptive_audio import AdaptiveAudio
 from speech.config import SpeechSettings
 from speech.contracts import Recognition
 

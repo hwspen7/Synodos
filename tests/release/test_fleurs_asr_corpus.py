@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import io
 import wave
-from tools.freeze_fleurs_asr_corpus import choose_indices, choose_streaming_examples, freeze_plan, case_identity, encode_pcm16, decode_audio_without_torchcodec, validate_official_clip, LANGUAGES, SCHEMA
+from tools.evaluation.corpora.freeze_fleurs_asr_corpus import choose_indices, choose_streaming_examples, freeze_plan, case_identity, encode_pcm16, decode_audio_without_torchcodec, validate_official_clip, LANGUAGES, SCHEMA
 
 
 class FleursCorpusTests(unittest.TestCase):
@@ -112,7 +112,7 @@ class FleursCorpusTests(unittest.TestCase):
         self.assertEqual(clip[1], 1.0)
 
     def test_fleurs_accepts_actual_hub_commit_shas(self):
-        from tools.freeze_fleurs_asr_corpus import SHA
+        from tools.evaluation.corpora.freeze_fleurs_asr_corpus import SHA
         self.assertIsNotNone(SHA.fullmatch("a" * 40))
         self.assertIsNotNone(SHA.fullmatch("a" * 64))
         self.assertIsNone(SHA.fullmatch("a" * 39))

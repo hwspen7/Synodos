@@ -6,7 +6,7 @@ from speech.config import load_settings as load_speech_settings
 from fastapi import APIRouter, HTTPException
 from core.runtime import infra
 from core.metrics import metrics
-from phase07.telemetry import telemetry
+from runtime_quality.telemetry import telemetry
 from core.runtime import settings, models, sessions, meeting_sessions
 
 router = APIRouter()
@@ -18,7 +18,7 @@ async def health() -> dict:
         "status": "ok",
         "realtime": {
             "source_revision": os.getenv("MEETING_SOURCE_REVISION", ""),
-            "asr_engine": speech.engine,
+            "asr_engine": speech.asr.engine,
             "asr_model": speech.model,
             "independent_diarization": os.getenv(
                 "MEETING_INDEPENDENT_DIARIZATION", "off"

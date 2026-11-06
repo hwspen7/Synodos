@@ -4,8 +4,8 @@ from __future__ import annotations
 import unittest
 
 from speech.contracts import Utterance, Word
-from speech.text_format import join_transcript_text
-from speech.utterance_units import split_utterance, split_utterances
+from speech.captions.text_format import join_transcript_text
+from speech.captions.utterance_units import split_utterance, split_utterances
 
 
 class LosslessUtteranceSplitTests(unittest.TestCase):

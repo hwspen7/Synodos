@@ -1,7 +1,7 @@
 """Continuous-window acoustic commit boundary regression tests."""
 import unittest
 
-from speech.commit_boundary import (
+from speech.captions.commit_boundary import (
     completed_voice_drop, completed_island_drop, unclosed_voice_turn,
 )
 

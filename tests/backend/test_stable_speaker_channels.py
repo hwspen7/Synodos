@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import unittest
 
-from sessions.stable_speaker_channels import StableSpeakerChannels
+from sessions.channels.stable_speaker_channels import StableSpeakerChannels
 
 
 class StableSpeakerChannelsTests(unittest.TestCase):

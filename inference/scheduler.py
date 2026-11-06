@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Any
 
 from core.metrics import metrics
-from phase07.telemetry import telemetry
+from runtime_quality.telemetry import telemetry
 
 
 class InferenceBusyError(RuntimeError):

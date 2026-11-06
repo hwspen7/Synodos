@@ -96,7 +96,7 @@ async def submit_job(payload:JobRequest):
     if payload.kind == 'speaker_refine':
         # Offline speaker model must never compete with the active recorder.
         from core.runtime import meeting_sessions
-        from speech.offline_speaker import validate_recording
+        from speech.diarization.offline_speaker import validate_recording
         from speech.config import load_settings as load_speech_settings
         if mid in meeting_sessions:
             raise HTTPException(409, 'Stop recording before starting speaker refinement')
