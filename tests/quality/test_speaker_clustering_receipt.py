@@ -73,6 +73,61 @@ class ProcessorReceiptTests(unittest.TestCase):
                 ["Speaker 1"] * 6,
             )
 
+    def test_default_processor_keeps_single_speaker_through_soft_voice_drift_and_short_probe(self):
+        class FragmentedClustering:
+            def cluster_with_info(self, embeddings):
+                return np.arange(len(embeddings)), {
+                    "strategy_executed": "test_split_all",
+                    "input_embeddings": len(embeddings),
+                    "cluster_count": len(embeddings),
+                }
+
+        with patch.dict(os.environ, {
+            "MEETING_ASR_ENGINE": "whisper",
+            "MEETING_DIARIZATION_MODE": "cluster",
+        }):
+            processor = SessionProcessor(
+                "single-speaker-short-phrases",
+                AudioBuffer(16000, max_seconds=30),
+                Settings(), FragmentedClustering(), asyncio.Queue(),
+            )
+            cases = [
+                (3.0, 6.0, [1.0, 0.0], False),
+                (13.0, 18.0, [.72, .694], False),
+                (18.2, 18.9, [.98, .12], True),
+                (19.3, 20.2, [.97, .20], True),
+                (23.0, 25.0, [.71, .704], False),
+            ]
+            for i, (start, end, voice, short) in enumerate(cases, 1):
+                processor.segments.append({
+                    "id": i,
+                    "start_sample": int(start * 16000),
+                    "end_sample": int(end * 16000),
+                    "emb": np.asarray(voice, dtype=np.float32),
+                    "cluster": -1,
+                    "speaker_id": -1,
+                    "speaker_name": "Unidentified Speaker",
+                    "text": f"Confirmed source text {i}",
+                    "language": "zh",
+                    "speaker_uncertain": short,
+                    "speaker_evidence_status": (
+                        "short_probe" if short else "turn_voiceprint"
+                    ),
+                })
+                processor._recluster()
+                self.assertEqual(
+                    [segment["speaker_id"] for segment in processor.segments],
+                    [1] * i,
+                )
+                self.assertEqual(
+                    [segment["text"] for segment in processor.segments],
+                    [f"Confirmed source text {n}" for n in range(1, i + 1)],
+                )
+            self.assertEqual(
+                processor.segments[2]["speaker_evidence_status"],
+                "short_probe_known_voice",
+            )
+
     def test_four_speakers_survive_published_identity_remap(self):
         with patch.dict(os.environ, {
             "MEETING_SPEAKER_LABEL_REVISABLE_S": "0",
