@@ -166,6 +166,38 @@ class LiveFusionTests(unittest.TestCase):
         self.assertEqual(len(set(processor._nemotron_channels.labels.values())), 1)
         self.assertEqual(len(processor.segments), 5)
 
+    def test_missing_asr_voiceprint_is_recovered_from_matching_acoustic_window(self):
+        processor = processor_for_test()
+        processor.segments[0]["end_sample"] = 32000
+        processor.segments.append({
+            **processor.segments[0],
+            "id": 2,
+            "start_sample": 32000,
+            "end_sample": 64000,
+            "text": "I am still speaking",
+            "emb": None,
+            "cluster": -3,
+            "speaker_id": -1,
+            "speaker_name": "Unidentified Speaker",
+            "speaker_evidence_status": "turn_analysis_unavailable",
+        })
+        self.assertTrue(processor._acoustic_timeline.add(
+            32000, 64000, np.array([.99, .10], dtype=np.float32),
+        ))
+        activity = np.zeros((400, 8), dtype=np.float32)
+        activity[:200, 0] = .96
+        activity[200:, 1] = .96
+        processor.independent_diarization = FakeAcoustics(activity)
+        self.assertTrue(processor._rebuild_and_push())
+        self.assertEqual(
+            [row["speaker_id"] for row in processor.snapshot_state()["segments"]],
+            [1, 1],
+        )
+        self.assertEqual(
+            [row["text"] for row in processor.snapshot_state()["segments"]],
+            ["Some valid speech", "I am still speaking"],
+        )
+
     def test_two_genuine_voices_require_multiple_distinct_acoustic_turns(self):
         processor = processor_for_test()
         processor.segments[0]["end_sample"] = 32000
