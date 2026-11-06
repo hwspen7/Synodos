@@ -1,9 +1,11 @@
 """Qwen3 ASR offline adapter with optional forced alignment."""
 from __future__ import annotations
+import json
 import threading
 import numpy as np
 from speech.contracts import Recognition, Utterance, Word
 from speech.language import normalize_language
+from speech.vocabulary import prompt_terms
 
 # Exact Qwen3-ASR language names as published in the upstream supported list.
 # A missing entry must never silently forward an ISO code as a full name.
@@ -74,8 +76,12 @@ class QwenEngine:
         windows = speech_windows(regions, len(samples), max_window_s=18)
         if len(windows) > 100:
             raise RuntimeError("Too many ASR windows; process a shorter interval")
-        if terms.strip():
-            warnings.warn("Qwen3-ASR has no vocabulary prompt support in this adapter", RuntimeWarning)
+        hints = prompt_terms(terms.splitlines())
+        context = (
+            "Possible spellings of names and terms in the audio. Use only when spoken: "
+            + json.dumps(hints, ensure_ascii=False)
+            if hints else ""
+        )
         utterances = []
         recognized_languages = set()
         with self._lock:
@@ -84,6 +90,8 @@ class QwenEngine:
                 window = samples[start:end]
                 arguments = {"audio": (window, 16000),
                              "language": qwen_language_name(language)}
+                if context:
+                    arguments["context"] = context
                 try:
                     result = model.transcribe(**arguments, return_time_stamps=self.use_aligner)[0]
                 except (ValueError, RuntimeError) as exc:

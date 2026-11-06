@@ -96,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
                     samples = load_wav(wav)
                     started = time.perf_counter()
                     prediction = models[name].recognize(samples, language=item.get("language_mode", "auto"),
-                                                         terms=" ".join(item.get("terms", [])))
+                                                         terms="\n".join(item.get("terms", [])))
                     latency_ms = (time.perf_counter() - started) * 1000
                     hypothesis = " ".join(piece.text for piece in prediction.utterances)
                     predicted_language = prediction.language

@@ -1,9 +1,11 @@
 """Lazy per-process engine registry preserving the original ASR fallback."""
 from __future__ import annotations
+from dataclasses import replace
 import threading
 import numpy as np
 from speech.config import SpeechSettings, load_settings
 from speech.contracts import Recognition, Utterance
+from speech.vocabulary import prompt_terms, repeated_terms, unaffected_utterances
 
 _LOCK = threading.RLock()
 _ENGINES = {}
@@ -15,7 +17,7 @@ def recognize(audio: np.ndarray, *, language: str = "auto", terms: str = "",
     if config.engine == "legacy":
         if legacy is None:
             raise RuntimeError("Legacy ASR callable is required")
-        rows = legacy(audio, hotword=terms or None)
+        rows = legacy(audio, hotword=" ".join(prompt_terms(terms.splitlines())) or None)
         return Recognition(tuple(Utterance(str(r.get("text", "")), int(r["start"]), int(r["end"]),
                                           "zh", timestamp_quality="segment") for r in rows), "zh", engine="legacy")
     from speech.enhancement import optional_denoise
@@ -43,7 +45,31 @@ def recognize(audio: np.ndarray, *, language: str = "auto", terms: str = "",
                 aligner = os.getenv("MEETING_QWEN_FORCED_ALIGNER", "1").lower() not in ("0", "false", "no")
                 _ENGINES[key] = QwenEngine(config.model, config.device if config.device != "auto" else "cuda:0", aligner=aligner)
         backend = _ENGINES[key]
-    return backend.recognize(filtered, language, terms)
+    hints = prompt_terms(terms.splitlines())
+    result = backend.recognize(filtered, language, "\n".join(hints))
+    repeats = repeated_terms(result.utterances, hints) if hints else set()
+    if not repeats:
+        return result
+
+    # A prompt can cause a decoding loop. Retry this audio once without it.
+    # Preserve unrelated utterances and keep the original if the retry fails.
+    from speech.hybrid import covers_baseline, has_text
+    try:
+        unprompted = backend.recognize(filtered, language, "")
+    except Exception:
+        return result
+    accepted = (
+        has_text(unprompted)
+        and not repeated_terms(unprompted.utterances, hints)
+        and covers_baseline(
+            unprompted.utterances, unaffected_utterances(result.utterances, repeats),
+        )
+    )
+    chosen = unprompted if accepted else result
+    return replace(chosen, recovery_diagnostics={
+        **(chosen.recovery_diagnostics or {}),
+        "hotword_repeat_retry": {"accepted": accepted},
+    })
 
 
 

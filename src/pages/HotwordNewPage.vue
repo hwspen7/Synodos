@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { hotwordsApi } from '@/api/client'
+import { parseHotwords } from '@/config/hotwords'
 import AppIcon from '@/components/AppIcon.vue'
 
 const router = useRouter()
@@ -12,21 +13,7 @@ const name = ref('')
 const wordsText = ref('')
 const creating = ref(false)
 
-/** Split hotwords on whitespace and punctuation. */
-function parseWords(text: string): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const item of text.replace(/[\uFF0C\u3001;\uFF1B]/g, ' ').split(/\s+/)) {
-    const w = item.trim()
-    if (w && !seen.has(w)) {
-      seen.add(w)
-      out.push(w)
-    }
-  }
-  return out
-}
-
-const words = computed(() => parseWords(wordsText.value))
+const words = computed(() => parseHotwords(wordsText.value))
 
 function showToast(message: string): void {
   toast.value = message
@@ -98,7 +85,7 @@ async function createLibrary(): Promise<void> {
         :disabled="creating"
       ></textarea>
       <p class="hint-text">
-        Enter terms separated by newlines, spaces, or commas.
+        Enter one term per line or separate terms with commas. Spaces within a term are preserved.
         Prioritize selected hotwords during recognition, up to 200 per meeting.
       </p>
       <div v-if="words.length > 0" class="hotword-tags">

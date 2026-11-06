@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { hotwordsApi } from '@/api/client'
+import { parseHotwords } from '@/config/hotwords'
 import AppIcon from '@/components/AppIcon.vue'
 import type { HotwordLibrary } from '@/types'
 
@@ -51,20 +52,7 @@ function fmtDate(iso: string): string {
   })
 }
 
-function parseWords(text: string): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const item of text.replace(/[\uFF0C\u3001;\uFF1B]/g, ' ').split(/\s+/)) {
-    const w = item.trim()
-    if (w && !seen.has(w)) {
-      seen.add(w)
-      out.push(w)
-    }
-  }
-  return out
-}
-
-const editWordCount = computed(() => parseWords(editWordsText.value).length)
+const editWordCount = computed(() => parseHotwords(editWordsText.value).length)
 
 function openEdit(lib: HotwordLibrary): void {
   editTarget.value = lib
@@ -81,7 +69,7 @@ async function saveEdit(): Promise<void> {
   try {
     await hotwordsApi.update(editTarget.value.id, {
       name: editName.value.trim(),
-      words: parseWords(editWordsText.value),
+      words: parseHotwords(editWordsText.value),
     })
     editTarget.value = null
     await load()

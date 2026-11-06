@@ -5,6 +5,7 @@ import os
 import numpy as np
 from speech.dual_vad import crosscheck_speech_regions
 from speech.contracts import Recognition
+from speech.vocabulary import prompt_terms
 from speech.quality_guard import verify_utterances, speech_intervals
 from speech.gap_recovery import recover_missing_voice
 from speech.utterance_units import split_utterances
@@ -69,8 +70,9 @@ class WhisperEngine:
             "condition_on_previous_text": False,
             "temperature": 0,
         }
-        if terms.strip():
-            kwargs["hotwords"] = terms[:1500]
+        hints = prompt_terms(terms.splitlines())
+        if hints:
+            kwargs["hotwords"] = ", ".join(hints)
         # Preserve acoustically verified segment words when the model's
         # forced word alignment is incomplete. This avoids deleting genuine
         # meeting content merely because word timestamps disagree.

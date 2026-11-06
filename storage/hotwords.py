@@ -13,6 +13,7 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from speech.vocabulary import normalize_terms
 
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -20,21 +21,6 @@ _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
-def normalize_words(words) -> list[str]:
-    """Trim whitespace, skip empty entries, deduplicate, and preserve order."""
-    seen: set[str] = set()
-    out: list[str] = []
-    for item in words or []:
-        if not isinstance(item, str):
-            continue
-        for w in item.replace("\uFF0C", " ").replace("\u3001", " ").replace("\uFF1B", " ").split():
-            w = w.strip()
-            if w and w not in seen:
-                seen.add(w)
-                out.append(w)
-    return out
 
 
 class HotwordStore:
@@ -93,7 +79,7 @@ class HotwordStore:
             lib = {
                 "id": lib_id,
                 "name": (name or "").strip() or "Untitled Hotword Library",
-                "words": normalize_words(words),
+                "words": normalize_terms(words),
                 "created_at": now,
                 "updated_at": now,
             }
@@ -110,7 +96,7 @@ class HotwordStore:
             if name is not None:
                 lib["name"] = (name or "").strip() or "Untitled Hotword Library"
             if words is not None:
-                lib["words"] = normalize_words(words)
+                lib["words"] = normalize_terms(words)
             lib["updated_at"] = _now_iso()
             self._save()
             return self._summary(lib)

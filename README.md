@@ -131,6 +131,14 @@ python -m unittest tests.quality.test_english_only
 
 The Python test suite checks basic routes and persistence, not live FunASR inference or concurrent streaming. Initial startup may require downloading models. Override model identifiers or local paths using `ASR_MODEL`, `FSMN_VAD_MODEL`, `PUNC_MODEL`, and `SPK_MODEL`.
 
+### Hotword libraries
+
+Enter one complete term per line, such as `Spring Boot`. Select the
+library in the meeting's speech settings before recording. Whisper and
+Qwen3-ASR receive the selected terms as recognition hints. The settings
+diagnostics show the number of terms loaded for the next recording.
+Hotword hints can change recognition and do not edit saved transcripts.
+
 ### Adaptive audio for live captions
 
 Set `MEETING_ASR_ADAPTIVE_AUDIO=1` before starting the backend to try mild

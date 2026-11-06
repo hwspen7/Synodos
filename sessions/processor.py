@@ -33,6 +33,7 @@ import numpy as np
 
 from audio.buffer import AudioBuffer
 from speech.config import load_settings
+from speech.vocabulary import prompt_terms
 from speech.streaming import PreviewTracker
 from core.config import Settings
 from storage.hotwords import HotwordStore
@@ -971,14 +972,12 @@ class SessionProcessor(threading.Thread):
         # Handle transcripts and speaker assignments.
         valid_ids = {lib["id"] for lib in self.hotword_store.list_hotwords()}
         self.hotword_ids = [hid for hid in self.hotword_ids if hid in valid_ids]
-        self._hotword_str = " ".join(words)
-        self.active_hotword_count = len(words)
-        if len(words) >= self._hotword_limit:
-            logger.warning(
-                "[%s] hotwords capped at %d, rest ignored",
-                self.session_id[:8],
-                self._hotword_limit,
-            )
+        selected = prompt_terms(words)
+        self._hotword_str = "\n".join(selected)
+        self.active_hotword_count = len(selected)
+        if len(words) >= self._hotword_limit or len(selected) < len(words):
+            logger.warning("[%s] hotword list limited to %d terms",
+                           self.session_id[:8], self.active_hotword_count)
 
     def rebuild_labels(self) -> None:
         """Audio transcription and speaker data handling."""
@@ -1052,7 +1051,9 @@ class SessionProcessor(threading.Thread):
         phase07_asr_started = time.monotonic()
         current_content_trace = None
         if self._speech_settings.engine == "legacy":
-            sentences = self.models.transcribe_sentences(audio, hotword=self._hotword_str or None)
+            sentences = self.models.transcribe_sentences(
+                audio, hotword=self._hotword_str.replace("\n", " ") or None,
+            )
         else:
             recognition = self.models.recognize_multilingual(
                 asr_audio,
