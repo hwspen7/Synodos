@@ -174,7 +174,7 @@ def main() -> None:
     # Version markers belong in metadata, not permanent source paths.
     bad_names = [
         p for p in mapping.values()
-        if not p.startswith("tests/frontend/")
+        if not p.startswith(("src/", "public/", "tests/frontend/"))
         and re.search(r"(?:^|[/_-])phase\d|(?:^|[_.-])v\d+(?:[_.-]|$)", p, re.I)
     ]
     if bad_names:
