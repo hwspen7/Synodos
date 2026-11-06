@@ -66,6 +66,7 @@ from sessions.speaker_evidence import speaker_evidence
 from sessions.registered_identity import match_saved_voice
 from sessions.corroborated_speaker_channels import CorroboratedSpeakerChannels
 from sessions.speaker_cluster_birth import gate_new_cluster_births
+from sessions.short_turn_identity import recover_short_turn_identity
 from sessions.speaker_partition_evidence import consistent_partition_embedding
 from speech.acoustic_timeline import AcousticTimeline
 from speech.diarization import resolve_diarization_mode
@@ -1773,6 +1774,14 @@ class SessionProcessor(threading.Thread):
         if changed_historical:
             metrics.increment("speaker_historical_relabels_prevented",
                               changed_historical)
+        # Short probes cannot establish new people, but can safely reuse an
+        # earlier strong voiceprint. Their ASR words and source time remain
+        # unchanged and the identity remains explicitly provisional.
+        recovered = recover_short_turn_identity(
+            self.segments, sample_rate=self.settings.sample_rate,
+        )
+        if recovered:
+            metrics.increment("speaker_short_voice_recovered", recovered)
 
     def _fallback_labels(self) -> None:
         """Publish all confirmed text even if clustering fails."""
