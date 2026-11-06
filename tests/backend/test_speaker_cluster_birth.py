@@ -7,7 +7,7 @@ from __future__ import annotations
 import unittest
 import numpy as np
 
-from sessions.speaker_cluster_birth import gate_new_cluster_births
+from sessions.speaker_cluster_birth import (gate_new_cluster_births, _bounded_references, MAX_ANCHOR_VECTORS)
 
 
 def row(number, cluster, vector, start, end, **extra):
@@ -102,6 +102,16 @@ class SpeakerClusterBirthTests(unittest.TestCase):
         self.assertEqual(turns[1]["speaker_id"], 9)
         self.assertEqual(turns[1]["speaker_name"], "Manually confirmed")
         self.assertEqual(turns[2]["speaker_id"], 10)
+
+    def test_long_meeting_voice_reference_pool_is_bounded(self):
+        long_history = [
+            np.asarray([1.0, .001 * i], dtype=np.float32)
+            for i in range(1000)
+        ]
+        selected = _bounded_references(long_history)
+        self.assertEqual(len(selected), MAX_ANCHOR_VECTORS)
+        self.assertTrue(np.array_equal(selected[0], long_history[0]))
+        self.assertTrue(np.array_equal(selected[-1], long_history[-1]))
 
     def test_followup_reclustering_does_not_restore_old_phantom_label(self):
         turns = [
