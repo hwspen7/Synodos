@@ -20,12 +20,17 @@ test('meeting tools share exactly one active destination', () => {
   assert.doesNotMatch(source, /const showAdvancedControls = ref/)
 })
 
-test('meeting tool controls live inside the local sidebar', () => {
-  const nav = source.slice(source.indexOf('class="meeting-tool-sidebar"'), source.indexOf('</nav>', source.indexOf('class="meeting-tool-sidebar"')))
-  for (const tool of ['transcript', 'review', 'recordings', 'settings']) {
-    assert.ok(nav.includes("selectMeetingTool('" + tool + "')"), tool + ' navigation missing')
+test('meeting-local tools appear once in the compact header, not duplicated in navigation', () => {
+  const header = source.slice(
+    source.indexOf('<header class="compact-meeting-header'),
+    source.indexOf('</header>') + 9,
+  )
+  for (const tool of ['review', 'recordings', 'settings']) {
+    assert.ok(header.includes("'" + tool + "'"), 'Missing tool in header: ' + tool)
   }
+  assert.match(header, /class="synodos-meeting-more"/)
   assert.match(source, /class="meeting-detail-panel"/)
+  assert.doesNotMatch(source, /class="meeting-tool-sidebar"/)
   assert.doesNotMatch(source, /showReviewPanel = !showReviewPanel/)
   assert.doesNotMatch(source, /showRecordings = !showRecordings/)
   assert.doesNotMatch(source, /showAdvancedControls = !showAdvancedControls/)
@@ -60,7 +65,7 @@ test('existing transcription and recording workflows are retained', () => {
 
 test('responsive tool CSS has no unbalanced blocks', () => {
   assert.equal((css.match(/\{/g) || []).length, (css.match(/\}/g) || []).length)
-  for (const selector of ['meeting-tool-sidebar', 'meeting-detail-panel', 'meeting-review-tools']) {
+  for (const selector of ['meeting-detail-panel', 'meeting-review-tools']) {
     assert.ok(css.includes('.' + selector))
   }
   assert.match(css, /@media\(max-width:720px\)/)

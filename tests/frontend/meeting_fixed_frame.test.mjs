@@ -8,21 +8,22 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const page = readFileSync(path.join(root, 'src/pages/MeetingPage.vue'), 'utf8')
 const css = readFileSync(path.join(root, 'src/assets/meeting-tool-layout.css'), 'utf8')
 
-test('Synodos meeting header, real speaker cards and recording bar preserve actions', () => {
-  const header = page.slice(page.indexOf('<header class="compact-meeting-header">'), page.indexOf('</header>') + 9)
-  const session = page.slice(page.indexOf('class="synodos-session-bar"'), page.indexOf('class="meeting-workspace"'))
+test('a single meeting command bar keeps every critical action reachable', () => {
+  const header = page.slice(
+    page.indexOf('<header class="compact-meeting-header'),
+    page.indexOf('</header>') + 9,
+  )
   for (const value of [
-    'meetingTitle', 'statusText', 'meeting-header-context',
-    'translationTarget', 'durableSeconds', 'workspace-export-menu',
-    'showParticipants = true',
+    'meetingTitle', 'statusText', 'synodos-compact-toolbar',
+    "activeReviewTool = 'speakers'", 'synodos-language-control',
+    "saveMeeting()", "recording ? stop() : start()",
+    "exportMeeting('md')", "exportMeeting('json')", 'copyTranscript',
+    "selectMeetingTool('recordings')", "selectMeetingTool('settings')",
   ]) assert.ok(header.includes(value), 'Missing header content: ' + value)
-  for (const value of ["saveMeeting()", "recording ? stop() : start()", 'supportedLanguages']) {
-    assert.ok(session.includes(value), 'Missing session action: ' + value)
-  }
-  assert.match(page, /class="synodos-participant-stage"/)
-  assert.match(page, /meetingCast\.slice\(0, 3\)/)
+  assert.match(page, /class="synodos-meeting-center"/)
+  assert.match(page, /class="synodos-transcript-heading"/)
   assert.doesNotMatch(page, /class="meeting-workspace-summary"/)
-  assert.match(header, /\{\{ paragraphs\.length \}\} turns/)
+  assert.doesNotMatch(page, /class="synodos-participant-stage"|class="meeting-tool-sidebar"/)
 })
 
 test('desktop meeting fills viewport and only content panes scroll', () => {

@@ -7,76 +7,78 @@ import path from 'node:path'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 const read = (name) => readFileSync(path.join(root, name), 'utf8')
 
-test('Synodos keeps a distinct Greek-inspired identity throughout the app', () => {
+test('Synodos identity stays compact and warm', () => {
   const app = read('src/App.vue')
   const logo = read('src/components/SynodosMark.vue')
   const favicon = read('public/favicon.svg')
   const html = read('index.html')
   assert.match(app, /SynodosMark/)
   assert.match(app, /synodos-topbar/)
-  assert.match(app, /Meet <b>·<\/b> Transcribe <b>·<\/b> Understand/)
   assert.match(logo, /fill="#EB7100"/)
   assert.match(favicon, /#EB7100/)
-  assert.doesNotMatch(logo, /8850c9|4c1d83|68389a/i)
   assert.match(html, /<title>Synodos/)
-  assert.doesNotMatch(html, /<title>Meeting of Pioneers/)
+  assert.doesNotMatch(app, /synodos-tagline|synodos-profile-bubble|synodos-topbar-link/)
+  assert.doesNotMatch(logo, /8850c9|4c1d83|68389a/i)
 })
 
-test('meeting follows reference layout with live data, not invented participants', () => {
+test('global sidebar lists unique destinations with no meeting-local duplicates', () => {
+  const app = read('src/App.vue')
+  for (const route of ['to="/"', 'to="/#meetings"', 'to="/speakers"', 'to="/hotwords"', 'to="/settings"']) {
+    assert.ok(app.includes(route), 'Missing global route ' + route)
+  }
+  assert.doesNotMatch(app, /title="Live Captions"|title="Summaries"|summaryHref|meetingHref/)
+  assert.equal((app.match(/class="workspace-nav-item"/g) || []).length, 5)
+})
+
+test('meeting uses a single command bar and keeps all existing tools reachable', () => {
   const meeting = read('src/pages/MeetingPage.vue')
-  assert.match(meeting, /class="synodos-participant-stage"/)
-  assert.match(meeting, /const meetingCast = computed/)
-  assert.match(meeting, /reviewSpeakers\.value\.map/)
-  assert.match(meeting, /participantNames\.value\.map/)
-  assert.match(meeting, /meetingCast\.slice\(0, 3\)/)
-  assert.match(meeting, /class="synodos-session-bar"/)
+  const header = meeting.slice(
+    meeting.indexOf('<header class="compact-meeting-header'),
+    meeting.indexOf('</header>') + 9,
+  )
+  assert.match(header, /class="synodos-compact-toolbar"/)
+  for (const operation of [
+    "activeReviewTool = 'speakers'", "saveMeeting()", "recording ? stop() : start()",
+    "selectMeetingTool('recordings')", "selectMeetingTool('settings')",
+    "exportMeeting('md')", "exportMeeting('json')", "copyTranscript",
+    "activeMeetingTool === 'review' ? 'transcript' : 'review'",
+  ]) assert.ok(header.includes(operation), 'Missing command bar action ' + operation)
+  assert.match(header, /aria-label="Recognition language"/)
+  assert.doesNotMatch(meeting, /class="synodos-participant-stage"|class="synodos-top-controls"|class="synodos-session-bar"/)
+  assert.doesNotMatch(meeting, /class="meeting-tool-sidebar"/)
   assert.match(meeting, /class="synodos-meeting-center"/)
-  assert.match(meeting, /class="synodos-transcript-heading"/)
   assert.match(meeting, /<IntelligencePanel v-if="activeReviewTool === 'overview'" compact/)
   assert.doesNotMatch(meeting, /<video\b/)
 })
 
-test('new navigation and settings remain connected to real workflows', () => {
-  const app = read('src/App.vue')
-  const route = read('src/router/index.ts')
-  const prefs = read('src/pages/SettingsPage.vue')
-  assert.match(app, /to="\/speakers"/)
-  assert.match(app, /to="\/hotwords"/)
-  assert.match(app, /settingsHref/)
-  assert.match(route, /path: '\/settings'/)
-  assert.match(prefs, /fetch\('\/api\/health'\)/)
-  assert.match(prefs, /Open meetings/)
-  assert.match(read('src/main.ts'), /synodos-theme\.css/)
+test('overlap diagnostic message is not displayed in the transcript', () => {
+  const meeting = read('src/pages/MeetingPage.vue')
+  assert.doesNotMatch(meeting, /Overlapping voices detected in|Untranscribed words are never fabricated|transcript-overlap-warning/)
+  assert.match(meeting, /para\.overlapping/)
+  assert.match(meeting, /buildTranscriptParagraphs/)
 })
 
-test('responsive design style rules remain balanced', () => {
+test('compact meeting style is content-first and keeps an optional side assistant', () => {
   const css = read('src/assets/synodos-theme.css')
   assert.match(css, /--mop-primary: #eb7100/i)
   assert.match(css, /--mop-accent: #f37021/i)
   assert.match(css, /--synodos-paper: #faf8f5/i)
-  assert.doesNotMatch(css, /#68389a|#8850c9|#4b196f/i)
-  assert.match(css, /@media \(max-width:760px\)/)
+  assert.match(css, /grid-template-rows: 52px minmax\(0, 1fr\)/)
+  assert.match(css, /grid-template-columns:minmax\(0,1fr\) minmax\(310px,25%\)/)
+  assert.match(css, /meeting-workspace:not\(\.tool-panel-open\)/)
+  assert.match(css, /\.synodos-meeting-more-popover/)
+  assert.match(css, /@media\(max-width:760px\)/)
   assert.match(css, /prefers-reduced-motion:reduce/)
+  assert.doesNotMatch(css, /#68389a|#8850c9|#4b196f/i)
+  assert.doesNotMatch(css, /synodos-participant-stage|synodos-top-controls/)
   assert.equal((css.match(/\{/g) || []).length, (css.match(/\}/g) || []).length)
 })
 
-test('compact meeting chrome prioritizes transcript space without hiding controls', () => {
-  const meeting = read('src/pages/MeetingPage.vue')
-  const styles = read('src/assets/synodos-theme.css')
-  const compact = styles.slice(styles.indexOf('/* Compact meeting chrome:'))
-  const topControls = meeting.indexOf('class="synodos-top-controls"')
-  const speakers = meeting.indexOf('class="synodos-participant-stage"', topControls)
-  const recorder = meeting.indexOf('class="synodos-session-bar"', topControls)
-  const transcript = meeting.indexOf('class="meeting-workspace"', topControls)
-  assert.ok(topControls >= 0 && topControls < speakers && speakers < recorder && recorder < transcript)
-  assert.match(meeting, /class="synodos-speaker-strip-label"/)
-  assert.match(compact, /grid-template-rows:58px minmax\(0,1fr\)/)
-  assert.match(compact, /grid-template-columns:minmax\(235px,1fr\) max-content/)
-  assert.match(compact, /flex:0 1 172px/)
-  assert.match(compact, /height:33px/)
-  assert.match(compact, /@media\(max-width:760px\)/)
-  assert.doesNotMatch(compact, /height:113px|min-height:110px/)
-  for (const operation of ["saveMeeting()", "recording ? stop() : start()", "exportMeeting('md')"]) {
-    assert.ok(meeting.includes(operation), 'Missing meeting operation: ' + operation)
-  }
+test('meeting settings and backend-connected screens are still available', () => {
+  const route = read('src/router/index.ts')
+  const settings = read('src/pages/SettingsPage.vue')
+  assert.match(route, /path: '\/settings'/)
+  assert.match(settings, /fetch\('\/api\/health'\)/)
+  assert.match(settings, /Open meetings/)
+  assert.match(read('src/main.ts'), /synodos-theme\.css/)
 })

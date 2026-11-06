@@ -60,6 +60,10 @@ const saving = ref(false)
 const speakers = ref<Speaker[]>([])
 const hotwords = ref<HotwordLibrary[]>([])
 const showParticipants = ref(false)
+const moreMenuRef = ref<HTMLDetailsElement | null>(null)
+function closeMeetingActions(): void {
+  if (moreMenuRef.value) moreMenuRef.value.open = false
+}
 const showDiagnostics = ref(false)
 const showAllRecordings = ref(false)
 type MeetingTool = 'transcript' | 'review' | 'recordings' | 'settings'
@@ -200,9 +204,6 @@ const paragraphs = computed<Paragraph[]>(() =>
     channelHeadings: reportedSegments.value !== null,
     singlePrimarySpeaker: reportedSegments.value === null }),
 )
-const overlapWarnings = computed(() => segments.value.reduce(
-  (sum, seg) => sum + (seg.overlap_intervals_ms?.length ?? 0), 0,
-))
 const untranslatedCount = computed(() => segments.value.filter((seg) =>
   translationTarget.value && seg.language !== translationTarget.value &&
   (seg.translation_target !== translationTarget.value || !seg.translation?.trim()),
@@ -879,96 +880,86 @@ onBeforeUnmount(() => stopInternal())
 
 <template>
   <div class="meeting-page">
-    <header class="compact-meeting-header">
+    <header class="compact-meeting-header synodos-compact-toolbar">
       <div class="compact-meeting-heading">
-        <button type="button" class="meeting-back" aria-label="Back to home" title="Back to home" @click="router.push('/')">
-          <AppIcon name="arrow-left" :size="18" />
+        <button type="button" class="meeting-back" aria-label="Back to meetings"
+          title="Back to meetings" @click="router.push('/#meetings')">
+          <AppIcon name="arrow-left" :size="17" />
         </button>
         <div class="compact-meeting-titles">
-          <h1>{{ meetingTitle || 'Untitled Meeting' }}</h1>
-          <div class="meeting-running-status">
-            <span class="status-chip" :class="statusClass"><span class="status-dot" aria-hidden="true"></span>{{ statusText }}</span>
-            <span v-if="recording" class="compact-mic-meter" :style="{ '--mic-fill': Math.min(100, micLevel * 300) + '%' }" aria-label="Microphone input level"></span>
-            <span v-if="recording">Captured {{ capturedSeconds.toFixed(1) }}s · Received {{ deliveredSeconds.toFixed(1) }}s</span>
-            <span v-else>{{ paragraphs.length }} turns</span>
-          </div>
-          <div class="meeting-header-context" aria-label="Meeting details">
-            <span><strong>Language</strong> {{ language === 'auto' ? 'Auto' : language.toUpperCase() }}</span>
-            <span class="identity-mode-label"><strong>Voice identities</strong> {{ selectedParticipantIds.length ? selectedParticipantIds.length + ' selected' : !autoMatchSaved ? 'Off' : serverInfo && (!serverInfo.auto_match_active || serverInfo.auto_match_profile_count === 0) ? 'No eligible voices' : 'Auto library match' }}</span>
-            <span><strong>Translation</strong> {{ translationTarget || 'Off' }}</span>
-            <span v-if="durableSeconds !== null"><strong>Audio</strong> {{ durableSeconds.toFixed(1) }}s saved</span>
+          <h1 :title="meetingTitle || 'Untitled Meeting'">{{ meetingTitle || 'Untitled Meeting' }}</h1>
+          <div class="meeting-running-status" role="status">
+            <span class="status-chip" :class="statusClass">
+              <span class="status-dot" aria-hidden="true"></span>{{ statusText }}
+            </span>
+            <span v-if="recording" class="compact-mic-meter"
+              :style="{ '--mic-fill': Math.min(100, micLevel * 300) + '%' }"
+              aria-label="Microphone input level"></span>
+            <span v-if="recording" class="synodos-recording-time">
+              {{ capturedSeconds.toFixed(0) }}s recorded
+            </span>
           </div>
         </div>
       </div>
-      <div class="synodos-meeting-heading-actions">
-        <button type="button" class="synodos-participants-button" @click="showParticipants = true">
-          <AppIcon name="users" :size="16" /> Participants ({{ meetingCast.length }})
+      <div class="synodos-meeting-heading-actions" aria-label="Meeting actions">
+        <button type="button" class="synodos-participants-button"
+          :title="`${meetingCast.length} speakers in this meeting`"
+          @click="selectMeetingTool('review'); activeReviewTool = 'speakers'">
+          <AppIcon name="users" :size="16" />
+          <span>Speakers</span>
+          <span class="synodos-speaker-count">{{ meetingCast.length }}</span>
         </button>
-        <details class="workspace-export-menu">
-          <summary><AppIcon name="download" :size="15" /> Export <span aria-hidden="true">⌄</span></summary>
-          <div class="workspace-export-options">
-            <button type="button" @click="exportMeeting('md')">Download transcript (.md)</button>
-            <button type="button" @click="exportMeeting('json')">Download structured data (.json)</button>
-            <button type="button" :disabled="paragraphs.length === 0" @click="copyTranscript">Copy transcript</button>
-          </div>
-        </details>
-      </div>
-    </header>
-
-    <div class="synodos-top-controls">
-      <section class="synodos-participant-stage" aria-label="Meeting speakers">
-        <span class="synodos-speaker-strip-label">Speakers</span>
-      <div v-if="meetingCast.length" class="synodos-participant-grid">
-        <button v-for="speaker in meetingCast.slice(0, 3)" :key="speaker.id"
-          class="synodos-participant-card" type="button"
-          :disabled="speaker.firstSegmentId === null"
-          :style="{ '--synodos-speaker-accent': speakerColor(speaker.id) }"
-          :title="speaker.firstSegmentId !== null ? 'Review speaker details' : 'Saved participant'"
-          @click="speaker.firstSegmentId !== null && inspectSpeaker(speaker.firstSegmentId)">
-          <span class="synodos-participant-orbit" aria-hidden="true"></span>
-          <span class="synodos-participant-avatar">{{ speakerInitials(speaker.name) }}</span>
-          <span class="synodos-participant-caption">
-            <span class="synodos-participant-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-            <strong>{{ speaker.name }}</strong><small>{{ speaker.turns ? speaker.turns + ' turns' : 'Ready' }}</small>
-          </span>
-        </button>
-        <div v-if="meetingCast.length > 3" class="synodos-participant-extra" :aria-label="`${meetingCast.length - 3} more speakers`">
-          +{{ meetingCast.length - 3 }}
-        </div>
-      </div>
-      <div v-else class="synodos-participants-empty">
-        <span class="synodos-empty-avatar"><AppIcon name="users" :size="29" /></span>
-        <div><strong>Speakers appear as you record</strong>
-          <p>Start recording to see recognized participants here. No video stream is required.</p></div>
-      </div>
-    </section>
-
-    <div class="synodos-session-bar">
-      <div class="synodos-session-indicators">
-        <span class="synodos-live-pill" :class="{ 'is-live': recording }">
-          <span aria-hidden="true"></span>{{ recording ? 'Live' : 'Ready' }}
-        </span>
-        <span class="synodos-caption-state"><AppIcon name="file-text" :size="15" /> Captions {{ recording ? 'On' : 'Ready' }}</span>
         <label class="synodos-language-control">
           <span>Language</span>
-          <select v-model="language" :disabled="recording || status === 'connecting' || status === 'stopping'" aria-label="Recognition language">
-            <option v-for="option in supportedLanguages" :key="option[0]" :value="option[0]">{{ option[1] }}</option>
+          <select v-model="language"
+            :disabled="recording || status === 'connecting' || status === 'stopping'"
+            aria-label="Recognition language">
+            <option v-for="option in supportedLanguages" :key="option[0]"
+              :value="option[0]">{{ option[1] }}</option>
           </select>
         </label>
-      </div>
-      <div class="compact-meeting-toolbar" aria-label="Meeting actions">
-        <button class="btn btn-ghost toolbar-save" :disabled="saving" @click="saveMeeting()">
+        <button type="button" class="synodos-quick-tool"
+          :class="{ active: activeMeetingTool === 'review' }"
+          :aria-pressed="activeMeetingTool === 'review'"
+          @click="selectMeetingTool(activeMeetingTool === 'review' ? 'transcript' : 'review')">
+          <AppIcon name="edit" :size="16" /><span>AI</span>
+        </button>
+        <details ref="moreMenuRef" class="synodos-meeting-more">
+          <summary aria-label="More meeting actions" title="More meeting actions">···</summary>
+          <div class="synodos-meeting-more-popover">
+            <button type="button" @click="selectMeetingTool('recordings'); closeMeetingActions()">
+              <AppIcon name="list" :size="16" /> Recordings
+            </button>
+            <button type="button" @click="selectMeetingTool('settings'); closeMeetingActions()">
+              <AppIcon name="settings" :size="16" /> Meeting settings
+              <span v-if="settingsPending" class="meeting-tool-unsaved" title="Unsaved changes"></span>
+            </button>
+            <div class="synodos-more-divider" aria-hidden="true"></div>
+            <button type="button" @click="exportMeeting('md'); closeMeetingActions()">
+              <AppIcon name="download" :size="16" /> Export transcript
+            </button>
+            <button type="button" @click="exportMeeting('json'); closeMeetingActions()">
+              <AppIcon name="download" :size="16" /> Export JSON
+            </button>
+            <button type="button" :disabled="paragraphs.length === 0" @click="copyTranscript(); closeMeetingActions()">
+              <AppIcon name="file-text" :size="16" /> Copy transcript
+            </button>
+          </div>
+        </details>
+        <button type="button" class="btn btn-ghost toolbar-save"
+          :disabled="saving" @click="saveMeeting()">
           <AppIcon name="save" :size="16" /> {{ saving ? 'Saving...' : 'Save' }}
         </button>
-        <button class="btn btn-primary compact-record-action" :class="{ danger: recording }"
+        <button type="button" class="btn btn-primary compact-record-action"
+          :class="{ danger: recording }"
           :disabled="status === 'connecting' || status === 'stopping'"
           @click="recording ? stop() : start()">
           <AppIcon :name="recording ? 'stop' : 'mic'" :size="17" />
           {{ recording ? 'Stop recording' : 'Start recording' }}
         </button>
       </div>
-    </div>
-    </div>
+    </header>
+
     <p v-if="settingsPending && !recording" class="hint-text warn-text" role="status">Settings changed. Apply to save them, or start recording to use these values.</p>
     <p v-if="selectedWithoutVoiceprints.length" class="hint-text warn-text" role="status">
       {{ selectedWithoutVoiceprints.length }} selected participant(s) have no usable voiceprints. Enroll clean voice samples before relying on identification.
@@ -985,30 +976,9 @@ onBeforeUnmount(() => stopInternal())
     </div>
     <div class="meeting-workspace" :class="{ 'tool-panel-open': activeMeetingTool !== 'transcript' }">
       <div class="synodos-meeting-center">
-      <nav class="meeting-tool-sidebar" aria-label="Meeting tools">
-        <div class="meeting-tool-nav-title">CONTENT</div>
-        <button type="button" class="meeting-tool-link" :class="{ active: activeMeetingTool === 'transcript' }" :aria-current="activeMeetingTool === 'transcript' ? 'page' : undefined" @click="selectMeetingTool('transcript')">
-          <AppIcon name="file-text" :size="18" /><span>Live Transcript</span>
-        </button>
-        <div class="meeting-tool-nav-title meeting-tool-section-title">TOOLS</div>
-        <button type="button" class="meeting-tool-link" :class="{ active: activeMeetingTool === 'review' }" :aria-pressed="activeMeetingTool === 'review'" @click="selectMeetingTool('review')">
-          <AppIcon name="edit" :size="18" /><span>AI Summary</span>
-        </button>
-        <button type="button" class="meeting-tool-link" :class="{ active: activeMeetingTool === 'recordings' }" :aria-pressed="activeMeetingTool === 'recordings'" @click="selectMeetingTool('recordings')">
-          <AppIcon name="list" :size="18" /><span>Recordings</span>
-        </button>
-        <button type="button" class="meeting-tool-link" :class="{ active: activeMeetingTool === 'settings' }" :aria-pressed="activeMeetingTool === 'settings'" @click="selectMeetingTool('settings')">
-          <AppIcon name="settings" :size="18" /><span>Settings</span>
-          <span v-if="settingsPending" class="meeting-tool-unsaved" title="Unsaved changes"></span>
-        </button>
-        <div class="meeting-tool-nav-bottom">
-          <span class="meeting-tool-status-dot" :class="{ recording }"></span>
-          <span>{{ recording ? 'Recording now' : 'Local session' }}</span>
-        </div>
-      </nav>
       <div class="meeting-primary">
         <div class="synodos-transcript-heading">
-          <span><AppIcon name="file-text" :size="17" /><strong>Live Transcript</strong></span>
+          <span><strong>Transcript</strong></span>
           <small>{{ paragraphs.length }} {{ paragraphs.length === 1 ? 'turn' : 'turns' }}</small>
         </div>
     <main ref="transcriptEl" class="transcript" @scroll="onTranscriptScroll">
@@ -1023,11 +993,6 @@ onBeforeUnmount(() => stopInternal())
       </div>
 
       <template v-else>
-        <p v-if="overlapWarnings > 0" class="transcript-overlap-warning">
-          Overlapping voices detected in {{ overlapWarnings }} acoustic intervals.
-          The system may not have transcribed every simultaneous speaker.
-          Untranscribed words are never fabricated.
-        </p>
         <article v-for="para in paragraphs" :key="para.id" :data-paragraph-id="para.id"
           class="paragraph" :class="{ 'paragraph-unidentified': para.speaker_id <= 0,
             'paragraph-highlighted': highlightedSegmentId !== null && para.segmentIds.includes(highlightedSegmentId) }">
@@ -1097,8 +1062,7 @@ onBeforeUnmount(() => stopInternal())
       <aside v-if="activeMeetingTool !== 'transcript'" class="meeting-detail-panel" :aria-label="activeMeetingTool === 'review' ? 'Review tools' : activeMeetingTool === 'settings' ? 'Meeting settings' : 'Recording library'">
         <header class="meeting-detail-header">
           <div>
-            <span class="transcript-eyebrow">{{ activeMeetingTool === 'review' ? 'MEETING INTELLIGENCE' : activeMeetingTool === 'settings' ? 'PREFERENCES' : 'AUDIO LIBRARY' }}</span>
-            <h2>{{ activeMeetingTool === 'review' ? 'AI Summary' : activeMeetingTool === 'settings' ? 'Meeting settings' : 'Recordings' }}</h2>
+            <h2>{{ activeMeetingTool === 'review' ? 'Assistant' : activeMeetingTool === 'settings' ? 'Meeting settings' : 'Recordings' }}</h2>
           </div>
           <button type="button" class="meeting-back" aria-label="Close tool panel" @click="selectMeetingTool('transcript')"><AppIcon name="x" :size="17" /></button>
         </header>

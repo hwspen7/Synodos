@@ -34,16 +34,16 @@
 html, body, #app { background: var(--ui-canvas); }
 body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
 .synodos-shell {
-  --sidebar-width: 205px;
+  --sidebar-width: 188px;
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
-  grid-template-rows: 80px minmax(0, 1fr);
+  grid-template-rows: 52px minmax(0, 1fr);
   min-height: 100vh;
   background:var(--synodos-paper);
 }
-.synodos-shell.sidebar-collapsed { --sidebar-width: 80px; }
-.synodos-shell.meeting-route { --sidebar-width: 205px; }
-.synodos-shell.meeting-route.sidebar-collapsed { --sidebar-width: 80px; }
+.synodos-shell.sidebar-collapsed { --sidebar-width: 66px; }
+.synodos-shell.meeting-route { --sidebar-width: 188px; }
+.synodos-shell.meeting-route.sidebar-collapsed { --sidebar-width: 66px; }
 .synodos-topbar {
   grid-column: 1 / -1;
   grid-row: 1;
@@ -55,19 +55,19 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
   justify-content:space-between;
   gap:18px;
   min-width:0;
-  padding: 10px clamp(20px,2.4vw,42px);
+  height:52px;min-height:52px;padding:4px 19px;
   border-bottom:1px solid #e9e1d8;
   border-radius:0;
   background:#fff;
-  box-shadow:0 1px 3px rgba(46,39,29,.035);
+  box-shadow:none;
 }
 .synodos-topbar-branding { display:flex;align-items:center;gap:26px;min-width:0; }
 .synodos-shell .synodos-brand {
-  display:flex;gap:10px;align-items:center;min-height:50px;
-  padding:0;color:#914007;text-decoration:none;white-space:nowrap;
+  display:flex;gap:8px;align-items:center;min-height:36px;
+  padding:0;color:#292521;text-decoration:none;white-space:nowrap;
 }
-.synodos-brand-mark { flex:none;filter:drop-shadow(0 4px 6px rgba(105,65,35,.10)); }
-.synodos-brand-name { color:#292521;font-size:clamp(24px,2.1vw,32px);font-weight:850;letter-spacing:-.065em;line-height:1; }
+.synodos-brand-mark { flex:none;width:34px;height:34px; }
+.synodos-brand-name { color:#292521;font-size:23px;font-weight:820;letter-spacing:-.065em;line-height:1; }
 .synodos-brand-divider { width:1px;height:39px;background:#f0e3d5; }
 .synodos-tagline { color:#756459;font-size:13px;white-space:nowrap;font-weight:530;letter-spacing:-.012em; }
 .synodos-tagline b { color:#f37021;padding:0 9px;font-size:17px;font-weight:900; }
@@ -82,16 +82,16 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
 }
  .synodos-shell .workspace-sidebar {
   grid-column:1;grid-row:2;
-  top:80px;position:sticky;z-index:46;
-  height:calc(100dvh - 80px);min-height:0;
-  padding:28px 12px 15px;background:#fff;border-right:1px solid #ece6dd;
+  top:52px;position:sticky;z-index:46;
+  height:calc(100dvh - 52px);min-height:0;
+  padding:16px 12px 12px;background:#fff;border-right:1px solid #ece6dd;
   overflow-x:hidden;overflow-y:auto;
 }
 .synodos-shell .workspace-sidebar>.workspace-nav,
 .synodos-shell .sidebar-bottom { position:relative;z-index:1; }
 .synodos-shell .workspace-sidebar .workspace-nav { display:flex;flex-direction:column;gap:6px; }
 .synodos-shell .workspace-nav-item {
-  min-height:46px;gap:12px;padding:0 14px;border-radius:12px;
+  min-height:41px;gap:11px;padding:0 12px;border-radius:10px;
   color:#756459;font-size:13px;font-weight:600;
 }
 .synodos-shell .workspace-nav-item:hover { background:#fdfbf8;color:#a6480b; }
@@ -116,11 +116,8 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
 .synodos-shell.sidebar-collapsed .workspace-collapse-btn span,
 .synodos-shell.meeting-route.sidebar-collapsed .workspace-nav-item>span { display:none; }
 .synodos-shell.sidebar-collapsed .workspace-nav-item { justify-content:center;padding:0; }
-.synodos-shell.meeting-route:not(.sidebar-collapsed) .workspace-sidebar .workspace-nav-item>span { display:inline; }
-.synodos-shell.meeting-route:not(.sidebar-collapsed) .workspace-sidebar .workspace-nav-item { justify-content:flex-start;padding:0 14px; }
-.synodos-shell.meeting-route:not(.sidebar-collapsed) .workspace-collapse-btn span { display:inline; }
 .synodos-shell .workspace-main-column { grid-column:2;grid-row:2;min-height:0; }
-.synodos-shell.meeting-route .workspace-main-column { height:calc(100dvh - 80px); }
+.synodos-shell.meeting-route .workspace-main-column { height:calc(100dvh - 52px); }
 .synodos-shell .workspace-page-content { min-height:0; }
 .synodos-shell .workspace-mobile-menu.synodos-mobile-menu { display:none; }
 .synodos-shell .btn-primary { background:#c4550d;border-color:#c4550d;color:#fff; }
@@ -155,209 +152,6 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
 .synodos-shell .shortcut-icon { background:#fdfbf8;color:#a44906; }
 .synodos-shell .home-library-shortcut:hover { border-color:#e4d4c4; }
 
-/* Meeting — fixed frame with a centered transcript and real AI rail */
-.synodos-shell.meeting-route { height:100dvh;overflow:hidden; }
-.synodos-shell.meeting-route .workspace-page-content { display:flex;height:100%;overflow:hidden; }
-.synodos-shell.meeting-route .meeting-page {
-  --meeting-purple:#a6480b;
-  --meeting-orange:#f37021;
-  width:100%;max-width:1800px!important;height:100%;min-height:0;overflow:hidden;
-  padding:17px clamp(15px,1.7vw,29px) 18px!important;
-  margin:0 auto;
-  display:flex;flex-direction:column;
-}
-.synodos-shell.meeting-route .compact-meeting-header {
-  display:flex;align-items:center;justify-content:space-between;min-height:72px;
-  padding:15px 20px;margin-bottom:10px;gap:12px;
-  border:1px solid #e9e1d8;border-radius:16px;background:#fff;
-  box-shadow:0 7px 24px rgba(48,38,25,.035);
-}
-.synodos-shell.meeting-route .compact-meeting-titles h1 {
-  color:#2d2925;font-size:clamp(21px,1.7vw,27px);font-weight:850;letter-spacing:-.04em;
-}
-.synodos-shell.meeting-route .meeting-back { border-color:#faf5ee;color:#8d7d70; }
-.synodos-shell.meeting-route .meeting-back:hover { background:#fdfbf8;border-color:#f0e3d5;color:#a6480b; }
-.synodos-shell.meeting-route .meeting-running-status { gap:8px;color:#8d7d70;font-size:11px; }
-.synodos-shell.meeting-route .meeting-running-status .status-chip { background:#fdfbf8;color:#8d7d70; }
-.synodos-shell.meeting-route .status-chip.ok { color:#257b59;background:#eef8f1; }
-.synodos-shell.meeting-route .meeting-header-context { color:#8e8795;gap:4px 11px;font-size:10px; }
-.synodos-shell.meeting-route .meeting-header-context strong { color:#756459; }
-.synodos-meeting-heading-actions { display:flex;align-items:center;gap:9px;flex:none; }
-.synodos-participants-button {
-  display:flex;align-items:center;gap:8px;min-height:36px;
-  padding:8px 12px;border:1px solid #f5ece2;border-radius:10px;background:#fff;
-  font-size:11px;font-weight:730;color:#756459;white-space:nowrap;
-}
-.synodos-participants-button:hover { background:#fdfbf8;color:#a6480b; }
-.synodos-shell.meeting-route .workspace-export-menu { margin:0; }
-.synodos-shell.meeting-route .workspace-export-menu>summary { border:1px solid #f5ece2;background:#fff;padding:8px 12px;border-radius:10px;color:#a44906;font-size:11px; }
-.synodos-shell.meeting-route .workspace-export-menu>summary:hover { background:#fdfbf8;color:#a6480b; }
-.synodos-shell.meeting-route .workspace-export-options { border-color:#faf5ee;box-shadow:0 18px 42px rgba(48,38,25,.14); }
-.synodos-shell.meeting-route .workspace-export-options button:hover { background:#fdfbf8;color:#a6480b; }
-.synodos-participant-stage {
-  flex:none;min-height:110px;margin-bottom:8px;
-  padding:11px 13px;border:1px solid #faf5ee;border-radius:16px;
-  background:#fff;
-  box-shadow:0 6px 19px rgba(48,38,25,.032);
-}
-.synodos-participant-grid { display:flex;align-items:stretch;gap:9px;height:113px; }
-.synodos-participant-card {
-  position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;
-  flex:1;min-width:0;padding:12px;border:1px solid #f5ece2;border-radius:13px;
-  background:#faf5ef;
-  text-align:left;cursor:pointer;
-}
-.synodos-participant-card:nth-child(2){background:#fffaf6}
-.synodos-participant-card:nth-child(3){background:#f7f2ec}
-.synodos-participant-card:disabled { cursor:default;opacity:1; }
-.synodos-participant-card:not(:disabled):hover { border-color:#d1bba8;box-shadow:inset 0 0 0 1px #e4d4c4; }
-.synodos-participant-orbit { display:none; }
-.synodos-participant-avatar {
-  display:flex;align-items:center;justify-content:center;width:59px;height:59px;
-  border-radius:50%;background:var(--synodos-speaker-accent,#a6480b);
-  color:white;font-weight:820;letter-spacing:-.03em;font-size:19px;
-  box-shadow:0 7px 21px rgba(48,38,25,.14);z-index:1;
-}
-.synodos-participant-caption {
-  position:absolute;left:10px;right:10px;bottom:9px;z-index:2;
-  display:flex;align-items:center;gap:7px;min-width:0;padding:6px 8px;
-  border-radius:8px;background:rgba(41,36,30,.88);color:#fff;
-  font-size:11px;white-space:nowrap;
-}
-.synodos-participant-caption strong { overflow:hidden;text-overflow:ellipsis;font-weight:730; }
-.synodos-participant-caption small { margin-left:auto;color:#f5ece2;font-size:9px; }
-.synodos-participant-wave { display:flex;align-items:center;gap:2px;height:12px;color:#ffbd87; }
-.synodos-participant-wave i { display:block;width:2px;height:4px;background:currentColor;border-radius:8px; }
-.synodos-participant-wave i:nth-child(2),.synodos-participant-wave i:nth-child(4){height:10px}
-.synodos-participant-wave i:nth-child(3){height:7px}
-.synodos-participant-extra { display:flex;align-items:center;justify-content:center;flex:none;width:50px;border-radius:13px;background:#faf5ee;color:#a44906;font-weight:830;font-size:15px; }
-.synodos-participants-empty { display:flex;align-items:center;justify-content:center;gap:18px;min-height:101px;color:#756459; }
-.synodos-participants-empty strong { font-size:14px;color:#914007; }
-.synodos-participants-empty p { margin:3px 0 0;color:#b5a596;font-size:11px;line-height:1.5; }
-.synodos-empty-avatar { display:flex;align-items:center;justify-content:center;flex:none;width:51px;height:51px;border-radius:17px;background:#faf5ee;color:#a6480b; }
-.synodos-session-bar {
-  display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none;
-  padding:9px 13px;margin-bottom:9px;border:1px solid #faf5ee;border-radius:14px;
-  background:#fff;box-shadow:0 5px 15px rgba(63,36,95,.03);
-}
-.synodos-session-indicators { display:flex;align-items:center;gap:15px;flex-wrap:wrap;min-width:0; }
-.synodos-live-pill { display:inline-flex;align-items:center;gap:7px;border-radius:24px;padding:7px 12px;background:#faf5ee;color:#8d7d70;font-size:11px;font-weight:780; }
-.synodos-live-pill>span { width:8px;height:8px;border-radius:50%;background:#b5a596; }
-.synodos-live-pill.is-live { background:#ffedea;color:#b83a2e; }
-.synodos-live-pill.is-live>span { background:#d83e30;box-shadow:0 0 0 4px rgba(238,64,48,.1); }
-.synodos-caption-state { display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:690;color:#756459;white-space:nowrap; }
-.synodos-language-control { display:flex;align-items:center;gap:6px;border-left:1px solid #f5ece2;padding-left:12px;color:#8d7d70;font-size:11px; }
-.synodos-language-control select { max-width:170px;min-height:31px;padding:5px 8px;border:1px solid #faf5ee;border-radius:9px;color:#756459;background:#fff;font-size:11px; }
-.synodos-shell.meeting-route .compact-meeting-toolbar { display:flex;align-items:center;gap:8px;flex:none; }
-.synodos-shell.meeting-route .compact-meeting-toolbar .btn { min-height:35px;padding:8px 12px;font-size:11px; }
-.synodos-shell.meeting-route .compact-meeting-toolbar .toolbar-save { border:1px solid #faf5ee!important;color:#a44906!important;background:#fff!important; }
-.synodos-shell.meeting-route .compact-meeting-toolbar .compact-record-action,
- .synodos-shell.meeting-route .compact-meeting-toolbar .compact-record-action:hover:not(:disabled) {
-  min-width:134px;min-height:36px;background:#c4550d!important;border-color:#c4550d!important;
-  color:#fff!important;border-radius:10px;box-shadow:none;
-}
-.synodos-shell.meeting-route .compact-meeting-toolbar .compact-record-action.danger,
-.synodos-shell.meeting-route .compact-meeting-toolbar .compact-record-action.danger:hover:not(:disabled) {
-  background:#c53e35!important;border-color:#c53e35!important;
-}
-.synodos-shell.meeting-route .meeting-page>.hint-text { margin:3px 0 8px;max-height:80px;overflow:auto; }
-
-/* Center transcript and right intelligence panel */
-.synodos-shell.meeting-route .meeting-workspace,
-.synodos-shell.meeting-route .meeting-workspace.tool-panel-open {
-  display:grid;grid-template-columns:minmax(0,1fr) minmax(310px,365px);
-  grid-template-rows:minmax(0,1fr);gap:12px;
-  flex:1;min-height:0;max-height:none;overflow:hidden;align-items:stretch;
-}
-.synodos-shell.meeting-route .meeting-workspace:not(.tool-panel-open){ grid-template-columns:minmax(0,1fr); }
-.synodos-meeting-center { display:flex;flex-direction:column;gap:0;min-width:0;min-height:0;overflow:hidden;background:#fff;border:1px solid #f5ece2;border-radius:17px;box-shadow:0 8px 28px rgba(48,38,25,.06); }
-.synodos-shell.meeting-route .meeting-tool-sidebar {
-  display:flex;position:static;top:auto;align-self:auto;flex-direction:row;align-items:center;
-  gap:5px;flex:none;min-height:0!important;height:auto!important;
-  padding:7px 13px;border:none;border-bottom:1px solid #faf5ee;border-radius:0;
-  overflow-x:auto;overflow-y:hidden;overscroll-behavior:contain;background:#fff;box-shadow:none;
-}
-.synodos-shell.meeting-route .meeting-tool-nav-title,
-.synodos-shell.meeting-route .meeting-tool-nav-bottom { display:none; }
-.synodos-shell.meeting-route .meeting-tool-link {
-  width:auto;flex:none;min-height:39px;padding:9px 13px;gap:8px;
-  border-radius:9px;color:#8d7d70;font-size:11px;font-weight:660;white-space:nowrap;
-}
-.synodos-shell.meeting-route .meeting-tool-link.active,
-.synodos-shell.meeting-route .meeting-tool-link:hover { background:#fdfbf8;color:#a6480b; }
-.synodos-shell.meeting-route .meeting-tool-link.active { box-shadow:inset 0 -2px 0 #a6480b; }
-.synodos-shell.meeting-route .meeting-primary {
-  display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;height:auto;overflow:hidden;
-  border:none;border-radius:0;background:white;box-shadow:none;
-}
-.synodos-transcript-heading { display:flex;align-items:center;justify-content:space-between;padding:14px 19px 10px;flex:none; }
-.synodos-transcript-heading>span { display:flex;align-items:center;gap:8px;color:#a44906; }
-.synodos-transcript-heading strong { font-size:13px;letter-spacing:-.01em; }
-.synodos-transcript-heading small { font-size:11px;color:#b5a596; }
-.synodos-shell.meeting-route .meeting-primary .transcript {
-  flex:1;min-height:0!important;height:auto!important;max-height:none;overflow-y:auto;
-  padding:5px 17px 19px!important;scrollbar-width:thin;scrollbar-color:#f0e3d5 transparent;
-}
-.synodos-shell.meeting-route .meeting-primary .paragraph {
-  position:relative;display:block;margin:0 0 10px!important;padding:15px 16px!important;
-  border:1px solid #faf5ee;border-radius:13px;background:#fff;
-  box-shadow:0 1px 2px rgba(48,38,25,.015);
-}
-.synodos-shell.meeting-route .meeting-primary .paragraph:nth-of-type(odd) { background:#fffaf5; }
-.synodos-shell.meeting-route .meeting-primary .paragraph.paragraph-highlighted { background:#faf5ee;outline:2px solid #d1bba8; }
-.synodos-shell.meeting-route .meeting-primary .para-head { display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px; }
-.synodos-shell.meeting-route .meeting-primary .speaker-dot.synodos-speaker-avatar {
-  display:flex;align-items:center;justify-content:center;flex:none;
-  width:31px;height:31px;border-radius:50%;
-  background:#f7e3d2!important;color:#99410a;font-size:11px;font-weight:800;border:0;
-}
-.synodos-speaker-avatar::before { content:attr(data-initials);user-select:none; }
-.synodos-shell.meeting-route .meeting-primary .speaker-name { font-size:12px;font-weight:800;color:#914007; }
-.synodos-shell.meeting-route .meeting-primary .para-time { color:#b5a596;font-size:10px; }
-.synodos-shell.meeting-route .meeting-primary .para-text.transcript-sentence {
-  border:0;background:transparent;color:#2d2925;padding-left:39px;
-  margin:1px 0 0;font-size:12.5px;line-height:1.65;
-}
-.synodos-shell.meeting-route .meeting-primary .transcript-live-preview { background:#fff9f4;border:1px dashed #efc6a6; }
-.synodos-shell.meeting-route .meeting-primary .transcript-live-preview .para-text.transcript-sentence { border:0; }
-.synodos-shell.meeting-route .transcript-edit-details { margin-left:39px; }
-.synodos-shell.meeting-route .transcript-edit-details summary:hover { color:#a6480b; }
-.synodos-shell.meeting-route .meeting-detail-panel {
-  position:static;top:auto;right:auto;bottom:auto;left:auto;z-index:auto;
-  display:flex;flex-direction:column;width:auto;height:100%;min-width:0;min-height:0;max-height:none;
-  overflow:hidden;border:1px solid #faf5ee;border-radius:17px;background:#fff;
-  box-shadow:0 8px 28px rgba(48,38,25,.065);
-}
-.synodos-shell.meeting-route .meeting-detail-header { padding:16px 17px 13px;gap:10px;border-bottom:1px solid #faf5ee; }
-.synodos-shell.meeting-route .meeting-detail-header h2 { color:#914007;font-size:17px;font-weight:810; }
-.synodos-shell.meeting-route .meeting-detail-header .transcript-eyebrow { color:#d1bba8;font-size:9px;letter-spacing:.13em; }
-.synodos-shell.meeting-route .meeting-detail-scroll { flex:1;min-height:0;padding:14px;overflow:auto;scrollbar-width:thin; }
-.synodos-shell.meeting-route .meeting-detail-scroll .meeting-review-tools {
-  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;
-  position:sticky;top:-14px;z-index:6;
-  margin:0 0 15px;padding:5px;border:1px solid #faf5ee;border-radius:12px;background:#fdfbf8;
-}
-.synodos-shell.meeting-route .meeting-detail-scroll .meeting-review-tools button {
-  min-height:36px;min-width:0;font-size:10px;padding:7px 4px;color:#8d7d70;
-}
-.synodos-shell.meeting-route .meeting-detail-scroll .meeting-review-tools button.active { background:#fff0e1;border:1px solid #f0d7c4;color:#a44906;box-shadow:none; }
-.synodos-shell.meeting-route .meeting-selected-tool .review-insights { color:#914007; }
-.synodos-shell.meeting-route .review-insights-section {
-  background:#fff;border:1px solid #faf5ee;border-radius:13px;
-  padding:14px;margin-top:10px;box-shadow:0 2px 10px rgba(48,38,25,.028);
-}
-.synodos-shell.meeting-route .review-insights-section h4 { color:#a44906;font-weight:760; }
-.synodos-shell.meeting-route .review-insights-section li::marker { color:#f37021; }
-.synodos-shell.meeting-route .review-insights-primary { background:#c4550d;color:#fff;border-color:#c4550d; }
-.synodos-shell.meeting-route .review-insights-secondary { border-color:#f5ece2;color:#a6480b;background:#fdfbf8; }
-.synodos-shell.meeting-route .review-insights-advanced { color:#a44906; }
-.synodos-shell.meeting-route .review-tool-hint,
-.synodos-shell.meeting-route .review-tool-empty { background:#fdfbf8;color:#8d7d70; }
-.synodos-shell.meeting-route .meeting-detail-scroll .meeting-review-tools button:focus-visible { outline:2px solid #a6480b; }
-.synodos-shell.meeting-route .meeting-config-panel,
-.synodos-shell.meeting-route .meeting-recordings-panel { background:white; }
-.synodos-shell.meeting-route .meeting-floating-alert { border-color:#f7c19c; }
-
 /* Connected settings screen */
 .synodos-settings-page { max-width:1110px;margin:0 auto;padding:clamp(27px,4vw,55px) clamp(20px,3vw,42px) 70px; }
 .synodos-settings-header { margin-bottom:25px; }
@@ -374,245 +168,368 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
 .synodos-settings-card dt { color:#b5a596; }
 .synodos-settings-card dd { margin:0;color:#914007;font-weight:700;text-align:right;overflow-wrap:anywhere; }
 
-/* Tablet and phone behavior: readable stacks, no off-screen tool drawer. */
-@media (max-width:1440px) {
-  .synodos-shell { --sidebar-width:185px; }
-  .synodos-shell.meeting-route { --sidebar-width:185px; }
-  .synodos-shell.meeting-route .meeting-workspace,
-  .synodos-shell.meeting-route .meeting-workspace.tool-panel-open { grid-template-columns:minmax(0,1fr) minmax(290px,335px); }
-  .synodos-shell.meeting-route .meeting-header-context { font-size:9px; }
-}
-@media (max-width:1160px) {
-  .synodos-shell .synodos-tagline { display:none; }
-  .synodos-shell .synodos-brand-divider { display:none; }
-  .synodos-shell.meeting-route { height:auto;min-height:100vh;overflow:visible; }
-  .synodos-shell.meeting-route .workspace-main-column { height:auto;min-height:0;overflow:visible; }
-  .synodos-shell.meeting-route .workspace-page-content { overflow:visible;height:auto; }
-  .synodos-shell.meeting-route .meeting-page { height:auto;min-height:0;overflow:visible; }
-  .synodos-shell.meeting-route .meeting-workspace,
-  .synodos-shell.meeting-route .meeting-workspace.tool-panel-open { display:flex;flex-direction:column;overflow:visible; }
-  .synodos-meeting-center { min-height:440px;overflow:hidden; }
-  .synodos-shell.meeting-route .meeting-primary .transcript { min-height:370px!important;max-height:540px; }
-  .synodos-shell.meeting-route .meeting-detail-panel { min-height:430px;height:auto;max-height:none; }
-  .synodos-shell.meeting-route .meeting-detail-scroll { max-height:none;overflow:visible; }
-}
-@media (max-width:760px) {
-  .synodos-shell,.synodos-shell.meeting-route { --sidebar-width:0px;grid-template-columns:minmax(0,1fr);grid-template-rows:66px minmax(0,1fr); }
-  .synodos-topbar { grid-column:1;grid-row:1;padding:8px 16px;border-radius:0 0 14px 14px; }
-  .synodos-brand-mark { width:42px;height:42px; }
-  .synodos-brand-name { font-size:25px; }
-  .synodos-topbar-actions { margin-left:auto; }
-  .synodos-topbar-link,.synodos-local-status { display:none; }
-  .synodos-profile-bubble { width:32px;height:32px; }
-  .synodos-shell .workspace-mobile-menu.synodos-mobile-menu { display:flex;align-items:center;justify-content:center;background:transparent;border:0;color:#a6480b;margin-left:4px; }
-  .synodos-shell .workspace-sidebar { position:fixed;left:0;top:66px;bottom:0;height:auto;width:min(255px,85vw);z-index:68;transform:translateX(-110%);transition:transform .18s ease;box-shadow:9px 0 30px rgba(48,38,25,.12); }
-  .synodos-shell.mobile-sidebar-open .workspace-sidebar { transform:translateX(0); }
-  .synodos-shell .workspace-mobile-scrim { display:block;position:fixed;inset:66px 0 0;border:0;background:rgba(48,38,25,.36);z-index:67; }
-  .synodos-shell .workspace-main-column { grid-column:1;grid-row:2; }
-  .synodos-shell.meeting-route .workspace-main-column { height:auto; }
-  .synodos-shell.meeting-route .compact-meeting-header { flex-direction:column;align-items:stretch; }
-  .synodos-meeting-heading-actions { justify-content:space-between; }
-  .synodos-shell.meeting-route .meeting-page { padding:12px 12px 30px!important; }
-  .synodos-session-bar { flex-wrap:wrap; }
-  .synodos-session-indicators { gap:9px; }
-  .synodos-shell.meeting-route .compact-meeting-toolbar { width:100%;justify-content:flex-end; }
-  .synodos-participant-grid { height:105px; }
-  .synodos-participant-avatar { width:49px;height:49px;font-size:16px; }
-  .synodos-participant-caption { padding:5px 7px;font-size:10px; }
-  .synodos-participant-caption small { display:none; }
-  .synodos-shell.meeting-route .meeting-detail-panel { position:static;top:auto;left:auto;right:auto;bottom:auto;width:auto;height:auto;border-radius:16px;box-shadow:0 8px 24px rgba(48,38,25,.07); }
-  .synodos-shell.meeting-route .meeting-tool-sidebar { overflow-x:auto;flex-wrap:nowrap; }
-  .synodos-settings-grid { grid-template-columns:1fr; }
-  .synodos-shell.sidebar-collapsed { --sidebar-width:0px; }
-}
-@media (max-width:460px) {
-  .synodos-participant-grid { flex-wrap:wrap;height:auto; }
-  .synodos-participant-card { flex-basis:calc(50% - 6px);min-height:103px; }
-  .synodos-participant-extra { width:calc(50% - 6px); }
-  .synodos-language-control { padding-left:0;border-left:0; }
-  .synodos-language-control select { max-width:150px; }
-  .synodos-shell.meeting-route .meeting-primary .para-text.transcript-sentence { padding-left:0; }
-  .synodos-shell.meeting-route .transcript-edit-details { margin-left:0; }
-}
-@media (prefers-reduced-motion:reduce) {
-  .synodos-shell * { transition-duration:0s!important;animation-duration:0s!important; }
-}
 
-
-/* Compact meeting chrome: preserve controls, prioritize transcript viewport. */
-.synodos-shell {
-  grid-template-rows:58px minmax(0,1fr);
-}
-.synodos-shell .synodos-topbar {
-  height:58px;min-height:58px;padding:4px clamp(14px,1.7vw,26px);box-shadow:none;
-}
-.synodos-topbar-branding { gap:15px; }
-.synodos-shell .synodos-brand { min-height:36px;gap:8px; }
-.synodos-brand-mark { width:35px;height:35px;filter:none; }
-.synodos-brand-name { font-size:clamp(20px,1.7vw,25px);font-weight:830; }
-.synodos-brand-divider { height:24px; }
-.synodos-topbar-actions { gap:13px; }
-.synodos-shell .workspace-sidebar {
-  top:58px;height:calc(100dvh - 58px);min-height:0;
-  padding:14px 10px 12px;
-}
-.synodos-shell.meeting-route .workspace-main-column {
-  height:calc(100dvh - 58px);
+/* Meeting workspace: one command bar, an uncluttered transcript, an optional assistant. */
+.synodos-shell.meeting-route { height:100dvh;overflow:hidden; }
+.synodos-shell.meeting-route .workspace-page-content {
+  display:flex;height:100%;min-height:0;overflow:hidden;
 }
 .synodos-shell.meeting-route .meeting-page {
-  padding:8px clamp(12px,1.4vw,22px) 10px!important;
+  --meeting-orange:#eb7100;
+  display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;
+  width:100%;height:100%;max-width:none!important;margin:0;padding:0!important;
+  overflow:hidden;background:#fff;
 }
 .synodos-shell.meeting-route .compact-meeting-header {
-  min-height:0;padding:8px 12px;gap:11px;margin-bottom:6px;
-  border-radius:11px;box-shadow:none;
+  position:relative;z-index:50;display:flex;align-items:center;
+  justify-content:space-between;flex:none;
+  min-width:0;min-height:56px;gap:12px;padding:6px clamp(12px,1.8vw,24px);
+  margin:0;border:0;border-bottom:1px solid #eeeae5;border-radius:0;
+  background:#fff;box-shadow:none;
+}
+.synodos-shell.meeting-route .compact-meeting-heading {
+  display:flex;align-items:center;gap:10px;min-width:0;flex:1;
 }
 .synodos-shell.meeting-route .compact-meeting-titles {
-  display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;
-  min-width:0;gap:2px 12px;
+  display:flex;align-items:center;flex-wrap:nowrap;gap:11px;min-width:0;
 }
 .synodos-shell.meeting-route .compact-meeting-titles h1 {
-  max-width:min(480px,46vw);overflow:hidden;white-space:nowrap;
-  text-overflow:ellipsis;font-size:clamp(18px,1.55vw,22px);line-height:1.16;
-}
-.synodos-shell.meeting-route .meeting-running-status {
-  display:flex;align-items:center;gap:8px;font-size:10px;
-}
-.synodos-shell.meeting-route .meeting-header-context {
-  flex-basis:100%;margin-top:1px;gap:3px 11px;line-height:1.25;
+  margin:0;max-width:min(360px,28vw);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;color:#292521;font-size:clamp(16px,1.35vw,19px);
+  font-weight:770;line-height:1.3;letter-spacing:-.035em;
 }
 .synodos-shell.meeting-route .meeting-back {
-  min-width:30px;width:30px;height:30px;
+  display:flex;align-items:center;justify-content:center;flex:none;
+  width:30px;min-width:30px;height:30px;border:1px solid transparent;
+  border-radius:8px;background:transparent;color:#8c8076;
 }
-.synodos-shell.meeting-route .synodos-meeting-heading-actions { gap:6px; }
-.synodos-shell.meeting-route .synodos-participants-button {
-  min-height:31px;padding:5px 9px;
+.synodos-shell.meeting-route .meeting-back:hover {
+  background:#f8f5f0;border-color:transparent;color:#a44906;
 }
-.synodos-shell.meeting-route .workspace-export-menu>summary {
-  min-height:31px;padding:5px 9px;
+.synodos-shell.meeting-route .meeting-running-status {
+  display:flex;align-items:center;gap:5px;min-width:0;margin:0;
+  color:#8b8176;font-size:10px;white-space:nowrap;
 }
-.synodos-top-controls {
-  display:grid;grid-template-columns:minmax(235px,1fr) max-content;
-  gap:7px;align-items:stretch;flex:none;min-height:0;margin-bottom:7px;
+.synodos-shell.meeting-route .meeting-running-status .status-chip {
+  padding:4px 6px;background:#f5f2ee;color:#6f675f;
+  border-radius:7px;font-size:10px;
 }
-.synodos-participant-stage {
-  display:flex;align-items:center;gap:10px;min-height:0;
-  padding:5px 8px;margin:0;min-width:0;
-  background:#fff;border:1px solid #e9e1d8;border-radius:10px;box-shadow:none;
+.synodos-shell.meeting-route .meeting-running-status .status-chip.ok {
+  background:#e9f6ed;color:#23704d;
 }
-.synodos-speaker-strip-label {
-  flex:none;color:#83776b;font-size:10px;font-weight:770;letter-spacing:.025em;
+.synodos-recording-time { color:#897b6d; }
+.synodos-shell.meeting-route .synodos-meeting-heading-actions {
+  display:flex;align-items:center;justify-content:flex-end;gap:6px;
+  flex:none;min-width:0;
 }
-.synodos-participant-grid {
-  display:flex;align-items:center;gap:6px;height:34px;min-width:0;overflow:hidden;
+.synodos-shell.meeting-route .synodos-participants-button,
+.synodos-quick-tool,
+.synodos-meeting-more > summary {
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  height:31px;min-height:31px;padding:4px 9px;
+  border:1px solid transparent;border-radius:8px;background:transparent;
+  color:#675d54;font-size:11px;font-weight:640;white-space:nowrap;cursor:pointer;
 }
-.synodos-participant-card,
-.synodos-participant-card:nth-child(2),
-.synodos-participant-card:nth-child(3) {
-  display:flex;align-items:center;justify-content:flex-start;gap:7px;
-  flex:0 1 172px;min-width:0;max-width:185px;height:33px;
-  padding:3px 8px;border:1px solid #ede5dc;border-radius:8px;
-  background:#fffaf6;text-align:left;
+.synodos-shell.meeting-route .synodos-participants-button:hover,
+.synodos-quick-tool:hover,
+.synodos-meeting-more > summary:hover {
+  background:#f9f4ed;border-color:#f2ebe3;color:#91420a;
 }
-.synodos-participant-card:not(:disabled):hover {
-  border-color:#e7b084;background:#fff1e5;box-shadow:none;
+.synodos-speaker-count {
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:18px;height:18px;padding:0 4px;border-radius:7px;
+  background:#f2eee8;color:#776b61;font-size:10px;
 }
-.synodos-participant-avatar {
-  position:static;display:flex;align-items:center;justify-content:center;
-  flex:none;width:25px;height:25px;border-radius:50%;
-  color:#fff;font-size:10px;font-weight:770;letter-spacing:0;box-shadow:none;
+.synodos-quick-tool.active {
+  background:#fff0e2;border-color:#f7e5d6;color:#a44906;
 }
-.synodos-participant-caption {
-  position:static;display:flex;align-items:baseline;gap:6px;flex:1;z-index:auto;
-  left:auto;right:auto;bottom:auto;min-width:0;margin:0;padding:0;
-  border:0;border-radius:0;background:transparent;color:#342f2b;
-  font-size:10px;white-space:nowrap;
+.synodos-shell.meeting-route .synodos-language-control {
+  display:flex;align-items:center;gap:5px;min-width:0;
+  margin:0;padding:0 0 0 9px;border:0;border-left:1px solid #ede8e2;
+  color:#847971;font-size:10px;
 }
-.synodos-participant-caption strong {
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:750;
+.synodos-shell.meeting-route .synodos-language-control select {
+  max-width:148px;height:31px;min-height:31px;
+  padding:4px 5px;border:1px solid transparent;border-radius:8px;
+  color:#5f574f;background:transparent;font-size:11px;
 }
-.synodos-participant-caption small {
-  flex:none;margin:0;color:#8e8377;font-size:9px;
+.synodos-shell.meeting-route .synodos-language-control select:hover {
+  border-color:#ece1d4;background:#fffaf6;
 }
-.synodos-participant-wave,.synodos-participant-orbit { display:none; }
-.synodos-participant-extra {
-  flex:none;width:30px;height:30px;border-radius:8px;font-size:10px;
+.synodos-meeting-more { position:relative;z-index:85; }
+.synodos-meeting-more>summary {
+  list-style:none!important;width:31px;padding:0!important;font-size:19px;
+  line-height:1;letter-spacing:1px;
 }
-.synodos-participants-empty { justify-content:flex-start;min-height:32px;gap:8px; }
-.synodos-participants-empty strong { font-size:10px;color:#817468;font-weight:650; }
-.synodos-participants-empty p { display:none; }
-.synodos-empty-avatar { width:25px;height:25px;border-radius:8px; }
-.synodos-empty-avatar svg { width:15px;height:15px; }
-.synodos-session-bar {
-  min-height:45px;margin:0;padding:5px 8px;gap:8px;
-  border-radius:10px;box-shadow:none;
+.synodos-meeting-more>summary::-webkit-details-marker { display:none; }
+.synodos-meeting-more-popover {
+  position:absolute;top:calc(100% + 8px);right:0;z-index:95;
+  display:flex;flex-direction:column;gap:3px;width:228px;padding:6px;
+  border:1px solid #e9e1d8;border-radius:12px;background:#fff;
+  box-shadow:0 15px 45px rgba(35,27,18,.13);
 }
-.synodos-session-indicators { gap:8px;flex-wrap:nowrap; }
-.synodos-live-pill { padding:5px 9px; }
-.synodos-language-control { padding-left:8px;gap:5px; }
-.synodos-language-control select { min-height:30px;padding:4px 7px; }
-.synodos-shell.meeting-route .compact-meeting-toolbar { gap:6px; }
-.synodos-shell.meeting-route .compact-meeting-toolbar .btn {
-  min-height:32px;padding:6px 10px;
+.synodos-meeting-more-popover button {
+  display:flex;align-items:center;gap:9px;width:100%;
+  min-height:35px;padding:7px 10px;border:0;border-radius:7px;
+  background:transparent;color:#4c443d;text-align:left;font-size:12px;
+  cursor:pointer;
 }
-.synodos-shell.meeting-route .compact-meeting-toolbar .compact-record-action,
-.synodos-shell.meeting-route .compact-meeting-toolbar .compact-record-action:hover:not(:disabled) {
-  min-height:32px;min-width:124px;
+.synodos-meeting-more-popover button:hover:not(:disabled){
+  background:#fff4e9;color:#a44906;
 }
-.synodos-shell.meeting-route .meeting-tool-sidebar {
-  min-height:0!important;padding:4px 11px;
+.synodos-meeting-more-popover button:disabled { opacity:.4;cursor:not-allowed; }
+.synodos-more-divider { height:1px;background:#eee8e1;margin:4px 6px; }
+.synodos-shell.meeting-route .toolbar-save {
+  display:flex;align-items:center;gap:6px;height:31px;min-height:31px;
+  padding:5px 9px;border:1px solid #ede7e0;background:#fff;color:#62584e;
+  border-radius:8px;font-size:11px;
 }
-.synodos-shell.meeting-route .meeting-tool-link {
-  min-height:33px;padding:7px 11px;
+.synodos-shell.meeting-route .toolbar-save:hover:not(:disabled) {
+  background:#f7f3ef;border-color:#d9c8b9;color:#9d4710;
 }
-.synodos-transcript-heading { padding:10px 15px 8px; }
+.synodos-shell.meeting-route .compact-record-action,
+.synodos-shell.meeting-route .compact-record-action:hover:not(:disabled) {
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  height:32px;min-height:32px;min-width:117px;padding:6px 11px;
+  border:1px solid #c4550d!important;border-radius:8px;
+  background:#c4550d!important;color:#fff!important;
+  font-size:11px;font-weight:710;box-shadow:none!important;
+}
+.synodos-shell.meeting-route .compact-record-action:hover:not(:disabled) {
+  background:#a8470a!important;border-color:#a8470a!important;
+}
+.synodos-shell.meeting-route .compact-record-action.danger {
+  background:#bd463e!important;border-color:#bd463e!important;
+}
+.synodos-shell.meeting-route .meeting-page>.hint-text {
+  flex:none;max-height:78px;overflow-y:auto;
+  margin:0;padding:7px 18px;border-bottom:1px solid #f4e7d8;
+  background:#fffaf4;font-size:11px;
+}
+.synodos-shell.meeting-route .meeting-workspace,
+.synodos-shell.meeting-route .meeting-workspace.tool-panel-open {
+  display:grid;flex:1;min-height:0;max-height:none;overflow:hidden;
+  align-items:stretch;grid-template-columns:minmax(0,1fr) minmax(310px,25%);
+  grid-template-rows:minmax(0,1fr);gap:0;
+}
+.synodos-shell.meeting-route .meeting-workspace:not(.tool-panel-open) {
+  grid-template-columns:minmax(0,1fr);
+}
+.synodos-meeting-center {
+  display:flex;flex-direction:column;min-height:0;min-width:0;
+  overflow:hidden;background:#fff;border:0;border-radius:0;box-shadow:none;
+}
+.synodos-shell.meeting-route .meeting-primary {
+  display:flex;flex:1;flex-direction:column;min-height:0;min-width:0;
+  height:100%;border:0;border-radius:0;background:#fff;box-shadow:none;
+}
+.synodos-transcript-heading {
+  display:flex;align-items:center;justify-content:space-between;flex:none;
+  min-height:42px;padding:9px clamp(20px,3vw,42px);
+  border-bottom:1px solid #f1eeea;background:#fff;
+}
+.synodos-transcript-heading>span { display:flex;align-items:center; }
+.synodos-transcript-heading strong { color:#292521;font-size:12px;font-weight:740; }
+.synodos-transcript-heading small { color:#9a8d82;font-size:10px; }
 .synodos-shell.meeting-route .meeting-primary .transcript {
-  padding:5px 15px 17px!important;
+  flex:1;min-height:0!important;height:auto!important;max-height:none;
+  overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;
+  padding:12px clamp(20px,3vw,42px) 30px!important;
+  background:#fff;scrollbar-width:thin;scrollbar-color:#ddd5cc transparent;
 }
-.synodos-shell.meeting-route .meeting-detail-header { padding:11px 14px 10px; }
-.synodos-shell.meeting-route .meeting-detail-scroll .meeting-review-tools {
-  margin-bottom:10px;padding:4px;
+.synodos-shell.meeting-route .meeting-primary .paragraph,
+.synodos-shell.meeting-route .meeting-primary .paragraph:nth-of-type(odd) {
+  max-width:900px;margin:0 auto!important;padding:14px 0 18px!important;
+  border:0;border-bottom:1px solid #f0ede9;border-radius:0;
+  background:transparent;box-shadow:none;
 }
-.synodos-shell.meeting-route .meeting-detail-scroll .meeting-review-tools button {
-  min-height:32px;padding:5px 4px;
+.synodos-shell.meeting-route .meeting-primary .paragraph.paragraph-highlighted {
+  background:#fff7ef;outline:0;box-shadow:inset 3px 0 0 #eb7100;
 }
-@media(max-width:1340px) {
-  .synodos-top-controls { grid-template-columns:minmax(0,1fr);gap:5px; }
-  .synodos-shell.meeting-route .synodos-session-bar { justify-content:space-between; }
+.synodos-shell.meeting-route .meeting-primary .para-head {
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;
+}
+.synodos-shell.meeting-route .meeting-primary .speaker-dot.synodos-speaker-avatar {
+  display:inline-flex;align-items:center;justify-content:center;
+  flex:none;width:28px;height:28px;border:0;border-radius:50%;
+  background:#f5e7da!important;color:#97460d;font-size:10px;font-weight:760;
+}
+.synodos-speaker-avatar::after { content:attr(data-initials); }
+.synodos-shell.meeting-route .meeting-primary .speaker-name {
+  color:#3c332b;font-size:12px;font-weight:730;
+}
+.synodos-shell.meeting-route .meeting-primary .para-time {
+  color:#a1968b;font-size:10px;margin-left:auto;
+}
+.synodos-shell.meeting-route .meeting-primary .transcript-utterance-lines {
+  display:grid;gap:5px;max-width:94ch;
+}
+.synodos-shell.meeting-route .meeting-primary .para-text.transcript-sentence {
+  margin:0;padding:0 0 0 36px;border:0;background:transparent;
+  color:#312d29;font-size:13px;line-height:1.76;letter-spacing:0;
+}
+.synodos-shell.meeting-route .meeting-primary .transcript-live-preview {
+  border:1px dashed #edbd90;background:#fffaf4;padding:12px!important;
+}
+.synodos-shell.meeting-route .transcript-edit-details {
+  margin:8px 0 0 36px;color:#8b8074;font-size:10px;
+}
+.synodos-shell.meeting-route .transcript-edit-details summary:hover { color:#a44906; }
+.synodos-shell.meeting-route .meeting-detail-panel {
+  position:static;inset:auto;z-index:auto;display:flex;
+  flex-direction:column;min-width:0;min-height:0;width:auto;height:100%;
+  max-height:none;overflow:hidden;border:0;border-left:1px solid #ebe7e2;
+  border-radius:0;background:#fcfbf9;box-shadow:none;
+}
+.synodos-shell.meeting-route .meeting-detail-header {
+  display:flex;align-items:center;justify-content:space-between;
+  flex:none;min-height:42px;padding:7px 15px;border-bottom:1px solid #eee9e3;
+  background:#fcfbf9;
+}
+.synodos-shell.meeting-route .meeting-detail-header h2 {
+  margin:0;color:#312c27;font-size:13px;font-weight:750;
+}
+.synodos-shell.meeting-route .meeting-detail-header .meeting-back {
+  width:27px;min-width:27px;height:27px;
+}
+.synodos-shell.meeting-route .meeting-detail-scroll {
+  flex:1;min-height:0;max-height:none;overflow-y:auto;overscroll-behavior:contain;
+  padding:13px 15px 24px;scrollbar-width:thin;
+}
+.synodos-shell.meeting-route .meeting-review-tools {
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;
+  margin:0 0 15px;padding:3px;border:0;border-radius:10px;background:#f4f1ec;
+}
+.synodos-shell.meeting-route .meeting-review-tools button {
+  min-width:0;min-height:31px;padding:5px 3px;border:0;border-radius:7px;
+  background:transparent;color:#867c70;font-size:10px;font-weight:660;
+}
+.synodos-shell.meeting-route .meeting-review-tools button.active {
+  background:#fff;border:0;color:#a44906;box-shadow:0 1px 4px rgba(30,25,20,.08);
+}
+.synodos-shell.meeting-route .review-insights-section {
+  margin:0;padding:14px 0;border:0;border-bottom:1px solid #eeeae5;
+  border-radius:0;background:transparent;box-shadow:none;
+}
+.synodos-shell.meeting-route .review-insights-section h4 {
+  color:#393129;font-size:12px;
+}
+.synodos-shell.meeting-route .review-insights-section li::marker { color:#eb7100; }
+.synodos-shell.meeting-route .review-insights-primary {
+  border-color:#c4550d;background:#c4550d;color:#fff;
+}
+.synodos-shell.meeting-route .review-insights-secondary {
+  border-color:#e5d9cc;background:#fff;color:#9c4a11;
+}
+/* Preserve structured speaker, recording, and meeting settings panels. */
+.synodos-shell.meeting-route .meeting-config-panel,
+.synodos-shell.meeting-route .meeting-recordings-panel {
+  min-width:0;background:transparent;
+}
+.synodos-shell.meeting-route .meeting-floating-alert { border-color:#edbd90; }
+
+@media(max-width:1420px) {
+  .synodos-shell,.synodos-shell.meeting-route { --sidebar-width:174px; }
+  .synodos-shell.meeting-route .meeting-workspace,
+  .synodos-shell.meeting-route .meeting-workspace.tool-panel-open {
+    grid-template-columns:minmax(0,1fr) 315px;
+  }
+  .synodos-shell.meeting-route .meeting-workspace:not(.tool-panel-open) {
+    grid-template-columns:minmax(0,1fr);
+  }
+  .synodos-shell.meeting-route .compact-meeting-titles h1 { max-width:240px; }
+}
+@media(max-width:1180px) {
+  .synodos-shell.meeting-route .synodos-language-control>span { display:none; }
+  .synodos-shell.meeting-route .synodos-language-control select { max-width:120px; }
+  .synodos-shell.meeting-route .compact-meeting-titles h1 { max-width:190px; }
+  .synodos-shell.meeting-route .synodos-participants-button>span:not(.synodos-speaker-count) { display:none; }
+}
+@media(max-width:1000px) {
+  .synodos-shell,.synodos-shell.meeting-route { --sidebar-width:66px; }
+  .synodos-shell .workspace-nav-item { justify-content:center;padding:0; }
+  .synodos-shell .workspace-nav-item>span,
+  .synodos-shell .workspace-collapse-btn span { display:none; }
+  .synodos-shell.meeting-route .meeting-workspace,
+  .synodos-shell.meeting-route .meeting-workspace.tool-panel-open {
+    display:flex;flex-direction:column;
+  }
+  .synodos-shell.meeting-route .meeting-page { height:100%;overflow:hidden; }
+  .synodos-shell.meeting-route .meeting-detail-panel {
+    position:fixed;top:52px;right:0;bottom:0;left:auto;z-index:65;
+    width:min(385px,calc(100vw - 70px));height:auto;min-height:0;
+    border-left:1px solid #e8dfd5;box-shadow:-12px 0 30px rgba(35,27,18,.09);
+  }
+  .synodos-shell.meeting-route .meeting-primary .transcript {
+    max-height:none;min-height:0!important;
+  }
 }
 @media(max-width:760px) {
   .synodos-shell,.synodos-shell.meeting-route {
-    grid-template-rows:56px minmax(0,1fr);
+    --sidebar-width:0px;
+    grid-template-columns:minmax(0,1fr);
+    grid-template-rows:50px minmax(0,1fr);
   }
-  .synodos-shell .synodos-topbar { height:56px;min-height:56px;padding:4px 13px; }
-  .synodos-brand-mark { width:33px;height:33px; }
-  .synodos-brand-name { font-size:22px; }
+  .synodos-topbar { grid-column:1;grid-row:1;height:50px;min-height:50px;padding:4px 13px; }
+  .synodos-shell .synodos-brand { min-height:33px; }
+  .synodos-brand-mark { width:32px;height:32px; }
+  .synodos-brand-name { font-size:21px; }
+  .synodos-shell .synodos-local-status { display:none; }
+  .synodos-shell .workspace-mobile-menu.synodos-mobile-menu {
+    display:flex;align-items:center;justify-content:center;
+    width:32px;height:32px;border:0;background:transparent;color:#a44906;
+  }
   .synodos-shell .workspace-sidebar {
-    position:fixed;top:56px;height:calc(100dvh - 56px);
+    position:fixed;top:50px;left:0;bottom:0;
+    height:calc(100dvh - 50px);width:min(255px,85vw);z-index:68;
+    transform:translateX(-110%);transition:transform .18s ease;
+    box-shadow:9px 0 30px rgba(48,38,25,.12);
   }
-  .synodos-shell .workspace-mobile-scrim { inset:56px 0 0; }
-  .synodos-shell.meeting-route .workspace-main-column { height:auto; }
-  .synodos-shell.meeting-route .meeting-page { padding:8px 10px 15px!important; }
+  .synodos-shell.mobile-sidebar-open .workspace-sidebar { transform:translateX(0); }
+  .synodos-shell.mobile-sidebar-open .workspace-nav-item { justify-content:flex-start;padding:0 12px; }
+  .synodos-shell.mobile-sidebar-open .workspace-nav-item>span,
+  .synodos-shell.mobile-sidebar-open .workspace-collapse-btn span { display:inline; }
+  .synodos-shell .workspace-mobile-scrim {
+    display:block;position:fixed;inset:50px 0 0;z-index:67;
+    border:0;background:rgba(38,32,27,.32);
+  }
+  .synodos-shell .workspace-main-column {
+    grid-column:1;grid-row:2;min-height:0;
+  }
+  .synodos-shell.meeting-route .workspace-main-column {
+    height:calc(100dvh - 50px);
+  }
   .synodos-shell.meeting-route .compact-meeting-header {
-    padding:8px 10px;gap:7px;
+    align-items:stretch;flex-wrap:wrap;min-height:0;gap:5px;
+    padding:7px 10px;
   }
   .synodos-shell.meeting-route .compact-meeting-titles h1 {
-    max-width:calc(100vw - 110px);font-size:19px;
+    max-width:calc(100vw - 130px);font-size:17px;
   }
-  .synodos-top-controls { display:flex;flex-direction:column;gap:5px; }
-  .synodos-participant-grid {
-    flex-wrap:nowrap;height:34px;overflow-x:auto;scrollbar-width:none;
+  .synodos-shell.meeting-route .synodos-meeting-heading-actions {
+    justify-content:flex-end;flex-wrap:wrap;flex:1;
   }
-  .synodos-participant-card,
-  .synodos-participant-card:nth-child(2),
-  .synodos-participant-card:nth-child(3) {
-    flex:0 0 153px;height:33px;min-height:0;
+  .synodos-shell.meeting-route .synodos-language-control { display:none; }
+  .synodos-shell.meeting-route .meeting-detail-panel {
+    top:50px;width:min(385px,100vw);
   }
-  .synodos-participant-avatar { width:25px;height:25px;font-size:10px; }
-  .synodos-participant-caption { padding:0;font-size:10px; }
-  .synodos-participant-caption small { display:none; }
-  .synodos-participant-extra { width:30px; }
-  .synodos-shell.meeting-route .synodos-session-bar {
-    flex-wrap:wrap;justify-content:space-between;gap:5px;
+  .synodos-shell.meeting-route .meeting-primary .transcript {
+    padding:10px 15px 24px!important;
   }
-  .synodos-session-indicators { flex-wrap:wrap; }
+  .synodos-shell.meeting-route .meeting-primary .para-text.transcript-sentence {
+    padding-left:0;
+  }
+  .synodos-shell.meeting-route .transcript-edit-details { margin-left:0; }
+  .synodos-settings-grid { grid-template-columns:1fr; }
+}
+@media(max-width:460px) {
+  .synodos-shell.meeting-route .synodos-participants-button > span:not(.synodos-speaker-count) {
+    display:none;
+  }
+  .synodos-shell.meeting-route .compact-meeting-titles { gap:5px; }
+  .synodos-shell.meeting-route .compact-meeting-header { padding:7px 9px; }
+  .synodos-shell.meeting-route .compact-record-action { min-width:110px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .synodos-shell * { animation-duration:0s!important;transition-duration:0s!important; }
 }
