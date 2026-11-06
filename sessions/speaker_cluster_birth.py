@@ -64,7 +64,7 @@ def gate_new_cluster_births(
     sample_rate: int,
     same_voice_similarity: float = .78,
     distinct_voice_max_similarity: float = .48,
-    continuity_voice_similarity: float = .60,
+    continuity_voice_similarity: float = .68,
     continuity_max_gap_s: float = 12.0,
 ) -> dict[str, int]:
     """Conservatively remap unregistered raw clusters before ID allocation.
