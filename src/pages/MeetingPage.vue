@@ -1051,7 +1051,7 @@ onBeforeUnmount(() => stopInternal())
         {{ translatingSaved ? 'Translating...' : 'Translate saved transcript' }}
       </button>
     </div>
-    <div class="meeting-workspace" :class="{ 'tool-panel-open': activeMeetingTool !== 'transcript' }">
+    <div class="meeting-workspace" :class="{ 'tool-panel-open': activeMeetingTool !== 'transcript', 'assistant-panel-open': activeMeetingTool === 'review' }">
       <div class="synodos-meeting-center">
       <div class="meeting-primary">
         <main ref="transcriptEl" class="transcript"

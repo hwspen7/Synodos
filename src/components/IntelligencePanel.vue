@@ -299,8 +299,8 @@ onBeforeUnmount(() => {
     </div>
     <template v-else>
       <div class="review-insights-controls">
-        <label class="review-inline-mode">Type
-          <select v-model="mode" aria-label="Analysis type">
+        <label class="review-inline-mode"><span class="visually-hidden">Analysis type</span>
+          <select v-model="mode" aria-label="Analysis type" title="Analysis type">
             <option v-for="item in modes" :key="item.id" :value="item.id">{{ item.name }}</option>
           </select>
         </label>
@@ -816,4 +816,61 @@ onBeforeUnmount(() => {
   .intelligence-inline .review-insights-controls {grid-template-columns:minmax(0,1fr);}
 }
 
+/* Final Assistant presentation: an even toolbar and three structured result cards. */
+.intelligence-inline.review-insights {
+  gap:12px;
+}
+.intelligence-inline.review-insights .review-insights-controls {
+  grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);
+  align-items:center;gap:10px;margin:0 0 3px;
+}
+.intelligence-inline.review-insights .review-insights-controls .review-inline-mode {
+  width:100%;min-width:0;height:40px;min-height:40px;margin:0;
+}
+.intelligence-inline.review-insights .review-insights-controls .review-inline-mode select {
+  display:block;width:100%;height:40px;min-height:40px;
+  padding:0 28px 0 13px;border:1px solid #e8ded3;
+  border-radius:10px;background-color:#fff;
+  color:#382e26;font-size:12px;font-weight:640;
+}
+.intelligence-inline.review-insights .review-insights-controls .review-inline-mode select:focus-visible {
+  outline:2px solid rgba(235,113,0,.24);outline-offset:1px;
+}
+.intelligence-inline.review-insights .review-insights-controls .review-insights-primary {
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  width:100%;min-width:0;height:40px;min-height:40px;
+  padding:0 13px;border-radius:10px;font-size:12px;font-weight:690;
+}
+.intelligence-inline.review-insights .review-insights-section {
+  display:block;margin:0;padding:16px 17px;
+  border:1px solid #eae4dc;border-radius:12px;
+  background:#fff;box-shadow:0 2px 10px rgba(47,36,25,.025);
+}
+.intelligence-inline.review-insights .review-insights-section h4 {
+  display:flex;align-items:center;gap:8px;
+  margin:0 0 10px;color:#332c25;
+  font-size:12px;font-weight:750;line-height:1.3;
+}
+.intelligence-inline.review-insights .review-insights-section h4:before {
+  content:'';display:block;flex:none;width:5px;height:5px;
+  border-radius:50%;background:#eb7100;
+}
+.intelligence-inline.review-insights .review-insights-section h4 span {
+  margin-left:auto;
+}
+.intelligence-inline.review-insights .review-insights-section .review-insights-empty-text {
+  margin:0 0 0 13px;color:#958a80;font-size:11px;line-height:1.55;
+}
+.intelligence-inline.review-insights .review-insights-section .review-insights-narrative,
+.intelligence-inline.review-insights .review-insights-section .review-insights-list {
+  margin-left:13px;
+}
+.intelligence-inline.review-insights .review-inline-details {
+  margin-top:2px;padding:10px 3px 0;
+}
+@media(max-width:340px){
+  .intelligence-inline.review-insights .review-insights-controls {
+    grid-template-columns:minmax(0,1fr);
+  }
+}
 </style>

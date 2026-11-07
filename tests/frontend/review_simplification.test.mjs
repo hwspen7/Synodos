@@ -71,3 +71,17 @@ test('updated component tags and styles are balanced', () => {
   }
   assert.equal((styles.match(/\{/g) || []).length, (styles.match(/\}/g) || []).length)
 })
+
+test('Assistant expands independently and uses three result cards', () => {
+  const theme = read('src/assets/synodos-theme.css')
+  assert.match(meeting, /'assistant-panel-open': activeMeetingTool === 'review'/)
+  assert.match(theme, /\.meeting-workspace\.tool-panel-open\.assistant-panel-open \{\s*grid-template-columns:minmax\(0,1fr\) 440px;/)
+  assert.match(theme, /\.meeting-workspace\.tool-panel-open\.assistant-panel-open \{\s*grid-template-columns:minmax\(0,1fr\) 420px;/)
+  assert.match(intelligence, /\.intelligence-inline\.review-insights \.review-insights-section \{/)
+  assert.match(intelligence, /border:1px solid #eae4dc;border-radius:12px/)
+  assert.match(intelligence, /<span class="visually-hidden">Analysis type<\/span>/)
+  for (const heading of ['Summary', 'Decisions', 'Next steps']) {
+    assert.match(intelligence, new RegExp('<h4>' + heading))
+  }
+  assert.doesNotMatch(intelligence, /Extract next steps/)
+})

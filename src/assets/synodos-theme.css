@@ -778,3 +778,68 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
     display:none;
   }
 }
+
+/* Assistant layout: wider reading surface, without changing Recordings or Settings. */
+@media (min-width:1201px) {
+  .synodos-shell.meeting-route .meeting-workspace.tool-panel-open.assistant-panel-open {
+    grid-template-columns:minmax(0,1fr) 440px;
+  }
+}
+@media (min-width:1201px) and (max-width:1420px) {
+  .synodos-shell.meeting-route .meeting-workspace.tool-panel-open.assistant-panel-open {
+    grid-template-columns:minmax(0,1fr) 420px;
+  }
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-primary .paragraph,
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-primary .paragraph:nth-of-type(odd) {
+  max-width:860px;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-primary .transcript {
+  padding-left:clamp(18px,2.4vw,36px)!important;
+  padding-right:clamp(18px,2.4vw,36px)!important;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-detail-panel {
+  background:#f9f8f6;border-left-color:#e9e3db;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-detail-header {
+  min-height:50px;padding:9px 20px;background:#f9f8f6;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-detail-header h2 {
+  font-size:14px;letter-spacing:-.02em;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-detail-scroll {
+  padding:17px 18px 30px;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-review-tools {
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:4px;margin-bottom:18px;padding:4px;
+  border:1px solid #ece6de;border-radius:12px;background:#f0ede8;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-review-tools button {
+  min-height:37px;padding:8px 4px;border-radius:8px;
+  font-size:11px;font-weight:650;line-height:1.2;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-review-tools button.active {
+  color:#a34e09;background:#fff;box-shadow:0 2px 7px rgba(47,32,20,.07);
+}
+@media (max-width:1200px) and (min-width:761px) {
+  .synodos-shell.meeting-route .meeting-workspace.tool-panel-open.assistant-panel-open {
+    display:flex;flex-direction:column;
+  }
+  .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-detail-panel {
+    position:fixed;top:52px;right:0;bottom:0;left:auto;z-index:65;
+    width:min(420px,calc(100vw - 70px));height:auto;min-height:0;
+    box-shadow:-12px 0 34px rgba(35,27,18,.10);
+  }
+}
+@media (max-width:760px) {
+  .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-detail-panel {
+    width:min(420px,100vw);top:50px;
+  }
+  .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-detail-scroll {
+    padding:13px 14px 24px;
+  }
+  .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-review-tools button {
+    font-size:10px;
+  }
+}
