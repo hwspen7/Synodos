@@ -95,7 +95,7 @@ The frontend and backend use the same repository root; there are no separate `fr
 
 ## Local development
 
-Requirements: Python 3.12 or newer, uv, pnpm, and Node.js `^22.18.0 || >=24.12.0`.
+Recommended Python version: **3.12**. The project requires Python 3.12 or newer, as declared in `pyproject.toml`. Install `uv`, `pnpm`, and Node.js `^22.18.0 || >=24.12.0`.
 
 Open two terminals in the repository root.
 
