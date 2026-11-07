@@ -67,7 +67,7 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
   padding:0;color:#292521;text-decoration:none;white-space:nowrap;
 }
 .synodos-brand-mark { flex:none;width:34px;height:34px; }
-.synodos-brand-name { color:#292521;font-size:23px;font-weight:820;letter-spacing:-.065em;line-height:1; }
+.synodos-brand-name { color:#292521;font-family:'Avenir Next','Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;font-size:22px;font-weight:735;letter-spacing:-.052em;line-height:1; }
 .synodos-brand-divider { width:1px;height:39px;background:#f0e3d5; }
 .synodos-tagline { color:#756459;font-size:13px;white-space:nowrap;font-weight:530;letter-spacing:-.012em; }
 .synodos-tagline b { color:#f37021;padding:0 9px;font-size:17px;font-weight:900; }

@@ -5,12 +5,10 @@ withDefaults(defineProps<{ size?: number }>(), { size: 50 })
 <template>
   <svg :width="size" :height="size" viewBox="0 0 64 64" role="img"
     aria-label="Synodos logo" class="synodos-mark" xmlns="http://www.w3.org/2000/svg">
-    <path
-      d="M19 8h26c8 0 14 6.1 14 14v16c0 7.7-6 13.8-14 13.8H25L12 60l2.2-11.8C8.5 46.3 5 41.5 5 35.5V22C5 14.1 11.1 8 19 8Z"
-      fill="#EB7100"
-    />
-    <path d="M20 21.5h24M23 27h18M26 31v10M32 31v10M38 31v10M22 44.5h20"
-      stroke="#fff" stroke-width="3.25" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-    <path d="M20 21.5h24" stroke="#292521" stroke-width="2.5" stroke-linecap="round" />
+    <path d="M31 20h18c8 0 13 5.8 13 13.2v8.6C62 49.3 57 54 49.6 54h-3.4l4 8.4L37.3 54H31c-8.1 0-13-5.6-13-13.3v-7.3C18 25.2 22.9 20 31 20Z" fill="#F9B98A" />
+    <path d="M25 5.5h25.2c9.3 0 14.5 6.7 11.9 15.6l-5 16.9C54.4 47.4 48 52 39.1 52H18L4.7 61l3.2-12.4C2.7 45.9 1.4 41.2 3.6 34l4.6-14.8C10.9 10.5 16.8 5.5 25 5.5Z" fill="#EB7100" />
+    <path d="M18.2 20.4h16.3M15.7 28.8h15.3M13.4 37.1h8.9" fill="none" stroke="#fff" stroke-width="3.7" stroke-linecap="round" />
+    <path d="M11.9 49.4c15-2.6 26.2-10.6 35.9-22.2" fill="none" stroke="#fff" stroke-width="2.65" stroke-linecap="round" />
+    <path d="m38.6 21.3 17.5-6.2c1.4-.5 2.2.2 1.8 1.6l-5.2 16c-.4 1.3-1.9 1.8-2.8.5L45 26.6l-6.9-2.2c-1.4-.4-1.4-2.4.5-3.1Z" fill="#fff" />
   </svg>
 </template>
