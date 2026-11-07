@@ -4,7 +4,7 @@
 
 <h1 align="center">Synodos</h1>
 
-<p align="center"><strong>Meeting intelligence, built around the conversation.</strong></p>
+<p align="center"><strong>Intelligence for multi-speaker conversations captured through a shared microphone.</strong></p>
 
 <p align="center">
   A local-first AI meeting platform for understanding multi-speaker conversations from a shared audio source.
@@ -49,13 +49,21 @@
 
 ---
 
-## Why Synodos
+## The engineering problem
 
-Most meeting transcription pipelines work best when each participant has a separate microphone or audio channel. In a room, however, the conversation often arrives as **one mixed audio stream**. The system must recognize the words while determining which voice they belong to.
+A real meeting is a continuous acoustic exchange, not a sequence of isolated audio channels. When everyone shares one microphone, the recording mixes voices, short turns, pauses and interruptions into **a single timeline**. Transcribing the words does not, by itself, establish who spoke or what the conversation means.
 
-**Synodos is designed for this shared-audio setting.** It brings streaming multilingual speech recognition together with acoustic speaker evidence, then connects the resulting transcript to meeting-level understanding. The emphasis is on preserving the structure of the conversation, not simply producing a block of text.
+Synodos is designed around this constraint. Speech recognition determines **what was said**; a parallel acoustic path develops evidence for **who said it**. The system reconciles both against a common clock before committing an editable meeting record. A separate knowledge layer then builds structured, source-linked understanding from that record.
 
-From a live discussion to a saved meeting record, Synodos keeps the speech, speaker attribution, corrections, and AI-generated findings connected.
+| Engineering concern | Technical mechanism | Purpose |
+| --- | --- | --- |
+| **Continuous audio** | 16 kHz PCM, bounded buffers, absolute sample offsets | Maintain a shared time reference for every inference path |
+| **Multilingual content** | Whisper large-v3 with configurable Qwen3-ASR routing | Recover language-aware utterances from speech windows |
+| **Multiple speakers** | CAM++ embeddings, session clustering, optional Nemotron 3 | Distinguish recurring voices without independent microphones |
+| **Transcript integrity** | Content-first projection, overlap handling, revisioned review | Preserve the original words while resolving attribution |
+| **Meeting understanding** | Local LLM worker, PostgreSQL retrieval, evidence checks | Transform saved speech into traceable knowledge |
+
+The important architectural decision is that **the text hypothesis, speaker hypothesis and human-reviewed meeting record are different kinds of evidence**. They interact through explicit timing and revision contracts.
 
 ## Capabilities
 
@@ -72,45 +80,201 @@ From a live discussion to a saved meeting record, Synodos keeps the speech, spea
 | 📚 | **Terminology libraries** | Supply domain-specific names and vocabulary as speech-recognition hints. |
 | 💾 | **Local meeting workspace** | Save, rename, resume, inspect, and export meetings in Markdown or JSON. Optional WAV recording preserves source audio. |
 
-### One conversation, multiple voices
+## Technical approach
 
-Synodos processes a shared microphone stream rather than treating each person as a separate input channel. Its speech and speaker paths work from the same acoustic timeline. CAM++ embeddings help maintain speaker consistency, while an optional Nemotron 3 stream provides independent speaker-turn evidence. Confirmed text and speaker information are reconciled into a readable, time-aligned transcript.
+### 01 · Acoustic acquisition and scheduling
 
-### A transcript that retains context
+The browser streams **16 kHz mono PCM** over WebSocket. A thread-safe rolling buffer retains absolute sample offsets as confirmed audio is reclaimed. A bounded inference scheduler prioritizes recognition requests and enforces queue capacity, while an independent outbound queue sends versioned transcript snapshots to the workspace.
 
-Meeting records hold more than plain text. They retain timestamps, speaker associations, revision information, and context for subsequent review. This makes it possible to correct a transcript without losing the relationship between what was said and the conversation it came from.
+The speech path operates on bounded windows. Optional adaptive conditioning can improve the ASR input while the source PCM remains available to voiceprint and independent acoustic analysis. Acoustic coverage and bounded retry mechanisms keep recovery tied to actual speech evidence.
 
-### Intelligence grounded in the meeting
+**Implementation:** [`sessions/audio_buffer.py`](sessions/audio_buffer.py), [`inference/scheduler.py`](inference/scheduler.py), [`speech/audio/`](speech/audio/), [`sessions/outbox.py`](sessions/outbox.py).
 
-The local AI worker analyzes saved conversations for summaries, decisions, action items, and speaker-specific contributions. Retrieval can combine lexical matching with optional embeddings, while evidence-aware answers are linked to saved source excerpts. Meetings become an accessible knowledge base rather than isolated recordings.
+### 02 · Language-aware recognition and caption commits
+
+**Whisper large-v3** is the primary recognizer, using `faster-whisper` for local execution. A configurable **Qwen3-ASR 1.7B** worker contributes a second decoding route through language selection and bounded fallback. The hybrid policy validates speech support, timing and transcript coverage when evaluating candidates.
+
+Recognition candidates are not immediately permanent. The caption layer separates provisional text from confirmed segments, applies temporal deduplication and commit-boundary rules, and revisits VAD-supported speech gaps without inventing unsupported text.
+
+**Implementation:** [`speech/asr/`](speech/asr/), [`speech/captions/`](speech/captions/).
+
+### 03 · Independent multi-speaker inference
+
+The speaker path analyzes the same acoustic source without requiring the speech recognizer to identify people from words. **CAM++** embeddings provide speaker similarity and enrolled-profile evidence. With independent diarization enabled, **NVIDIA Nemotron 3** supplies streaming speaker activity, including the temporal relationship between overlapping voices.
+
+A raw diarization channel is not automatically a permanent person identity. Session-level corroboration considers recurring acoustic observations, embedding consistency, activity margins and established speaker references. Provisional assignments and manual review provide distinct states for the evolving meeting record.
+
+**Implementation:** [`speech/diarization/`](speech/diarization/), [`sessions/channels/`](sessions/channels/), [`sessions/identity/`](sessions/identity/).
+
+### 04 · Content-first speaker reconciliation
+
+ASR and diarization have different segmentation boundaries. Synodos maps both to a common timeline and projects speaker evidence **onto confirmed text**, rather than allowing a speaker model to rewrite the transcript. Text conservation checks protect the original utterances. Overlapping acoustic activity is recorded without duplicating the same recognized words across speakers.
+
+Saved captions support revision-aware text and identity edits. The system retains original ASR content, source timestamps and review provenance, so downstream analysis can be associated with the proper meeting revision.
+
+**Implementation:** [`speech/captions/content_first_projection.py`](speech/captions/content_first_projection.py), [`speech/captions/turn_integrity.py`](speech/captions/turn_integrity.py), [`sessions/manual_review.py`](sessions/manual_review.py).
+
+### 05 · Asynchronous meeting intelligence
+
+Live speech processing and language-model analysis have different latency characteristics. Synodos uses a standalone, job-driven AI worker to analyze persisted meetings without sharing the live ASR scheduling queue. Workloads can be deferred during active recording.
+
+The PostgreSQL-backed intelligence store holds jobs, structured findings, knowledge chunks and source revisions. Retrieval can combine multilingual lexical matching with optional embeddings. Evidence-focused answers are checked against actual stored excerpts before being presented.
+
+**Implementation:** [`intelligence/worker.py`](intelligence/worker.py), [`intelligence/store.py`](intelligence/store.py), [`intelligence/retrieval.py`](intelligence/retrieval.py), [`intelligence/evidence_qa.py`](intelligence/evidence_qa.py).
 
 ## Architecture
 
-The audio pipeline separates **what was said** from **who said it**, then brings both streams together before creating the durable meeting record.
+Synodos has three distinct but connected inference paths: **linguistic recognition**, **acoustic speaker reasoning** and **meeting knowledge processing**. Explicit timing, identity and revision boundaries connect the paths without conflating their outputs.
+
+### End-to-end system topology
 
 ~~~mermaid
-flowchart TD
-    A["Shared microphone<br/>16 kHz mono PCM"] --> B["WebSocket ingestion<br/>audio buffering and VAD"]
-    B --> C["Multilingual ASR<br/>Whisper large-v3 / Qwen3-ASR"]
-    B --> D["Speaker evidence<br/>CAM++ / optional Nemotron 3"]
-    C --> E["Timed speech segments"]
-    D --> F["Speaker turns and embeddings"]
-    E --> G["Caption confirmation<br/>speaker-aware alignment"]
-    F --> G
-    G --> H["Saved meeting and review"]
-    H --> I["PostgreSQL knowledge store"]
-    I --> J["Local Ollama worker"]
-    J --> K["Summaries · Decisions · Evidence-linked Q&A"]
-    H --> L["Transcript · Translation · Export"]
+flowchart LR
+  subgraph CAPTURE["01 / Capture"]
+    direction TB
+    MIC["Shared microphone"]
+    WEB["Vue workspace"]
+    PCM["16 kHz mono PCM"]
+    MIC --> PCM
+  end
+
+  subgraph TRANSPORT["02 / Transport + session state"]
+    direction TB
+    WS["FastAPI WebSocket"]
+    SESSION["Session lifecycle"]
+    BUF["Bounded rolling buffer"]
+    CLOCK["Absolute acoustic timeline"]
+    OUT["Versioned outbox"]
+    WS --> SESSION --> BUF --> CLOCK
+    SESSION --> OUT
+  end
+
+  subgraph ASR["03 / Linguistic inference"]
+    direction TB
+    WINDOW["VAD + bounded windows"]
+    FILTER["Optional adaptive signal conditioning"]
+    QUEUE["Priority-aware scheduler"]
+    WHISPER["faster-whisper large-v3"]
+    QWEN["Optional Qwen3-ASR worker"]
+    POLICY["Hybrid routing + gap recovery"]
+    COMMIT["Temporal deduplication + confirmation"]
+    WINDOW --> FILTER --> QUEUE
+    QUEUE --> WHISPER --> POLICY --> COMMIT
+    QUEUE -. "hybrid" .-> QWEN
+    QWEN --> POLICY
+  end
+
+  subgraph VOICE["04 / Acoustic speaker inference"]
+    direction TB
+    CAM["CAM++ embeddings"]
+    PROFILE["Enrolled voiceprints"]
+    CLUSTER["Session speaker clustering"]
+    NEM["Optional Nemotron 3 stream"]
+    ACT["Speaker activity + overlap"]
+    GATE["Channel corroboration + continuity"]
+    CAM --> CLUSTER --> GATE
+    PROFILE --> CLUSTER
+    NEM --> ACT --> GATE
+  end
+
+  subgraph FUSION["05 / Timeline fusion"]
+    direction TB
+    ALIGN["Timestamp alignment"]
+    GUARD["Text conservation + speaker policy"]
+    FINAL["Speaker-aware transcript"]
+    ALIGN --> GUARD --> FINAL
+  end
+
+  subgraph STORAGE["06 / Persistent meeting state"]
+    direction TB
+    SAVE["Durable save queue"]
+    REVIEW["Human correction + revision"]
+    DATABASE["Local files / PostgreSQL"]
+    SAVE --> DATABASE
+    REVIEW <--> DATABASE
+  end
+
+  subgraph KNOWLEDGE["07 / Meeting intelligence"]
+    direction TB
+    JOB["Persistent job queue"]
+    WORKER["Independent AI worker"]
+    OLLAMA["Local Ollama gateway"]
+    INDEX["Revision-aware retrieval"]
+    EVID["Evidence selection + verification"]
+    ART["Summaries, decisions + grounded answers"]
+    JOB --> WORKER --> OLLAMA --> ART
+    INDEX --> EVID --> ART
+  end
+
+  PCM --> WS
+  BUF --> WINDOW
+  CLOCK --> CAM
+  CLOCK -. "independent PCM" .-> NEM
+  COMMIT --> ALIGN
+  GATE --> ALIGN
+  FINAL --> SAVE
+  FINAL --> OUT
+  OUT --> WEB
+  DATABASE --> REVIEW
+  DATABASE --> JOB
+  DATABASE --> INDEX
+  ART --> DATABASE
+  ART --> WEB
 ~~~
 
-**Design principles**
+The recognition path owns the confirmed words. The acoustic path contributes speaker evidence. The reconciliation stage resolves their different time boundaries into a consistent record, which can later be reviewed or indexed.
 
-- **Audio-first speaker evidence.** Speaker activity is derived from acoustic information, not inferred solely from recognized sentences.
-- **Content-preserving transcription.** Voice activity detection, bounded recognition windows, commit boundaries, and duplicate guards support stable caption delivery.
-- **Speaker continuity.** The session processor maintains speaker state across incoming windows, combining automatic evidence with reviewed labels.
-- **Independent workloads.** Recognition scheduling and a separate meeting-intelligence worker keep conversational analysis distinct from time-sensitive audio processing.
-- **Traceable interpretation.** Saved transcript revisions and source-linked evidence connect AI findings back to the underlying meeting.
+### Live processing and confirmation sequence
+
+~~~mermaid
+sequenceDiagram
+  autonumber
+  participant Browser as Browser / Vue
+  participant Socket as WebSocket
+  participant Session as SessionProcessor
+  participant Scheduler as ASR scheduler
+  participant ASR as Whisper / Qwen
+  participant Voice as Speaker workers
+  participant Fusion as Timeline reconciliation
+  participant Store as Meeting store
+
+  Browser->>Socket: Open meeting stream
+  Socket->>Session: Initialize session and bounded audio buffer
+  loop Incoming audio chunks
+    Browser->>Socket: 16 kHz PCM frames
+    Socket->>Session: Append at absolute sample offset
+    par Content recognition
+      Session->>Scheduler: Submit speech window
+      Scheduler->>ASR: Decode bounded audio
+      ASR-->>Session: Timestamped candidates
+      Session->>Session: Speech coverage, duplicate and commit checks
+    and Acoustic speaker evidence
+      Session->>Voice: Submit eligible audio windows
+      Voice-->>Fusion: Speaker embeddings and activity
+    end
+    Session->>Fusion: Confirmed text + source time
+    Fusion->>Fusion: Corroborate speakers, preserve wording
+    Fusion-->>Session: Speaker-aware caption projection
+    Session-->>Socket: Versioned transcript snapshot
+    Socket-->>Browser: Updated meeting view
+  end
+  Browser->>Socket: Stop / save
+  Socket->>Session: Finalize pending session state
+  Session->>Store: Persist meeting and evidence
+  Store-->>Browser: Reviewable saved record
+  Note over Browser,Store: Edits carry revisions and source provenance
+~~~
+
+### Operational design contracts
+
+| Boundary | Mechanism | Engineering purpose |
+| --- | --- | --- |
+| **Audio → inference** | Bounded buffer, absolute offsets, priority queue | Control load while maintaining one acoustic timebase |
+| **Preview → confirmed speech** | Speech coverage, temporal deduplication, commit guards | Establish a stable transcript progression |
+| **Channel → speaker identity** | CAM++ similarity, corroborated turns, stable session state | Separate an acoustic source from an asserted person |
+| **Speaker activity → caption** | Content-first, overlap-aware projection | Attach attribution without duplicating or rewriting words |
+| **Meeting → durable state** | Save queue, revisioned review, persisted evidence | Keep downstream analysis aligned with the saved record |
+| **Meeting → knowledge** | Independent AI jobs, retrieval scope, source checks | Connect model interpretation to verifiable conversation content |
 
 ## Model stack
 
@@ -134,33 +298,85 @@ English · Chinese · French · Spanish · Arabic · Indonesian · Japanese · R
 
 The optional hybrid ASR route uses a separately configured Qwen worker. Translation runs through available installed language pairs or the selected local text model.
 
-## From a meeting to usable knowledge
+## From a meeting to verifiable knowledge
+
+The intelligence layer operates on **saved, revisioned meeting content**, not the live ASR hypothesis. It preserves segment IDs, speaker context and source timing through indexing and structured analysis. This allows the Assistant to connect its findings to the meeting record rather than treating an isolated summary as authoritative.
+
+### Knowledge and evidence provenance
+
+~~~mermaid
+flowchart TB
+  subgraph SOURCE["01 / Saved context"]
+    direction LR
+    MEET["Transcript with segment IDs"]
+    REVIEW["Human-reviewed revisions"]
+    MEDIA["Optional imported media"]
+  end
+
+  subgraph PREP["02 / Index preparation"]
+    direction LR
+    CHUNK["Source-aligned chunks"]
+    VERSION["Revision tracking"]
+    LEX["Lexical index + scoring"]
+    EMB["Optional semantic embeddings"]
+    PG["PostgreSQL knowledge records"]
+    CHUNK --> VERSION --> PG
+    CHUNK --> LEX
+    CHUNK --> EMB
+  end
+
+  subgraph QUERY["03 / Retrieval and local inference"]
+    direction LR
+    SCOPE["Question + meeting scope"]
+    RANK["Bounded candidate ranking"]
+    LLM["Local Ollama worker"]
+    SELECT["Evidence excerpt selection"]
+    SCOPE --> RANK --> SELECT
+    LLM --> SELECT
+  end
+
+  subgraph OUTPUT["04 / Evidence-linked output"]
+    direction LR
+    VERIFY["Source-text verification"]
+    FRESH["Revision freshness checks"]
+    EXCERPT["Attributable excerpts"]
+    ART["Structured meeting findings"]
+    VERIFY --> FRESH --> EXCERPT
+  end
+
+  MEET --> CHUNK
+  MEDIA --> CHUNK
+  REVIEW -. "supersedes source revision" .-> VERSION
+  PG --> RANK
+  LEX --> RANK
+  EMB --> RANK
+  SELECT --> VERIFY
+  MEET --> LLM
+  LLM --> ART
+  ART --> PG
+  EXCERPT --> SCOPE
+~~~
+
+The local model can propose relevant excerpts, but the application validates those selections against stored text. Structured summaries, decisions and follow-ups retain their relationship to the source revision.
 
 <details>
-<summary><strong>1. Capture and recognize</strong></summary>
+<summary><strong>Capture and review a conversation</strong></summary>
 
-A browser microphone streams 16 kHz PCM over WebSocket. The session processor manages audio windows, speech activity, recognition scheduling, and the transition from provisional to confirmed captions. Selected terminology libraries can provide ASR vocabulary hints.
+Create a meeting, choose a source language or automatic detection, and capture the room through the browser microphone. Review confirmed speech, speaker labels and timing. After saving, apply transcript corrections and speaker attribution edits with revision tracking.
 
 </details>
 
 <details>
-<summary><strong>2. Resolve speakers and review the transcript</strong></summary>
+<summary><strong>Analyze the meeting in context</strong></summary>
 
-Speaker embeddings and acoustic turn evidence are matched against the current conversation. Local speaker profiles can be created or updated, and meeting-specific names may be assigned during review. Saved captions support text corrections and speaker-attribution revisions.
-
-</details>
-
-<details>
-<summary><strong>3. Analyze the conversation</strong></summary>
-
-With local intelligence enabled, the worker processes saved transcript context into meeting summaries and structured findings. Analysis modes include meetings, research discussions, classrooms, interviews, standups, and sales conversations. Speaker-scoped insights focus on the selected person's attributed turns.
+Use the local AI worker for summaries, decisions, follow-ups and speaker-specific perspectives. Available analysis modes include meeting, research, classroom, interview, standup and sales contexts.
 
 </details>
 
 <details>
-<summary><strong>4. Search, translate, and export</strong></summary>
+<summary><strong>Retrieve and reuse its knowledge</strong></summary>
 
-Meeting chunks can be indexed for lexical retrieval, with optional vector embeddings. Evidence-linked answers reference stored excerpts. Captions can be translated, reviewed, and exported as Markdown or JSON.
+Index saved transcripts, ask evidence-focused questions, translate captions and export Markdown or JSON. Terminology libraries and speaker profiles remain available across meetings.
 
 </details>
 
