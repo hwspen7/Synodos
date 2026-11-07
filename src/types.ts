@@ -182,6 +182,7 @@ export interface MeetingDetail {
   auto_match_saved?: boolean
   hotword_ids: string[]
   spk_threshold: number
+  speaker_labels?: Record<string, { name: string; profile_id: string }>
   ui_settings?: {
     language?: string
     translate_to?: string
