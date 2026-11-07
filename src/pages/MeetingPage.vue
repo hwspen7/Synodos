@@ -164,6 +164,73 @@ const translatingSaved = ref(false)
 const translationWarning = ref('')
 const appliedSettings = ref('')
 const editingSpeakerId = ref<number | null>(null)
+const speakerLabels = ref<Record<string, { name: string; profile_id: string }>>({})
+const speakerNameEditorParagraph = ref<number | null>(null)
+const speakerNameEditorId = ref<number | null>(null)
+const speakerNameDraft = ref('')
+const speakerNameBusy = ref(false)
+const speakerNameError = ref('')
+const speakerNameInput = ref<HTMLInputElement | null>(null)
+
+function speakerDisplayLabel(segment: Segment): Segment {
+  const label = speakerLabels.value[String(segment.speaker_id)]
+  return label?.name ? { ...segment, speaker_name: label.name } : segment
+}
+
+function editDisplayedSpeaker(para: Paragraph): void {
+  if (para.speaker_id <= 0 || speakerNameBusy.value) return
+  speakerNameEditorParagraph.value = para.id
+  speakerNameEditorId.value = para.speaker_id
+  speakerNameDraft.value = para.speaker_name || `Speaker ${para.speaker_id}`
+  speakerNameError.value = recording.value || status.value === 'stopping'
+    ? 'Stop recording before renaming a speaker.' : ''
+  void nextTick(() => {
+    speakerNameInput.value?.focus()
+    speakerNameInput.value?.select()
+  })
+}
+
+function cancelSpeakerName(): void {
+  if (speakerNameBusy.value) return
+  speakerNameEditorParagraph.value = null
+  speakerNameEditorId.value = null
+  speakerNameError.value = ''
+}
+
+async function commitSpeakerName(): Promise<void> {
+  if (speakerNameEditorParagraph.value === null ||
+      speakerNameEditorId.value === null || speakerNameBusy.value) return
+  if (recording.value || status.value === 'stopping' || status.value === 'connecting') {
+    speakerNameError.value = 'Stop recording before renaming a speaker.'
+    return
+  }
+  const name = speakerNameDraft.value.trim()
+  if (!name) {
+    speakerNameError.value = 'Enter a speaker name.'
+    return
+  }
+  const id = speakerNameEditorId.value
+  const current = speakerLabels.value[String(id)]?.name
+  const displayed = paragraphs.value.find(para => para.id === speakerNameEditorParagraph.value)?.speaker_name
+  if (name === (current || displayed)) {
+    cancelSpeakerName()
+    return
+  }
+  speakerNameBusy.value = true
+  speakerNameError.value = ''
+  try {
+    const { speaker, speaker_labels } = await meetingsApi.labelSpeaker(props.id, id, name)
+    speakerLabels.value = speaker_labels
+    speakers.value = [speaker, ...speakers.value.filter(item => item.id !== speaker.id)]
+    speakerNameEditorParagraph.value = null
+    speakerNameEditorId.value = null
+  } catch (err) {
+    speakerNameError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    speakerNameBusy.value = false
+  }
+}
+
 const identityReviewSegmentId = ref<number | null>(null)
 const selectedSpeakerId = ref<number | null>(null)
 const speakerDetailTab = ref<'insights' | 'statements' | 'identity'>('insights')
@@ -171,7 +238,9 @@ const highlightedSegmentId = ref<number | null>(null)
 const showIndependentSpeakerAnalysis = ref(false)
 const reviewSpeakers = computed(() => {
   const byId = new Map<number, { id: number; name: string; segments: number; firstSegmentId: number }>()
-  const ordered = [...segments.value].sort((a, b) => a.start_ms - b.start_ms || a.id - b.id)
+  const ordered = [...(reportedSegments.value ?? publishedSegments.value)]
+    .map(speakerDisplayLabel)
+    .sort((a, b) => a.start_ms - b.start_ms || a.id - b.id)
   for (const segment of ordered) {
     if (!segment.text.trim() || segment.speaker_final_resolution_status === 'speaker_attribution_deferred') continue
     const name = segment.speaker_name || (segment.speaker_id > 0
@@ -256,11 +325,13 @@ const statusClass = computed(() => {
 const publishedSegments = computed(() => segments.value.filter(segment =>
   segment.speaker_final_resolution_status !== 'speaker_attribution_deferred',
 ))
-const reportedSegments = computed(() => projectReportedSpeakers(publishedSegments.value))
+const reportedSegments = computed(() =>
+  projectReportedSpeakers(publishedSegments.value)?.map(speakerDisplayLabel) ?? null,
+)
 const paragraphs = computed<Paragraph[]>(() =>
   buildTranscriptParagraphs(reportedSegments.value ?? expandContentFirstSegments(
     publishedSegments.value, translationTarget.value,
-  ), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value,
+  ).map(speakerDisplayLabel), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value,
     channelHeadings: reportedSegments.value !== null,
     singlePrimarySpeaker: reportedSegments.value === null }),
 )
@@ -401,6 +472,7 @@ async function loadMeetingConfig(): Promise<void> {
     if (!titleRenamedLocally.value && !editingMeetingTitle.value) {
       meetingTitle.value = meeting.title || 'Untitled Meeting'
     }
+    speakerLabels.value = meeting.speaker_labels ?? {}
     selectedParticipantIds.value = meeting.ui_settings?.participant_ids ?? meeting.participant_ids ?? []
     autoMatchSaved.value = meeting.ui_settings?.auto_match_saved ?? meeting.auto_match_saved ?? true
     selectedHotwordIds.value = meeting.ui_settings?.hotword_ids ?? meeting.hotword_ids ?? []
@@ -1083,10 +1155,36 @@ onBeforeUnmount(() => stopInternal())
           class="paragraph" :class="{ 'paragraph-unidentified': para.speaker_id <= 0,
             'paragraph-highlighted': highlightedSegmentId !== null && para.segmentIds.includes(highlightedSegmentId) }">
           <div class="para-head">
-            <span class="speaker-dot synodos-speaker-avatar" aria-hidden="true"
-              :data-initials="speakerInitials(para.speaker_name || `Speaker ${para.speaker_id}`)"
-              :style="{ '--synodos-speaker-accent': para.color }"></span>
-            <span class="speaker-name">{{ para.speaker_name || `Speaker ${para.speaker_id}` }}</span>
+            <template v-if="speakerNameEditorParagraph === para.id">
+              <span class="speaker-dot synodos-speaker-avatar" aria-hidden="true"
+                :data-initials="speakerInitials(para.speaker_name || `Speaker ${para.speaker_id}`)"
+                :style="{ '--synodos-speaker-accent': para.color }"></span>
+              <input ref="speakerNameInput" v-model="speakerNameDraft"
+                type="text" class="transcript-speaker-name-input" maxlength="120"
+                aria-label="Speaker name" :aria-invalid="!!speakerNameError"
+                :disabled="speakerNameBusy || recording || status === 'stopping'"
+                @input="speakerNameError = ''"
+                @keydown.enter.stop.prevent="commitSpeakerName"
+                @keydown.esc.stop.prevent="cancelSpeakerName"
+                @blur="commitSpeakerName" />
+            </template>
+            <button v-else-if="para.speaker_id > 0" type="button"
+              class="transcript-speaker-name-button"
+              :aria-label="`Rename ${para.speaker_name || `Speaker ${para.speaker_id}`}`"
+              title="Rename speaker and add to Speakers"
+              @click="editDisplayedSpeaker(para)">
+              <span class="speaker-dot synodos-speaker-avatar" aria-hidden="true"
+                :data-initials="speakerInitials(para.speaker_name || `Speaker ${para.speaker_id}`)"
+                :style="{ '--synodos-speaker-accent': para.color }"></span>
+              <span class="speaker-name">{{ para.speaker_name || `Speaker ${para.speaker_id}` }}</span>
+              <AppIcon name="pencil" :size="12" class="transcript-speaker-name-pencil" />
+            </button>
+            <template v-else>
+              <span class="speaker-dot synodos-speaker-avatar" aria-hidden="true"
+                :data-initials="speakerInitials(para.speaker_name || 'Unidentified Speaker')"
+                :style="{ '--synodos-speaker-accent': para.color }"></span>
+              <span class="speaker-name">{{ para.speaker_name || 'Unidentified Speaker' }}</span>
+            </template>
             <span v-if="para.overlapping" class="speaker-registered-label">{{ reportedSegments ? 'Overlap' : 'Primary during overlap' }}</span>
             <span v-if="para.provisional" class="speaker-registered-label">Provisional</span>
             <span v-if="segments.some(seg => para.segmentIds.includes(seg.id) && seg.speaker_name === para.speaker_name && seg.speaker_diarization_source === 'registered_voiceprint')"
@@ -1097,6 +1195,8 @@ onBeforeUnmount(() => stopInternal())
                  looked like a phantom Speaker 12 or Speaker 13. -->
             <span class="para-time">{{ formatCaptionTime(para.start_ms, para.end_ms) }}</span>
           </div>
+          <p v-if="speakerNameEditorParagraph === para.id && speakerNameError"
+            class="transcript-speaker-name-error" role="alert">{{ speakerNameError }}</p>
           <div class="transcript-utterance-lines">
             <p v-for="(sentence, sentenceIndex) in splitDisplaySentences(para.text)"
               :key="sentenceIndex" class="para-text transcript-sentence">{{ sentence }}</p>
