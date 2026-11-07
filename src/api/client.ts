@@ -38,6 +38,12 @@ export const meetingsApi = {
   get: (id: string) => request<{ meeting: MeetingDetail }>(`/meetings/${id}`),
   segments: (id: string) =>
     request<{ segments: MeetingSegment[] }>(`/meetings/${id}/segments`),
+  labelSpeaker: (id: string, speakerId: number, name: string) =>
+    request<{ speaker: Speaker; speaker_labels: Record<string, { name: string; profile_id: string }> }>(
+      `/meetings/${encodeURIComponent(id)}/speakers/label`, {
+        method: 'POST', body: JSON.stringify({ speaker_id: speakerId, name }),
+      },
+    ),
   identityCandidate: (id: string, segmentId: number) =>
     request<{ segment_id: number; candidate: {
       status: string; profile_id: string | null; similarity: number | null;
