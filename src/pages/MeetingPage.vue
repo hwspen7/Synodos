@@ -1160,11 +1160,7 @@ onBeforeUnmount(() => stopInternal())
               <IntelligencePanel v-if="activeReviewTool !== 'correction' && activeReviewTool !== 'speakers'"
                 compact :section="intelligenceSection"
                 :meeting-id="props.id" :segments="segments" />
-              <div v-else-if="activeReviewTool === 'correction'" class="review-focus-panel">
-                <div class="review-focus-heading">
-                  <h3>Transcript corrections</h3>
-                  <p>Review AI suggestions before applying them. To edit a specific turn, use its Edit control in the transcript.</p>
-                </div>
+              <div v-else-if="activeReviewTool === 'correction'" class="review-focus-panel review-correction-panel">
                 <ContextCorrectionPanel :meeting-id="props.id" :segments="segments"
                   :recording="recording || status === 'connecting' || status === 'stopping'"
                   @applied="loadSavedTranscript" />

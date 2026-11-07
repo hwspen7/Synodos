@@ -10,6 +10,7 @@ const meeting = read('src/pages/MeetingPage.vue')
 const intelligence = read('src/components/IntelligencePanel.vue')
 const styles = read('src/assets/meeting-tool-layout.css')
 const icons = read('src/components/AppIcon.vue')
+const corrections = read('src/components/ContextCorrectionPanel.vue')
 
 test('review starts with an immediately usable overview, not a workflow chooser', () => {
   assert.match(meeting, /const activeReviewTool = ref<ReviewTool>\('overview'\)/)
@@ -72,16 +73,29 @@ test('updated component tags and styles are balanced', () => {
   assert.equal((styles.match(/\{/g) || []).length, (styles.match(/\}/g) || []).length)
 })
 
-test('Assistant expands independently and uses three result cards', () => {
+test('Assistant expands independently and presents unified analysis sections', () => {
   const theme = read('src/assets/synodos-theme.css')
   assert.match(meeting, /'assistant-panel-open': activeMeetingTool === 'review'/)
-  assert.match(theme, /\.meeting-workspace\.tool-panel-open\.assistant-panel-open \{\s*grid-template-columns:minmax\(0,1fr\) 440px;/)
-  assert.match(theme, /\.meeting-workspace\.tool-panel-open\.assistant-panel-open \{\s*grid-template-columns:minmax\(0,1fr\) 420px;/)
-  assert.match(intelligence, /\.intelligence-inline\.review-insights \.review-insights-section \{/)
-  assert.match(intelligence, /border:1px solid #eae4dc;border-radius:12px/)
+  assert.match(theme, /\.meeting-workspace\.tool-panel-open\.assistant-panel-open \{\s*grid-template-columns:minmax\(0,1fr\) 500px;/)
+  assert.match(theme, /\.meeting-workspace\.tool-panel-open\.assistant-panel-open \{\s*grid-template-columns:minmax\(0,1fr\) 470px;/)
+  assert.match(intelligence, /class="review-insights-results"/)
+  assert.match(intelligence, /\.intelligence-inline\.review-insights \.review-insights-results \{/)
+  assert.match(intelligence, /\.review-insights-results \.review-insights-section h4:before \{\s*content:none;/)
+  assert.match(theme, /\.review-insights-results \.review-insights-section h4 \{\s*display:flex;align-items:center;justify-content:flex-start;/)
   assert.match(intelligence, /<span class="visually-hidden">Analysis type<\/span>/)
   for (const heading of ['Summary', 'Decisions', 'Next steps']) {
     assert.match(intelligence, new RegExp('<h4>' + heading))
   }
   assert.doesNotMatch(intelligence, /Extract next steps/)
+})
+
+test('Corrections has one compact toolbar and retains explicit accept and dismiss', () => {
+  assert.match(meeting, /class="review-focus-panel review-correction-panel"/)
+  assert.doesNotMatch(meeting, /<h3>Transcript corrections<\/h3>/)
+  assert.match(corrections, /class="context-actions context-review-toolbar"/)
+  assert.match(corrections, /Suggestions only\. Changes require your approval\./)
+  assert.match(corrections, /@click="startReview\(false\)"/)
+  assert.match(corrections, /@click="accept\(item\)"/)
+  assert.match(corrections, /@click="dismiss\(item\)"/)
+  assert.match(theme, /\.review-correction-panel \.context-review-toolbar \{/)
 })

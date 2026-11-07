@@ -779,48 +779,91 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
   }
 }
 
-/* Assistant layout: wider reading surface, without changing Recordings or Settings. */
+/* Wider Assistant panel with a shared left alignment for the header and content. */
 @media (min-width:1201px) {
   .synodos-shell.meeting-route .meeting-workspace.tool-panel-open.assistant-panel-open {
-    grid-template-columns:minmax(0,1fr) 440px;
+    grid-template-columns:minmax(0,1fr) 500px;
   }
 }
-@media (min-width:1201px) and (max-width:1420px) {
+@media (min-width:1201px) and (max-width:1450px) {
   .synodos-shell.meeting-route .meeting-workspace.tool-panel-open.assistant-panel-open {
-    grid-template-columns:minmax(0,1fr) 420px;
+    grid-template-columns:minmax(0,1fr) 470px;
   }
 }
 .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-primary .paragraph,
 .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-primary .paragraph:nth-of-type(odd) {
-  max-width:860px;
+  max-width:800px;
 }
 .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-primary .transcript {
-  padding-left:clamp(18px,2.4vw,36px)!important;
-  padding-right:clamp(18px,2.4vw,36px)!important;
+  padding-left:clamp(18px,2.3vw,34px)!important;
+  padding-right:clamp(18px,2.3vw,34px)!important;
 }
 .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-detail-panel {
-  background:#f9f8f6;border-left-color:#e9e3db;
+  background:#faf9f7;border-left-color:#e8e3dc;
 }
 .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-detail-header {
-  min-height:50px;padding:9px 20px;background:#f9f8f6;
+  min-height:50px;padding:9px 16px;background:#faf9f7;
 }
 .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-detail-header h2 {
   font-size:14px;letter-spacing:-.02em;
 }
 .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-detail-scroll {
-  padding:17px 18px 30px;
+  padding:15px 16px 26px;
 }
 .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-review-tools {
-  grid-template-columns:repeat(4,minmax(0,1fr));
-  gap:4px;margin-bottom:18px;padding:4px;
-  border:1px solid #ece6de;border-radius:12px;background:#f0ede8;
+  grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;
+  margin-bottom:16px;padding:3px;
+  border:1px solid #ebe5de;border-radius:10px;background:#f1eeea;
 }
 .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-review-tools button {
-  min-height:37px;padding:8px 4px;border-radius:8px;
+  min-height:36px;padding:7px 4px;border-radius:7px;
   font-size:11px;font-weight:650;line-height:1.2;
 }
 .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-review-tools button.active {
-  color:#a34e09;background:#fff;box-shadow:0 2px 7px rgba(47,32,20,.07);
+  color:#a44c0b;background:#fff;box-shadow:0 1px 5px rgba(40,28,18,.06);
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .review-insights-results {
+  margin:0;border:1px solid #e9e4de;border-radius:13px;
+  background:#fff;box-shadow:0 1px 6px rgba(43,32,20,.025);
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .review-insights-results .review-insights-section {
+  display:block;max-width:none;margin:0;padding:18px 19px 19px;
+  border:0;border-bottom:1px solid #eeeae6;border-radius:0;
+  background:transparent;box-shadow:none;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .review-insights-results .review-insights-section:last-child {
+  border-bottom:0;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .review-insights-results .review-insights-section h4 {
+  display:flex;align-items:center;justify-content:flex-start;
+  margin:0 0 11px;gap:8px;color:#292724;font-size:12px;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .review-insights-results .review-insights-section h4:before {
+  content:none;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .review-insights-results .review-insights-section h4 span {
+  margin-left:auto;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .review-insights-results .review-insights-narrative,
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .review-insights-results .review-insights-list,
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .review-insights-results .review-insights-empty-text {
+  margin-left:0;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .review-correction-panel {
+  gap:0;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .review-correction-panel .context-review {
+  margin:0;padding:0;border:0;background:transparent;box-shadow:none;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .review-correction-panel .context-head {
+  flex-direction:column;align-items:stretch;gap:11px;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .review-correction-panel .context-review-toolbar {
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(130px,.8fr);
+  align-items:end;gap:10px;
+}
+.synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .review-correction-panel .context-review-toolbar > button {
+  white-space:nowrap;
 }
 @media (max-width:1200px) and (min-width:761px) {
   .synodos-shell.meeting-route .meeting-workspace.tool-panel-open.assistant-panel-open {
@@ -828,18 +871,21 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
   }
   .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-detail-panel {
     position:fixed;top:52px;right:0;bottom:0;left:auto;z-index:65;
-    width:min(420px,calc(100vw - 70px));height:auto;min-height:0;
+    width:min(470px,calc(100vw - 70px));height:auto;min-height:0;
     box-shadow:-12px 0 34px rgba(35,27,18,.10);
   }
 }
 @media (max-width:760px) {
   .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-detail-panel {
-    width:min(420px,100vw);top:50px;
+    width:min(470px,100vw);top:50px;
   }
   .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-detail-scroll {
     padding:13px 14px 24px;
   }
-  .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-review-tools button {
-    font-size:10px;
+  .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .meeting-review-tools button {font-size:10px;}
+}
+@media (max-width:370px) {
+  .synodos-shell.meeting-route .meeting-workspace.assistant-panel-open .review-correction-panel .context-review-toolbar {
+    grid-template-columns:minmax(0,1fr);
   }
 }
