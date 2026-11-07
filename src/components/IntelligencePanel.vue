@@ -324,7 +324,7 @@ onBeforeUnmount(() => {
         <p v-else class="review-insights-empty-text">No summary yet.</p>
         <small v-if="briefSummary?.stale" class="review-insights-stale">Transcript changed since this summary was generated.</small>
       </section>
-      <section v-if="briefSummary || briefExtraction" class="review-insights-section">
+      <section class="review-insights-section">
         <h4>Decisions <span v-if="briefFindings.decisions?.length">{{ briefFindings.decisions.length }}</span></h4>
         <ul v-if="briefFindings.decisions?.length" class="review-insights-list">
           <li v-for="(item, i) in briefFindings.decisions" :key="'decision-' + i">
@@ -333,7 +333,7 @@ onBeforeUnmount(() => {
         </ul>
         <p v-else class="review-insights-empty-text">No decisions.</p>
       </section>
-      <section v-if="briefSummary || briefExtraction" class="review-insights-section">
+      <section class="review-insights-section">
         <h4>Next steps <span v-if="briefFindings.actions?.length">{{ briefFindings.actions.length }}</span></h4>
         <ul v-if="briefFindings.actions?.length" class="review-insights-list">
           <li v-for="(item, i) in briefFindings.actions" :key="'action-' + i">
