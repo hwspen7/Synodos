@@ -10,6 +10,7 @@ const meeting = read('src/pages/MeetingPage.vue')
 const intelligence = read('src/components/IntelligencePanel.vue')
 const styles = read('src/assets/meeting-tool-layout.css')
 const icons = read('src/components/AppIcon.vue')
+const theme = read('src/assets/synodos-theme.css')
 const corrections = read('src/components/ContextCorrectionPanel.vue')
 
 test('review starts with an immediately usable overview, not a workflow chooser', () => {
