@@ -1,7 +1,7 @@
 """Regression tests for transcript joining and conservative temporal deduplication."""
 import unittest
 from speech.captions.text_format import join_transcript_text
-from speech.captions.commit_guard import is_temporal_duplicate, is_adjacent_tail_echo
+from speech.captions.commit_guard import is_temporal_duplicate, is_adjacent_tail_echo, replayed_audio_end
 
 
 class TranscriptCompositionTests(unittest.TestCase):
@@ -30,6 +30,14 @@ class CommitGuardTests(unittest.TestCase):
     def test_simultaneous_different_speech_is_preserved(self):
         previous = [{"start_sample": 0, "end_sample": 32000, "text": "One speaker."}]
         self.assertFalse(is_temporal_duplicate(0, 32000, "Another speaker.", previous))
+
+    def test_replay_guard_keeps_candidates_with_uncovered_audio(self):
+        previous = [{"start_sample": 16000, "end_sample": 32000}]
+        self.assertEqual(replayed_audio_end(16100, 32300, previous, sample_rate=16000), 32000)
+        self.assertIsNone(replayed_audio_end(16100, 35500, previous, sample_rate=16000))
+        self.assertIsNone(replayed_audio_end(30000, 35500, previous, sample_rate=16000))
+        self.assertIsNone(replayed_audio_end(16100, 32300, previous, sample_rate=16000,
+                                            timestamp_quality="window_estimate"))
 
     def test_adjacent_unaligned_reply_is_preserved(self):
         prior = [{

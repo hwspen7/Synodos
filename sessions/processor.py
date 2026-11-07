@@ -44,7 +44,9 @@ from sessions.save_queue import SaveQueue
 from core.metrics import metrics
 from runtime_quality.telemetry import telemetry
 from runtime_quality.speakers import speaker_stats, find_distinct_participant
-from speech.captions.commit_guard import is_temporal_duplicate, is_adjacent_tail_echo
+from speech.captions.commit_guard import (
+    is_temporal_duplicate, is_adjacent_tail_echo, replayed_audio_end,
+)
 from speech.captions.commit_boundary import completed_island_drop, unclosed_voice_turn
 from speech.audio.acoustic_guard import uninformative_audio
 from speech.audio.adaptive_audio import AdaptiveAudio
@@ -1111,6 +1113,8 @@ class SessionProcessor(threading.Thread):
                     current_content_trace = stage
         telemetry.observe_asr_cycle(buffer_s, time.monotonic() - phase07_asr_started)
         unconfirmed = []
+        preview_spans = []
+        mono_decode = self._speech_settings.engine in ("whisper", "hybrid")
         published_intervals_ms = []
         local_end = 0
         # Per-inference-cycle provenance for content conservation. Repeated
@@ -1166,7 +1170,15 @@ class SessionProcessor(threading.Thread):
                 metrics.increment("asr_temporal_duplicate_skipped")
                 local_end = max(local_end, e_g - start_offset)
                 continue
-            if (self._speech_settings.engine in ("whisper", "hybrid")
+            if mono_decode and (covered_end := replayed_audio_end(
+                    s_g, e_g, self.segments, sample_rate=sr,
+                    timestamp_quality=sentence.get("timestamp_quality", "segment"),
+            )) is not None:
+                commit_receipt["duplicate_skipped"] += 1
+                metrics.increment("asr_replayed_audio_skipped")
+                local_end = max(local_end, min(covered_end, absolute_end) - start_offset)
+                continue
+            if (mono_decode
                     and is_adjacent_tail_echo(
                         s_g, e_g, text, self.segments, sample_rate=sr,
                         timestamp_quality=sentence.get(
@@ -1193,6 +1205,18 @@ class SessionProcessor(threading.Thread):
                 )
             )
             if should_hold:
+                if mono_decode:
+                    quality = sentence.get("timestamp_quality", "segment")
+                    if replayed_audio_end(
+                            s_g, e_g, preview_spans, sample_rate=sr,
+                            timestamp_quality=quality,
+                    ) is not None:
+                        commit_receipt["duplicate_skipped"] += 1
+                        metrics.increment("asr_preview_replayed_audio_skipped")
+                        continue
+                    preview_spans.append({
+                        "start_sample": s_g, "end_sample": e_g, "timestamp_quality": quality,
+                    })
                 unconfirmed.append(sentence)
                 commit_receipt["held"] += 1
                 continue

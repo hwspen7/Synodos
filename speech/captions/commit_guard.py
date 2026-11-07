@@ -24,6 +24,39 @@ def is_temporal_duplicate(start: int, end: int, text: str, confirmed: list[dict]
             return True
     return False
 
+def replayed_audio_end(
+    start: int, end: int, confirmed: list[dict], *, sample_rate: int,
+    timestamp_quality: str = "segment",
+) -> int | None:
+    """Find the covered end of an alternate decode of the same mono audio.
+
+    Different scripts and changed hypotheses can have identical audio bounds.
+    Allow only small boundary drift, and keep the uncovered tail available.
+    Window estimates can cover several voices, so require exact bounds when
+    either side lacks segment- or word-level timing.
+    """
+    if start < 0 or end <= start or sample_rate <= 0:
+        return None
+    duration = end - start
+    max_drift = sample_rate * 80 // 1000
+    for item in reversed(confirmed[-64:]):
+        a = int(item.get("start_sample", -1))
+        b = int(item.get("end_sample", -1))
+        if not 0 <= a < b:
+            continue
+        if a == start and b == end:
+            return end
+        if (timestamp_quality not in ("word", "segment")
+                or item.get("timestamp_quality", "segment") not in ("word", "segment")):
+            continue
+        covered_end = min(end, b)
+        overlap = covered_end - max(start, a)
+        uncovered = duration - overlap
+        if overlap > 0 and uncovered <= max_drift and overlap * 100 >= duration * 92:
+            return covered_end
+    return None
+
+
 def _words_only(text: str) -> str:
     return " ".join("".join(
         ch if ch.isalnum() or ch.isspace() else " "
