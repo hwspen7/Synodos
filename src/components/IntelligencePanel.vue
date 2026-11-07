@@ -164,7 +164,7 @@ const briefExtraction = computed(() =>
   ?? artifacts.value.find(item => item.kind === 'extract')
   ?? null)
 const briefFindings = computed<ArtifactContent>(() =>
-  briefExtraction.value?.content ?? briefSummary.value?.content ?? {})
+  briefSummary.value?.content ?? briefExtraction.value?.content ?? {})
 
 async function refresh(silent = false): Promise<void> {
   if (!props.meetingId || refreshPending) return
@@ -202,8 +202,8 @@ async function perform(kind: string, payload: Record<string, unknown> = {}): Pro
     busyKind.value = null
   }
 }
-async function analyze(kind: 'summary' | 'extract'): Promise<void> {
-  await perform(kind, { mode: mode.value })
+async function analyze(): Promise<void> {
+  await perform('summary', { mode: mode.value })
 }
 async function review(kind: ReviewKind, item: Review, status: string): Promise<void> {
   if (busyKind.value) return
@@ -292,39 +292,26 @@ onBeforeUnmount(() => {
 <template>
   <section class="review-insights intelligence-inline" aria-label="Meeting AI tools">
     <template v-if="view === 'overview'">
-    <div class="review-insights-header">
-      <div>
-        <h3>Meeting overview</h3>
-        <p>Summary, decisions and next steps from your saved transcript.</p>
-      </div>
-    </div>
-
     <p v-if="loading" class="review-insights-hint" role="status">Loading meeting insights...</p>
     <div v-else-if="!aiEnabled" class="review-insights-empty">
       <strong>AI analysis is unavailable</strong>
       <p>Enable the local AI worker to generate summaries. Transcript editing and speaker review remain available.</p>
     </div>
     <template v-else>
-      <label class="review-inline-mode">Analysis type
-        <select v-model="mode" aria-label="Analysis type">
-          <option v-for="item in modes" :key="item.id" :value="item.id">{{ item.name }}</option>
-        </select>
-      </label>
-      <div class="review-insights-actions">
+      <div class="review-insights-controls">
+        <label class="review-inline-mode">Type
+          <select v-model="mode" aria-label="Analysis type">
+            <option v-for="item in modes" :key="item.id" :value="item.id">{{ item.name }}</option>
+          </select>
+        </label>
         <button type="button" class="review-insights-primary"
           :disabled="!!busyKind || !hasSegments || activeJobs.some(j => j.kind === 'summary')"
-          @click="analyze('summary')">
+          @click="analyze()">
           <AppIcon name="file-text" :size="16" />
           {{ busyKind === 'summary' ? 'Preparing...' : 'Generate summary' }}
         </button>
-        <button type="button" class="review-insights-secondary"
-          :disabled="!!busyKind || !hasSegments || activeJobs.some(j => j.kind === 'extract')"
-          @click="analyze('extract')">
-          <AppIcon name="list" :size="16" />
-          {{ busyKind === 'extract' ? 'Preparing...' : 'Extract next steps' }}
-        </button>
       </div>
-      <p v-if="!hasSegments" class="review-insights-hint">Record and save some transcript content to enable analysis.</p>
+      <p v-if="!hasSegments" class="review-insights-hint">No transcript available.</p>
       <p v-if="activeJobs.length" class="review-insights-hint" role="status">
         {{ activeJobs.length }} analysis {{ activeJobs.length === 1 ? 'task is' : 'tasks are' }} processing.
       </p>
@@ -333,20 +320,20 @@ onBeforeUnmount(() => {
 
       <section class="review-insights-section">
         <h4>Summary</h4>
-        <p v-if="briefSummary?.content.summary" class="review-insights-narrative">{{ briefSummary.content.summary }}</p>
-        <p v-else class="review-insights-empty-text">No summary yet. Generate one to see the key points here.</p>
+        <p v-if="briefSummary?.content.summary || briefFindings.summary" class="review-insights-narrative">{{ briefSummary?.content.summary || briefFindings.summary }}</p>
+        <p v-else class="review-insights-empty-text">No summary yet.</p>
         <small v-if="briefSummary?.stale" class="review-insights-stale">Transcript changed since this summary was generated.</small>
       </section>
-      <section class="review-insights-section">
+      <section v-if="briefSummary || briefExtraction" class="review-insights-section">
         <h4>Decisions <span v-if="briefFindings.decisions?.length">{{ briefFindings.decisions.length }}</span></h4>
         <ul v-if="briefFindings.decisions?.length" class="review-insights-list">
           <li v-for="(item, i) in briefFindings.decisions" :key="'decision-' + i">
             <strong>{{ item.title }}</strong><small v-if="item.source_ids?.length">{{ evidenceText(item.source_ids) }}</small>
           </li>
         </ul>
-        <p v-else class="review-insights-empty-text">No decisions extracted.</p>
+        <p v-else class="review-insights-empty-text">No decisions.</p>
       </section>
-      <section class="review-insights-section">
+      <section v-if="briefSummary || briefExtraction" class="review-insights-section">
         <h4>Next steps <span v-if="briefFindings.actions?.length">{{ briefFindings.actions.length }}</span></h4>
         <ul v-if="briefFindings.actions?.length" class="review-insights-list">
           <li v-for="(item, i) in briefFindings.actions" :key="'action-' + i">
@@ -354,7 +341,7 @@ onBeforeUnmount(() => {
             <small>{{ item.owner || 'No owner assigned' }}<template v-if="item.due_date"> · {{ item.due_date }}</template></small>
           </li>
         </ul>
-        <p v-else class="review-insights-empty-text">No action items extracted.</p>
+        <p v-else class="review-insights-empty-text">No next steps.</p>
       </section>
       <section v-if="briefFindings.open_questions?.length" class="review-insights-section">
         <h4>Open questions <span>{{ briefFindings.open_questions.length }}</span></h4>
@@ -406,7 +393,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </details>
-      <details class="review-inline-details">
+      <details v-if="jobs.length" class="review-inline-details">
         <summary :title="[provider, modelName].filter(Boolean).join(' · ')">
           Tasks<span v-if="activeJobs.length"> ({{ activeJobs.length }} active)</span>
         </summary>
@@ -799,6 +786,34 @@ onBeforeUnmount(() => {
   .review-inline-mode {flex-wrap:wrap;}
   .review-inline-mode select {max-width:none;}
   .intelligence-inline .review-insights-actions button {flex:1 1 100%;}
+}
+
+/* One compact command row, with evidence below it. */
+.intelligence-inline .review-insights-controls {
+  display:grid;grid-template-columns:minmax(104px,.95fr) minmax(148px,1.05fr);
+  align-items:center;gap:8px;min-width:0;
+}
+.intelligence-inline .review-insights-controls .review-inline-mode {
+  height:36px;min-height:36px;gap:7px;white-space:nowrap;
+}
+.intelligence-inline .review-insights-controls .review-inline-mode select {
+  flex:1;min-width:0;max-width:none;height:36px;min-height:36px;
+  padding:0 22px 0 7px;font-size:11px;
+}
+.intelligence-inline .review-insights-controls .review-insights-primary {
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  height:36px;min-height:36px;min-width:0;width:100%;
+  padding:0 7px;border-radius:9px;
+  font-size:11px;font-weight:700;white-space:nowrap;
+}
+.intelligence-inline .review-insights-section {
+  padding:11px 0;border-bottom:1px solid #eeeae5;
+}
+.intelligence-inline .review-insights-section h4 {
+  margin:0 0 7px;font-size:12px;
+}
+@media(max-width:340px){
+  .intelligence-inline .review-insights-controls {grid-template-columns:minmax(0,1fr);}
 }
 
 </style>
