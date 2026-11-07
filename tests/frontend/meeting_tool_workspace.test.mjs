@@ -48,6 +48,8 @@ test('Assistant provides four directly accessible tools with overview as the def
   const from = source.indexOf('<nav class="meeting-review-tools"')
   const nav = source.slice(from, source.indexOf('</nav>', from))
   assert.equal((nav.match(/<button\b/g) ?? []).length, 4)
+  const theme = readFileSync(path.join(root, 'src/assets/synodos-theme.css'), 'utf8')
+  assert.match(theme, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/)
   for (const label of ['Summary', 'Translation', 'Corrections', 'Speakers']) {
     assert.ok(nav.includes('>' + label + '</button>'), 'Assistant section missing: ' + label)
   }
