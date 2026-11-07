@@ -139,7 +139,6 @@ const latestArtifacts = computed(() => artifacts.value.slice(0, 15))
 const selectedArtifact = computed(() => latestArtifacts.value.find(a => a.id === selectedArtifactId.value) ?? latestArtifacts.value[0] ?? null)
 const activeJobs = computed(() => jobs.value.filter(j => j.status === 'queued' || j.status === 'running'))
 const recentJobs = computed(() => showAllJobs.value ? jobs.value.slice(0, 15) : jobs.value.slice(0, 5))
-const latestCompleted = computed(() => jobs.value.filter(j => j.status === 'completed').length)
 const hasSegments = computed(() => props.segments.some(s => s.text.trim().length > 0))
 const translationVisible = computed(() => aiEnabled.value && view.value === 'translation')
 const translationRows = computed(() => translation.value?.segments ?? [])
@@ -408,12 +407,11 @@ onBeforeUnmount(() => {
         </div>
       </details>
       <details class="review-inline-details">
-        <summary>Analysis activity ({{ activeJobs.length }} active)</summary>
-        <p class="review-inline-provenance">{{ provider || 'Local' }} provider · {{ modelName || 'Configured AI model' }} · {{ latestCompleted }} completed tasks</p>
+        <summary :title="[provider, modelName].filter(Boolean).join(' · ')">
+          Tasks<span v-if="activeJobs.length"> ({{ activeJobs.length }} active)</span>
+        </summary>
           <aside class="content-card activity-card" aria-label="Background task activity">
-            <div class="card-header"><div><span class="eyebrow-small">BACKGROUND WORK</span><h3>Task activity</h3></div>
-              <span class="count-pill">{{ activeJobs.length }} active</span></div>
-            <div v-if="!jobs.length" class="empty-card compact-empty"><strong>No tasks yet</strong><p>New analysis jobs will appear here.</p></div>
+            <div v-if="!jobs.length" class="empty-card compact-empty"><strong>No tasks yet</strong></div>
             <div v-else class="job-list">
               <div v-for="job in recentJobs" :key="job.id" class="job-item">
                 <span :class="['job-indicator', `is-${job.status}`]" aria-hidden="true">
@@ -793,7 +791,6 @@ onBeforeUnmount(() => {
 .intelligence-inline .job-list {padding:0;}
 .intelligence-inline .job-item {padding:11px 0;}
 .intelligence-inline .activity-card {border:0;background:transparent;}
-.intelligence-inline .activity-card .card-header {padding:6px 0;}
 .intelligence-inline .empty-card {padding:16px 12px;}
 .intelligence-inline .view-all {padding:10px;}
 .intelligence-inline .review-insights-section {background:transparent;padding:12px 0;border:0;border-bottom:1px solid #eeeae5;border-radius:0;}
