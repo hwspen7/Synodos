@@ -95,3 +95,42 @@ __screenshots__/
 
 # Final 195-clip benchmark, including licensed speaker-attributed content
 /benchmark/fixed195/
+
+# Keep local evaluation corpora and generated reports out of Git
+/benchmark/
+/data/
+/datasets/
+/artifacts/
+/reports/
+/results/
+
+# Additional audio formats, downloaded model files, and local data exports
+*.aac
+*.opus
+*.aiff
+*.aif
+*.wma
+*.mkv
+*.mov
+*.avi
+*.npy
+*.npz
+*.gguf
+*.sqlite
+*.sqlite3
+*.db
+*.parquet
+*.arrow
+*.jsonl
+*.csv
+*.tsv
+*.zip
+*.7z
+*.tar
+*.tgz
+
+# Private keys and certificate bundles
+*.pem
+*.key
+*.p12
+*.pfx
