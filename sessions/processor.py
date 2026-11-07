@@ -226,6 +226,8 @@ class SessionProcessor(threading.Thread):
         self._phase07_last_autosave = time.monotonic()
         self._phase07_saved_segment_id = 0
         self.ui_settings: dict = {}
+        # Meeting-local, unverified display labels survive resumed recordings.
+        self.speaker_labels: dict[str, dict] = {}
         self._translation_tasks: dict[Future, tuple[str, tuple[CaptionTranslation, ...]]] = {}
         self._translation_pending: dict[int, CaptionTranslation] = {}
         self._translation_warning = False
@@ -820,6 +822,9 @@ class SessionProcessor(threading.Thread):
             "next_segment_id": self._next_segment_id,
             "speaker_map": dict(self._speaker_map),
             "ui_settings": dict(self.ui_settings),
+            "speaker_labels": {
+                str(k): dict(v) for k, v in self.speaker_labels.items()
+            },
         }
         for row in state["segments"]:
             label = self._provisional_published.get(row["id"])
@@ -932,6 +937,10 @@ class SessionProcessor(threading.Thread):
             if type(s.get("speaker_id")) is int and s["speaker_id"] > 0
         }
         self.ui_settings = dict(state.get("ui_settings") or {})
+        self.speaker_labels = {
+            str(k): dict(v)
+            for k, v in (state.get("speaker_labels") or {}).items()
+        }
         self._speaker_seg_ids = {}
         if not self._participants_explicit:
             self.participant_ids = list(state.get("participant_ids") or [])
