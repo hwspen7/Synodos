@@ -1,198 +1,122 @@
-# Meeting of Pioneers
+<p align="center">
+  <img src="public/favicon.svg" alt="Synodos logo" width="88" />
+</p>
 
-Meeting of Pioneers is a local-first meeting transcription application built with Vue 3, TypeScript, FastAPI, and FunASR. Its source code, interface labels, documentation, default names, logging descriptions, and error messages are maintained in English. The recognition engine still supports Chinese-language speech, and existing user-provided data is never translated automatically.
+<h1 align="center">Synodos</h1>
 
-## Phase 1 language support (ten languages)
+<p align="center"><strong>Meeting intelligence from a shared audio source.</strong></p>
 
-The supported product languages for Phase 1 are **English (en), Chinese
-(zh), French (fr), Spanish (es), Arabic (ar), Indonesian (id), Japanese
-(ja), Russian (ru), German (de), and Hindi (hi)**. Portuguese (pt) and
-Bengali (bn) are not part of this release scope.
+<p align="center">
+  <img alt="Local-first" src="https://img.shields.io/badge/Local--first-AI-EB7100?style=flat-square" />
+  <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white" />
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" />
+  <img alt="Vue 3" src="https://img.shields.io/badge/Vue-3-42B883?style=flat-square&logo=vuedotjs&logoColor=white" />
+  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-17-4169E1?style=flat-square&logo=postgresql&logoColor=white" />
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-333333?style=flat-square" /></a>
+</p>
 
-The spoken-language menu also provides `auto` detection. Model-detected
-languages outside the approved ten may still appear in historically saved
-captions or automatic detection output; their recognized text is not
-silently deleted. An explicitly requested unsupported language is
-rejected before starting a new recording. The translation menu limits
-target choices to the same ten codes or disabled, but actual translation
-depends on installed local language-pair packages.
+---
 
-The original 12-language / 130-single-clip Fixed195 archive is frozen
-and unchanged. Phase 1 scores the **110 selected clips** through
-`tools.validation.language_gate`, preserving the original 130-case
-score as historical evidence. This subset is *not* a retrained or improved
-Whisper result. See [Phase 1 text acceptance](docs/validation/text_acceptance.md) and
-[final AMI mixed-audio / GitHub CI release procedure](docs/validation/ami_ci_closure.md).
-The latter gathers the original official human-word annotations and
-authenticated GitHub check-run annotations without altering saved captions
-or claiming release acceptance before real field metrics and hosted CI pass.
+Synodos is a local-first AI platform for multi-speaker meetings. It brings real-time speech recognition together with speaker diarization to produce speaker-aware transcripts and contextual meeting intelligence from a single shared audio stream.
 
-## Phase 1/2 integrated safety upgrade
+Rather than relying on a separate audio channel for every participant, Synodos is designed around the acoustics of a conversation happening in the same room.
 
-The integrated upgrade implements versioned human transcript review, enrolled
-speaker identity suggestions that abstain on ambiguous evidence, original-ASR
-provenance, and an AMI word-timestamp parser repair. See
-[Phase 1/2 acceptance and E-drive instructions](docs/validation/integrated_upgrade.md).
+## How it works
 
-**Release status is evidence-gated.** Existing 10-language ASR results do not
-prove real meeting DER/CER or GitHub Actions success; no model quality
-improvement is claimed until the frozen audio and independent references
-have been replayed and checked.
+~~~text
+   Shared microphone / room audio
+                 |
+          16 kHz mono PCM
+                 |
+              WebSocket
+                 |
+        +--------+--------+
+        |                 |
+   Speech recognition   Speaker modeling
+   Whisper / Qwen3-ASR  CAM++ / Nemotron 3
+        |                 |
+        +--------+--------+
+                 |
+       Speaker-aware transcript
+                 |
+        Meeting intelligence
+                 |
+         Review and export
+~~~
 
-The complete optional Phase 1A/Phase 1B/Phase 2 research protocol (three
-speaker diarization models, independent Qwen3-ASR gap review, held-out
-speaker verification, E-drive model isolation, and Phase 3 release gates)
-is documented in [the full Phase 1/2 upgrade guide](docs/validation/research_release.md).
-These experiments are opt-in and require independently prepared datasets.
+The recognition and speaker-analysis paths process the same incoming conversation. Independent Nemotron 3 diarization is configurable, while CAM++ provides the default speaker-embedding evidence.
 
-## Capabilities
+## Under the hood
 
-- Live microphone capture with 16 kHz mono PCM streaming over WebSocket.
-- Speech recognition with voice activity detection, punctuation, and timestamps.
-- Speaker diarization, voiceprint enrollment, and participant matching.
-- Reusable ASR hotword libraries for specialized terminology.
-- Meeting creation, saving, resuming, deleting, and Markdown/JSON export.
+| Area | Implementation |
+| :--- | :--- |
+| **Real-time speech** | Streaming WebSocket audio, voice activity detection, timestamped captions, and vocabulary-aware recognition. |
+| **Multilingual ASR** | **faster-whisper large-v3** with configurable **Qwen3-ASR 1.7B** hybrid routing. The speech-language interface supports 10 configured languages. |
+| **Speaker diarization** | **CAM++** voice embeddings and speaker clustering, with an optional independent **NVIDIA Nemotron 3** stream. **ECAPA-TDNN** is available for speaker-verification comparison. |
+| **Meeting intelligence** | Local **Ollama** models with **PostgreSQL** retrieval for evidence-linked answers, meeting summaries, and follow-up information. |
+| **Application** | **FastAPI** with Python 3.12, **Vue 3 / TypeScript**, and a local workspace for transcript review, speaker naming, translation, and Markdown/JSON export. |
 
-Optional AI worker features include meeting notes, action extraction, evidence-linked answers, and translation when the local model service and PostgreSQL are configured. Transcript correction and opt-in WAV recording are available. Cloud sync, multiuser accounts, production authentication, robust overlapping-speaker recognition, and complete crash recovery are not implemented.
+### Designed for the full conversation
 
-## Repository structure
+Synodos keeps recognized speech connected to its timing and speaker evidence. Meeting records can be reviewed and corrected after recording, while the Assistant draws on saved conversation context instead of treating every utterance as an isolated message.
 
-```text
-meeting/
-├── main.py                    FastAPI application entrypoint
-├── api/                       HTTP and WebSocket routes
-│   ├── health.py
-│   ├── meetings.py
-│   ├── speakers.py
-│   ├── hotwords.py
-│   └── websocket.py
-├── core/                      Configuration, security, validation and metrics
-├── inference/                 Model inference and bounded scheduling
-├── sessions/                  Session processing, PCM buffering and identity
-├── storage/                   Meeting, speaker, and hotword persistence
-├── example/                   Manual audio test scripts
-├── tests/                     Basic backend contract tests
-├── src/                       Vue application source
-│   ├── pages/
-│   ├── components/
-│   ├── api/
-│   ├── audio/
-│   ├── router/
-│   └── assets/
-├── public/                    Frontend static assets
-├── index.html                 Vite HTML entrypoint
-├── vite.config.ts             Vite dev proxy
-├── package.json               Frontend dependencies
-├── pnpm-lock.yaml             Frontend lock file
-├── pyproject.toml             Backend dependencies
-├── uv.lock                    Backend lock file
-└── PROJECT_CONTEXT.md         Detailed architecture reference
-```
+Saved meetings, speaker profiles, and local terminology libraries remain under the user's control. AI processing can run against a local model service.
 
-See [backend source layout](docs/architecture/backend_layout.md) for module ownership and the updated import paths.
+## Getting started
 
-The frontend and backend use the same repository root; there are no separate `frontend/` or `backend/` working directories.
+**Requirements:** Python **3.12 recommended** (3.12+ supported), [uv](https://docs.astral.sh/uv/), Node.js **24.12+**, and [pnpm](https://pnpm.io/). An NVIDIA CUDA environment can be used for GPU inference.
 
-## Local development
+Clone the repository:
 
-Recommended Python version: **3.12**. The project requires Python 3.12 or newer, as declared in `pyproject.toml`. Install `uv`, `pnpm`, and Node.js `^22.18.0 || >=24.12.0`.
+~~~powershell
+git clone https://github.com/hwspen7/Synodos.git
+cd Synodos
+~~~
 
-Open two terminals in the repository root.
+**1. Backend** — from the repository root:
 
-**Backend**
-
-```powershell
-uv sync
-uv pip install -r requirements-speech-whisper.txt
+~~~powershell
+uv sync --python 3.12
+uv pip install -r requirements/speech-whisper.txt
 uv run uvicorn main:app --host 127.0.0.1 --port 8000
-```
+~~~
 
-**Frontend**
+**2. Frontend** — in a second terminal:
 
-```powershell
+~~~powershell
 pnpm install
 pnpm dev
-```
+~~~
 
-Open the address printed by Vite and grant microphone access. The development proxy forwards `/api` and `/ws` requests to port 8000. The backend health endpoint is `http://127.0.0.1:8000/api/health`; FastAPI documentation is available at `/docs`.
+Open the local address shown by Vite. The frontend connects to the FastAPI server through the Vite development proxy. The API health endpoint is available at `http://127.0.0.1:8000/api/health`.
 
-Useful validation commands:
+### Model and service configuration
 
-```powershell
-uv run python -m unittest discover -s tests -t .
-pnpm type-check
-pnpm build
-```
+Core speech settings are controlled through environment variables:
 
-To verify that all tracked source and documentation text remains free of CJK characters, run:
+| Setting | Purpose |
+| :--- | :--- |
+| `MEETING_ASR_ENGINE` | Select `whisper` or the multilingual `hybrid` route. |
+| `MEETING_ASR_LANGUAGE` | Set a source language or use `auto` detection. |
+| `MEETING_INDEPENDENT_DIARIZATION` | Enable the optional `nemotron3` speaker stream. |
+| `MEETING_AI_ENABLED` | Enable the local meeting-intelligence service. |
+| `MEETING_AI_ENDPOINT` | Connect to an Ollama-compatible local model endpoint. |
 
-```powershell
-python -m unittest tests.quality.integrity.test_english_only
-```
+The Windows launcher is provided as [`Start-Meeting.cmd`](Start-Meeting.cmd) for an already configured local environment. Optional model backends and PostgreSQL services use their respective local dependencies.
 
-The Python test suite checks basic routes and persistence, not live FunASR inference or concurrent streaming. Initial startup may require downloading models. Override model identifiers or local paths using `ASR_MODEL`, `FSMN_VAD_MODEL`, `PUNC_MODEL`, and `SPK_MODEL`.
+## Repository
 
-### Meeting caption translation
+| Directory | Responsibility |
+| :--- | :--- |
+| [`speech/`](speech/) | ASR engines, acoustic preprocessing, diarization, and caption integrity. |
+| [`sessions/`](sessions/) | Real-time session processing, speaker channels, and transcription state. |
+| [`intelligence/`](intelligence/) | Meeting knowledge, retrieval, evidence verification, and translation. |
+| [`api/`](api/) | FastAPI endpoints and WebSocket transport. |
+| [`src/`](src/) | Vue interface and meeting workspace. |
+| [`tests/`](tests/) | Backend, frontend, speech-quality, and integration checks. |
 
-Choose a target under **Display translation** before recording. Confirmed
-foreign-language captions are translated asynchronously, and the original
-remains visible. The translator uses installed Argos language pairs or the
-configured loopback Ollama model on the CPU. No audio is sent to the
-translator. Missing captions continue translating after a normal stop.
-Use **Translate saved transcript** to retry or translate an earlier meeting
-to a different saved target.
+Local recordings, downloaded models, private evaluation corpora, and generated reports are excluded from Git tracking.
 
-### Hotword libraries
+## License
 
-Enter one complete term per line, such as `Spring Boot`. Select the
-library in the meeting's speech settings before recording. Whisper and
-Qwen3-ASR receive the selected terms as recognition hints. The settings
-diagnostics show the number of terms loaded for the next recording.
-Hotword hints can change recognition and do not edit saved transcripts.
-
-### Adaptive audio for live captions
-
-Set `MEETING_ASR_ADAPTIVE_AUDIO=1` before starting the backend to try mild
-stationary-noise reduction and bounded gain for sustained quiet speech. It
-runs on the live multilingual caption input, reuses processed audio as
-windows move, and preserves sample timing. The WAV archive and voiceprint
-pipeline use the source PCM. Explicit `MEETING_DENOISE=1` takes precedence.
-Legacy ASR and native streaming do not use adaptive audio.
-
-Check `adaptive_asr_audio_enabled` at `/api/speech/capabilities`. Unset the
-option or set it to `0` and restart to compare against the baseline.
-
-## Local data and migration
-
-The application creates `meetings/`, `speakers/`, and `hotwords/` relative to the backend working directory. Git excludes these private directories, downloaded models, virtual environments, dependencies, recordings, and logs.
-
-If you previously used `backend/backend/`, stop the old server before moving your ignored local `meetings/`, `speakers/`, and `hotwords/` directories into the repository root. Inspect `MODELSCOPE_CACHE` before moving model caches. Do not overwrite saved data. Git changes only tracked files and does not automatically relocate these local directories.
-
-Existing transcript text, speaker names, and hotwords may legitimately contain Chinese or other languages. Converting the source interface to English does not rewrite user data and does not disable Chinese speech recognition. Source audio is saved only when Save WAV is selected in the meeting UI or recording is explicitly enabled in backend settings. WAV checkpoints improve crash readability but do not guarantee recovery of the last buffered samples. JSON exports are human-readable transcripts, not full resumable session backups.
-
-The manual stream test requires an audio sample not tracked in this repository:
-
-```powershell
-uv run python example/stream_test.py --wav path/to/sample.wav
-```
-
-See [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for protocol details, settings, storage formats, architecture, limitations, and outstanding issues.
-
-## Stage 1 optional speaker-model architecture
-
-See [Stage 1 speaker model interfaces and paired evaluation](docs/architecture/speaker_stage1_architecture.md).
-It adds opt-in CAM++ / ECAPA speaker verification comparisons and a
-Nemotron 3 offline diarization comparison. Candidates run in isolated
-environments and cannot silently replace production speaker identity or
-live-ASR handling. A separate opt-in live ECAPA shadow worker
-(`MEETING_ECAPA_SHADOW=1`) can inspect CAM++-labeled confirmed speech in
-the background without changing captions, stored voiceprints or manual
-speaker assignments. It reports aggregate rank consistency only, not
-speaker recognition accuracy. See the Stage 1 document for the dedicated
-E-drive environment and startup configuration.
-No real-model accuracy improvement is claimed until a
-frozen, independently annotated audio set has been evaluated.
-
-## Phase 08 quality hardening
-
-See [Phase 08 repair status](docs/validation/recovery_status.md) for confirmed fixes, known limitations, and required real-audio acceptance tests. CI validates software contracts and does not establish Zoom-equivalent acoustic performance.
+Synodos is released under the [MIT License](LICENSE). Third-party models and datasets remain subject to their respective terms.
