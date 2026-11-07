@@ -886,7 +886,7 @@ onBeforeUnmount(() => {
 .review-insights-advanced:hover{color:#a44e00}
 
 
-/* Integrated Assistant sections — no separate AI Workspace surface. */
+/* Integrated Assistant sections with streamlined inline controls. */
 .intelligence-inline {
   --ai-bg:#fff;
   --ai-paper:#fcfbf9;
