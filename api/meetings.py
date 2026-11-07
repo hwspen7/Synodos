@@ -76,6 +76,112 @@ async def rename_meeting(meeting_id: str, payload: MeetingRenamePayload) -> dict
     return {"meeting": meta}
 
 
+
+class MeetingSpeakerLabelPayload(BaseModel):
+    speaker_id: int = Field(ge=1)
+    name: str = Field(min_length=1, max_length=120)
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value: str) -> str:
+        name = value.strip()
+        if not name or any(ord(char) < 32 or ord(char) == 127 for char in name):
+            raise ValueError("Speaker name must be a single line of visible text")
+        return name
+
+
+@router.post("/api/meetings/{meeting_id}/speakers/label")
+async def label_meeting_speaker(meeting_id: str, payload: MeetingSpeakerLabelPayload) -> dict:
+    """Name a meeting-local speaker and create or update an unverified library entry.
+
+    A display label does not constitute biometric verification, and must not
+    rewrite acoustic channel decisions or individual manual identity reviews.
+    """
+    from sessions.manual_review import ReviewConflict
+    from sessions.channels.corroborated_speaker_channels import saved_speaker_continuity
+
+    if not meeting_store.valid_id(meeting_id):
+        raise HTTPException(400, "Invalid meeting ID")
+    async with meeting_connection_lock(meeting_id):
+        if meeting_id in meeting_sessions:
+            raise HTTPException(409, "Stop recording before naming a speaker")
+        state = await asyncio.to_thread(meeting_store.load_state, meeting_id)
+        if state is None:
+            raise HTTPException(404, "Meeting not found")
+        revision = (state.get("meta") or {}).get("_store_version")
+        state.pop("meta", None)
+        segments = state.get("segments") or []
+        sr = int(state.get("sample_rate") or 16000)
+        projected = meeting_store._projected_segments(state, sr)
+        aliases = saved_speaker_continuity(projected, sr)
+        matching = [
+            item for item in projected
+            if (meeting_store._display_speaker_id(item, aliases) == payload.speaker_id
+                or (item.get("caption_projection_status") == "split_verified"
+                    and any(cue.get("speaker_id") == payload.speaker_id
+                            for cue in (item.get("caption_cues") or [])
+                            if isinstance(cue, dict))))
+        ]
+        if not segments or not matching:
+            raise HTTPException(404, "Meeting speaker not found")
+
+        labels = dict(state.get("speaker_labels") or {})
+        current = labels.get(str(payload.speaker_id)) or {}
+        previous_profile = current.get("profile_id")
+        previous_name = current.get("name")
+        if previous_name == payload.name and previous_profile:
+            existing = await asyncio.to_thread(
+                speaker_store.get_for_matching, [previous_profile]
+            )
+            if existing:
+                return {"speaker": await asyncio.to_thread(
+                    _speaker_summary_for_id, previous_profile
+                ), "speaker_labels": labels}
+
+        created_id = None
+        if previous_profile:
+            existing = await asyncio.to_thread(
+                speaker_store.get_for_matching, [previous_profile]
+            )
+            if not existing:
+                raise HTTPException(409, "Speaker profile no longer exists")
+            library_speaker = await asyncio.to_thread(
+                speaker_store.rename, previous_profile, payload.name
+            )
+        else:
+            library_speaker = await asyncio.to_thread(
+                speaker_store.create, payload.name
+            )
+            created_id = library_speaker["id"]
+
+        labels[str(payload.speaker_id)] = {
+            "name": payload.name,
+            "profile_id": library_speaker["id"],
+        }
+        state["speaker_labels"] = labels
+        try:
+            await asyncio.to_thread(
+                meeting_store.save_state, state,
+                expected_store_revision=revision,
+            )
+        except Exception:
+            # Creating a library profile and saving the meeting use separate
+            # stores. Compensate a failed meeting write to avoid orphan records.
+            if created_id:
+                await asyncio.to_thread(speaker_store.delete_speaker, created_id)
+            elif previous_profile and previous_name:
+                await asyncio.to_thread(speaker_store.rename, previous_profile, previous_name)
+            raise
+    return {"speaker": library_speaker, "speaker_labels": labels}
+
+
+def _speaker_summary_for_id(profile_id: str) -> dict:
+    return next(
+        item for item in speaker_store.list_speakers()
+        if item["id"] == profile_id
+    )
+
+
 @router.patch("/api/meetings/{meeting_id}/settings")
 async def update_meeting_settings(meeting_id: str, payload: MeetingSettingsPayload) -> dict:
     """Persist offline configuration without opening an idle recording session."""
