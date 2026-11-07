@@ -62,6 +62,33 @@ class PostgresMeetingStore(MeetingStore):
                 row = conn.execute("SELECT meta FROM meeting_records WHERE id = %s", (mid,)).fetchone()
         return row[0]
 
+
+    def rename(self, meeting_id: str, title: str) -> dict | None:
+        """Update metadata and resumable state under the PostgreSQL row lock."""
+        from psycopg.types.json import Jsonb
+        self._check_id(meeting_id)
+        with self.database.pool.connection() as conn:
+            row = conn.execute(
+                "SELECT meta, state FROM meeting_records WHERE id = %s FOR UPDATE",
+                (meeting_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            meta = dict(row[0] or {})
+            if meta.get("title") == title:
+                return meta
+            meta["title"] = title
+            meta["updated_at"] = _now_iso()
+            state = row[1]
+            if isinstance(state, dict):
+                state = {**state, "title": title}
+            conn.execute(
+                "UPDATE meeting_records SET meta = %s, state = %s, "
+                "updated_at = now(), revision = revision + 1 WHERE id = %s",
+                (Jsonb(meta), Jsonb(state) if state is not None else None, meeting_id),
+            )
+        return meta
+
     def list_meetings(self) -> list[dict]:
         with self.database.pool.connection() as conn:
             rows = conn.execute("SELECT meta FROM meeting_records ORDER BY updated_at DESC, id").fetchall()

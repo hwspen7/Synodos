@@ -39,6 +39,41 @@ class MeetingSettingsPayload(BaseModel):
     def validate_translation_target(cls, value: str) -> str:
         return translation_target(value)
 
+class MeetingRenamePayload(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+
+    @field_validator("title")
+    @classmethod
+    def clean_title(cls, value: str) -> str:
+        title = value.strip()
+        if not title or any(ord(ch) < 32 or ord(ch) == 127 for ch in title):
+            raise ValueError("Meeting title must contain visible, single-line text")
+        return title
+
+
+@router.patch("/api/meetings/{meeting_id}")
+async def rename_meeting(meeting_id: str, payload: MeetingRenamePayload) -> dict:
+    """Rename a meeting without changing its ID, settings, or transcript."""
+    if not meeting_store.valid_id(meeting_id):
+        raise HTTPException(400, "Invalid meeting ID")
+    async with meeting_connection_lock(meeting_id):
+        active = meeting_sessions.get(meeting_id)
+        previous = active.processor.meeting_title if active is not None else None
+        if active is not None:
+            # Keep subsequent autosaves from restoring the previous title.
+            active.processor.meeting_title = payload.title
+        try:
+            meta = await asyncio.to_thread(meeting_store.rename, meeting_id, payload.title)
+        except Exception:
+            if active is not None:
+                active.processor.meeting_title = previous
+            raise
+        if meta is None:
+            if active is not None:
+                active.processor.meeting_title = previous
+            raise HTTPException(404, "Meeting not found")
+    return {"meeting": meta}
+
 
 @router.patch("/api/meetings/{meeting_id}/settings")
 async def update_meeting_settings(meeting_id: str, payload: MeetingSettingsPayload) -> dict:

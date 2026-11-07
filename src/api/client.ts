@@ -61,6 +61,10 @@ export const meetingsApi = {
       method: 'POST',
       body: JSON.stringify({ title }),
     }),
+  rename: (id: string, title: string) =>
+    request<{ meeting: MeetingSummary }>(`/meetings/${encodeURIComponent(id)}`, {
+      method: 'PATCH', body: JSON.stringify({ title }),
+    }),
   save: (id: string) =>
     request<{ ok: boolean; meeting: MeetingSummary }>(`/meetings/${id}/save`, {
       method: 'POST',

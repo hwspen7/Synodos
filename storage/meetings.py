@@ -79,6 +79,34 @@ class MeetingStore:
         self._write_pickle(d / "meeting.pkl", {"meta": meta, "state": None})
         return meta
 
+
+    def rename(self, meeting_id: str, title: str) -> dict | None:
+        """Atomically update the canonical title and any resumable snapshot."""
+        with self._write_lock:
+            payload = self._read_payload(meeting_id)
+            if payload is None:
+                return None
+            meta = dict(payload.get("meta") or {})
+            if not meta:
+                return None
+            if meta.get("title") == title:
+                return meta
+            meta["title"] = title
+            meta["updated_at"] = _now_iso()
+            meta["_store_version"] = int(meta.get("_store_version", 0)) + 1
+            payload["meta"] = meta
+            state = payload.get("state")
+            if isinstance(state, dict):
+                payload["state"] = {**state, "title": title}
+            folder = self._dir(meeting_id)
+            temp = folder / ("meeting-" + uuid.uuid4().hex + ".tmp")
+            try:
+                self._write_pickle(temp, payload)
+                os.replace(temp, folder / "meeting.pkl")
+            finally:
+                temp.unlink(missing_ok=True)
+            return meta
+
     def exists(self, meeting_id: str) -> bool:
         return self._dir(meeting_id).joinpath("meeting.pkl").exists()
 

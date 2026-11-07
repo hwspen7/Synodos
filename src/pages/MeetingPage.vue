@@ -51,6 +51,53 @@ const vadThreshold = ref(4)
 const recThreshold = ref(1.5)
 const serverInfo = ref<ServerReady | null>(null)
 const meetingTitle = ref('')
+const editingMeetingTitle = ref(false)
+const renamingMeetingTitle = ref(false)
+const meetingTitleDraft = ref('')
+const meetingTitleInput = ref<HTMLInputElement | null>(null)
+const titleRenamedLocally = ref(false)
+
+function editMeetingTitle(): void {
+  if (renamingMeetingTitle.value) return
+  meetingTitleDraft.value = meetingTitle.value || 'Untitled Meeting'
+  editingMeetingTitle.value = true
+  void nextTick(() => {
+    meetingTitleInput.value?.focus()
+    meetingTitleInput.value?.select()
+  })
+}
+
+function cancelMeetingRename(): void {
+  if (renamingMeetingTitle.value) return
+  editingMeetingTitle.value = false
+  meetingTitleDraft.value = meetingTitle.value
+}
+
+async function commitMeetingRename(): Promise<void> {
+  if (!editingMeetingTitle.value || renamingMeetingTitle.value) return
+  const title = meetingTitleDraft.value.trim()
+  if (!title) {
+    error.value = 'Meeting title cannot be empty'
+    return
+  }
+  if (title === meetingTitle.value) {
+    editingMeetingTitle.value = false
+    return
+  }
+  renamingMeetingTitle.value = true
+  error.value = ''
+  try {
+    const { meeting } = await meetingsApi.rename(props.id, title)
+    meetingTitle.value = meeting.title
+    titleRenamedLocally.value = true
+    editingMeetingTitle.value = false
+    showToast('Meeting renamed')
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    renamingMeetingTitle.value = false
+  }
+}
 const bufferedMs = ref(0)
 const segments = ref<Segment[]>([])
 const mergeGapS = ref(2)
@@ -342,6 +389,9 @@ async function saveMeeting(quiet = false): Promise<boolean> {
 async function loadMeetingConfig(): Promise<void> {
   try {
     const { meeting } = await meetingsApi.get(props.id)
+    if (!titleRenamedLocally.value && !editingMeetingTitle.value) {
+      meetingTitle.value = meeting.title || 'Untitled Meeting'
+    }
     selectedParticipantIds.value = meeting.ui_settings?.participant_ids ?? meeting.participant_ids ?? []
     autoMatchSaved.value = meeting.ui_settings?.auto_match_saved ?? meeting.auto_match_saved ?? true
     selectedHotwordIds.value = meeting.ui_settings?.hotword_ids ?? meeting.hotword_ids ?? []
@@ -647,7 +697,9 @@ function connect(autostart = false): void {
       if (recordAudio.value && !wavRecordingEnabled.value) {
         error.value = 'WAV recording was requested but the server could not enable it.'
       }
-      meetingTitle.value = msg.title ?? 'Untitled Meeting'
+      if (!titleRenamedLocally.value && !editingMeetingTitle.value) {
+        meetingTitle.value = msg.title ?? 'Untitled Meeting'
+      }
       mergeGapS.value = msg.merge_gap_s || 2
       if (msg.participant_ids) selectedParticipantIds.value = msg.participant_ids
       if (msg.hotword_ids) selectedHotwordIds.value = msg.hotword_ids
@@ -891,7 +943,20 @@ onBeforeUnmount(() => stopInternal())
           <AppIcon name="arrow-left" :size="17" />
         </button>
         <div class="compact-meeting-titles">
-          <h1 :title="meetingTitle || 'Untitled Meeting'">{{ meetingTitle || 'Untitled Meeting' }}</h1>
+          <h1 class="synodos-meeting-title">
+            <button v-if="!editingMeetingTitle" type="button" class="meeting-title-trigger"
+              :title="`Rename ${meetingTitle || 'Untitled Meeting'}`"
+              aria-label="Rename meeting" @click="editMeetingTitle">
+              <span class="meeting-title-text">{{ meetingTitle || 'Untitled Meeting' }}</span>
+              <AppIcon name="pencil" :size="13" />
+            </button>
+            <input v-else ref="meetingTitleInput" v-model="meetingTitleDraft"
+              class="meeting-title-editor" type="text" maxlength="120"
+              aria-label="Meeting title" :disabled="renamingMeetingTitle"
+              @keydown.enter.prevent="commitMeetingRename"
+              @keydown.esc.stop.prevent="cancelMeetingRename"
+              @blur="commitMeetingRename" />
+          </h1>
           <div class="meeting-running-status" role="status">
             <span class="status-chip" :class="statusClass">
               <span class="status-dot" aria-hidden="true"></span>{{ statusText }}
@@ -928,13 +993,13 @@ onBeforeUnmount(() => stopInternal())
           :class="{ active: activeMeetingTool === 'review' }"
           :aria-pressed="activeMeetingTool === 'review'"
           @click="selectMeetingTool(activeMeetingTool === 'review' ? 'transcript' : 'review')">
-          <AppIcon name="edit" :size="16" /><span>AI</span>
+          <AppIcon name="sparkles" :size="16" /><span>AI</span>
         </button>
           <button type="button" class="synodos-quick-tool synodos-recordings-tool"
             :class="{ active: activeMeetingTool === 'recordings' }"
             :aria-pressed="activeMeetingTool === 'recordings'"
             @click="selectMeetingTool(activeMeetingTool === 'recordings' ? 'transcript' : 'recordings')">
-            <AppIcon name="list" :size="16" /><span>Recordings</span>
+            <AppIcon name="audio-lines" :size="16" /><span>Recordings</span>
           </button>
         <details ref="moreMenuRef" class="synodos-meeting-more">
           <summary aria-label="More meeting actions" title="More meeting actions">···</summary>

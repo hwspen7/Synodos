@@ -28,6 +28,7 @@ class APIContractTests(unittest.TestCase):
             ("/api/meetings/{meeting_id}/segments/{segment_id}/identity-candidate", "GET"),
             ("/api/meetings/{meeting_id}/save", "POST"),
             ("/api/meetings/{meeting_id}", "DELETE"),
+            ("/api/meetings/{meeting_id}", "PATCH"),
             ("/api/meetings/{meeting_id}/export", "GET"),
             ("/api/speakers", "GET"), ("/api/speakers", "POST"),
             ("/api/speakers/{speaker_id}", "PATCH"),
@@ -80,6 +81,23 @@ class APIContractTests(unittest.TestCase):
         self.assertIn("/api/speakers", schema["paths"])
 
 class StorageTests(unittest.TestCase):
+    def test_rename_updates_list_resume_and_exports(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            store = MeetingStore(root)
+            mid = store.create(title="Untitled Meeting")["id"]
+            state = {
+                "id": mid, "title": "Untitled Meeting", "sample_rate": 16000,
+                "merge_gap_s": 2.0, "segments": [], "speaker_map": {},
+            }
+            store.save_state(state)
+            renamed = store.rename(mid, "Planning Session")
+            self.assertEqual(renamed["title"], "Planning Session")
+            self.assertEqual(store.get_meeting(mid)["title"], "Planning Session")
+            self.assertEqual(store.list_meetings()[0]["title"], "Planning Session")
+            self.assertEqual(store.load_state(mid)["title"], "Planning Session")
+            self.assertIn("# Planning Session", store.export(mid, "md"))
+            self.assertEqual(store.rename("missing-id", "Any"), None)
+
     def test_save_resume_and_export(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             store = MeetingStore(root)
