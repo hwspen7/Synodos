@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from intelligence.config import load_config
 from intelligence.contracts import ALLOWED_JOBS, ALLOWED_MODES
-from intelligence import store, retrieval, media
+from intelligence import store, retrieval, media, meeting_translation
 from speech.supported_languages import translation_target
 
 router=APIRouter(prefix='/api/intelligence',tags=['intelligence'])
@@ -287,6 +287,35 @@ async def translations(meeting_id:str,language:str):
     if not re.fullmatch(r'[a-z]{2,3}(-[a-z]{2,4})?',language):
         raise HTTPException(400,'Invalid language code')
     return {'translations':await asyncio.to_thread(store.translations,_meeting_id(meeting_id),language)}
+
+
+@router.get('/meetings/{meeting_id}/workspace-translation/{language}')
+async def workspace_translation_status(meeting_id: str, language: str):
+    _enabled()
+    mid = _meeting_id(meeting_id)
+    target = _workspace_translation_target(language)
+    try:
+        return await asyncio.to_thread(meeting_translation.status, mid, target)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.post('/meetings/{meeting_id}/workspace-translation/{language}')
+async def queue_workspace_translation(meeting_id: str, language: str):
+    _enabled()
+    mid = _meeting_id(meeting_id)
+    target = _workspace_translation_target(language)
+    try:
+        return await asyncio.to_thread(meeting_translation.queue_meeting, mid, target)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+def _workspace_translation_target(language):
+    try:
+        return translation_target(language)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post('/media/upload')

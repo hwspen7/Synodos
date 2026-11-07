@@ -7,9 +7,9 @@ import os
 import uuid
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from intelligence import retrieval, store
+from intelligence import meeting_translation, retrieval, store
 from intelligence.worker import process
 from sessions.manual_review import apply_review
 
@@ -161,6 +161,30 @@ class MeetingKnowledgePostgresTests(unittest.TestCase):
         self.assertEqual(len(semantic), 1)
         self.assertEqual(semantic[0]["source_id"], mid)
         self.assertGreater(semantic[0]["score"], 0.5)
+
+    def test_workspace_translation_queue_and_progress_are_separate(self):
+        mid = self.fixture("The Atlas demonstration is November 27, 2026.")
+        queued = meeting_translation.queue_meeting(mid, "zh")
+        self.assertEqual(queued["total"], 1)
+        self.assertEqual(meeting_translation.queue_meeting(mid, "zh"), queued)
+        self.assertEqual(meeting_translation.status(mid, "zh")["active_jobs"], 1)
+        self.assertEqual(store.list_jobs(mid), [])
+
+        job = store.claim()
+        self.assertEqual(job["id"], queued["job_ids"][0])
+        model = Mock()
+        model.model_for.return_value = "test-translator"
+        model.chat.return_value = "Translated Atlas fixture."
+        store.finish(job["id"], process(job, model))
+        self.assertTrue(model.chat.call_args.kwargs["cpu_translation"])
+
+        status = meeting_translation.status(mid, "zh")
+        self.assertEqual(status["active_jobs"], 0)
+        self.assertEqual(status["failed_jobs"], 0)
+        self.assertEqual(status["translations"], [
+            {"segment_id": 1, "text": model.chat.return_value},
+        ])
+        self.assertEqual(meeting_translation.queue_meeting(mid, "zh")["job_ids"], [])
 
     def test_postgres_job_round_trip(self):
         mid = self.fixture("The Atlas demonstration is November 27, 2026.")

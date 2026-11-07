@@ -63,14 +63,12 @@ interface SearchResult {
   source_kind: string
   evidence: Record<string, unknown>
 }
-interface TranslatedFragment {
-  segment_id: number
-  source_text: string
-  text: string
-}
-interface TranslationJobResult {
-  target?: string
-  translations?: TranslatedFragment[]
+interface WorkspaceTranslation {
+  segments: Segment[]
+  translations: Array<{ segment_id: number; text: string }>
+  active_jobs: number
+  failed_jobs: number
+  last_error: string | null
 }
 interface AskResult {
   answer?: string
@@ -100,13 +98,16 @@ const searchText = ref('')
 const searchAllMeetings = ref(false)
 const notice = ref('')
 const error = ref('')
-const translationEnabled = ref(false)
 const jobs = ref<Job[]>([])
 const artifacts = ref<Artifact[]>([])
 const actions = ref<Review[]>([])
 const decisions = ref<Review[]>([])
 const searchResults = ref<SearchResult[]>([])
-const translated = ref<Record<number, string>>({})
+const translation = ref<WorkspaceTranslation | null>(null)
+const translationLoading = ref(false)
+const translationSubmitting = ref(false)
+const translationError = ref('')
+let translationScope = 0
 const selectedArtifactId = ref<string | null>(null)
 const askJobId = ref<string | null>(null)
 const askJob = ref<Job | null>(null)
@@ -123,7 +124,6 @@ const provider = ref('')
 const modelName = ref('')
 const showAllJobs = ref(false)
 const showAdvanced = ref(false)
-const queuedTranslation = new Set<string>()
 let pollId: ReturnType<typeof setInterval> | null = null
 let refreshPending = false
 
@@ -176,7 +176,18 @@ const recentJobs = computed(() => showAllJobs.value ? jobs.value.slice(0, 15) : 
 const latestCompleted = computed(() => jobs.value.filter(j => j.status === 'completed').length)
 const currentMode = computed(() => modes.find(m => m.id === mode.value) ?? modes[0]!)
 const hasSegments = computed(() => props.segments.some(s => s.text.trim().length > 0))
-const translationRows = computed(() => props.segments.filter(s => s.text.trim()).slice(-12))
+const translationVisible = computed(() => aiEnabled.value && view.value === 'translation' &&
+  (!props.compact || showAdvanced.value))
+const translationRows = computed(() => translation.value?.segments ?? [])
+const translated = computed(() => Object.fromEntries(
+  (translation.value?.translations ?? []).map(item => [item.segment_id, item.text]),
+))
+const translatedCount = computed(() => Object.keys(translated.value).length)
+const translationPending = computed(() => (translation.value?.active_jobs ?? 0) > 0)
+const translationFailed = computed(() => (translation.value?.failed_jobs ?? 0) > 0)
+const translationPath = computed(() =>
+  `/meetings/${encodeURIComponent(props.meetingId)}/workspace-translation/${encodeURIComponent(language.value)}`,
+)
 const selectedContent = computed<ArtifactContent>(() => selectedArtifact.value?.content ?? {})
 const selectedActionItems = computed(() => selectedContent.value.actions ?? [])
 const selectedDecisionItems = computed(() => selectedContent.value.decisions ?? [])
@@ -213,18 +224,6 @@ async function refresh(silent = false): Promise<void> {
     decisions.value = overview.decisions ?? []
     if (activeAsk) askJob.value = activeAsk
     if (activeMedia) mediaJob.value = activeMedia
-    if (translationEnabled.value) {
-      await fetchTranslations()
-      for (const job of jobs.value) {
-        if (job.kind !== 'live_translate' || job.status !== 'completed') continue
-        const payload = job.result as TranslationJobResult | null
-        if (payload?.target !== language.value) continue
-        for (const item of payload.translations ?? []) {
-          const original = props.segments.find(s => s.id === item.segment_id)
-          if (original?.text === item.source_text) translated.value[item.segment_id] = item.text
-        }
-      }
-    }
     if (!silent) error.value = ''
   } catch (e) {
     error.value = messageFromError(e)
@@ -325,49 +324,54 @@ async function upload(ev: Event): Promise<void> {
   finally { busyKind.value = null; input.value = '' }
 }
 async function fetchTranslations(): Promise<void> {
-  const data = await request<{ translations: Array<{ segment_id: number; text: string }> }>(
-    `/meetings/${encodeURIComponent(props.meetingId)}/translations/${encodeURIComponent(language.value)}`,
-  )
-  const next: Record<number, string> = {}
-  for (const item of data.translations ?? []) next[item.segment_id] = item.text
-  translated.value = { ...translated.value, ...next }
+  if (!translationVisible.value || translationLoading.value) return
+  const scope = translationScope
+  translationLoading.value = true
+  try {
+    const data = await request<WorkspaceTranslation>(translationPath.value)
+    if (scope !== translationScope) return
+    translation.value = data
+    translationError.value = ''
+  } catch (e) {
+    if (scope === translationScope) translationError.value = messageFromError(e)
+  } finally {
+    if (scope === translationScope) translationLoading.value = false
+  }
 }
 async function queueTranslations(): Promise<void> {
-  if (!translationEnabled.value || busyKind.value) return
-  const untranslated = props.segments.filter(s => s.text.trim() && !translated.value[s.id])
-  const fresh = untranslated.filter(s => !queuedTranslation.has(`${language.value}/${s.id}/${s.text}`)).slice(0, 8)
-  if (!fresh.length) {
-    notice.value = 'No new finalized segments to translate.'
-    return
+  if (!translationVisible.value || translationSubmitting.value || translationPending.value) return
+  const scope = translationScope
+  translationSubmitting.value = true
+  translationError.value = ''
+  try {
+    await request(translationPath.value, { method: 'POST' })
+    if (scope === translationScope) await fetchTranslations()
+  } catch (e) {
+    if (scope === translationScope) translationError.value = messageFromError(e)
+  } finally {
+    if (scope === translationScope) translationSubmitting.value = false
   }
-  const keys = fresh.map(s => `${language.value}/${s.id}/${s.text}`)
-  keys.forEach(k => queuedTranslation.add(k))
-  const ok = await perform('live_translate', {
-    target: language.value,
-    segments: fresh.map(s => ({ id: s.id, text: s.text })),
-  })
-  if (!ok) keys.forEach(k => queuedTranslation.delete(k))
 }
+watch([translationPath, translationVisible], () => {
+  translationScope += 1
+  translation.value = null
+  translationLoading.value = false
+  translationSubmitting.value = false
+  translationError.value = ''
+  void fetchTranslations()
+})
 watch(() => props.meetingId, () => {
   jobs.value = []; artifacts.value = []; actions.value = []; decisions.value = []
   selectedArtifactId.value = null
   searchResults.value = []
   askJobId.value = null; askJob.value = null
   mediaJobId.value = null; mediaJob.value = null; mediaName.value = ''
-  translated.value = {}; queuedTranslation.clear()
   void refresh()
 })
 watch(searchAllMeetings, () => {
   searchResults.value = []
   askJobId.value = null
   askJob.value = null
-})
-watch(language, () => { translated.value = {}; queuedTranslation.clear(); if (translationEnabled.value) { void fetchTranslations().catch(e => { error.value = messageFromError(e) }); void queueTranslations() } })
-watch(() => props.segments.map(s => `${s.id}:${s.text}`).join('|'), () => {
-  if (translationEnabled.value) void queueTranslations()
-})
-watch(translationEnabled, enabled => {
-  if (enabled) { void fetchTranslations().catch(e => { error.value = messageFromError(e) }); void queueTranslations() }
 })
 onMounted(async () => {
   try {
@@ -378,9 +382,15 @@ onMounted(async () => {
     if (aiEnabled.value) await refresh()
   } catch (e) { error.value = messageFromError(e) }
   finally { loading.value = false }
-  pollId = setInterval(() => { if (aiEnabled.value) void refresh(true) }, 4000)
+  pollId = setInterval(() => {
+    if (aiEnabled.value) void refresh(true)
+    if (!translationSubmitting.value) void fetchTranslations()
+  }, 4000)
 })
-onBeforeUnmount(() => { if (pollId) clearInterval(pollId) })
+onBeforeUnmount(() => {
+  translationScope += 1
+  if (pollId) clearInterval(pollId)
+})
 </script>
 
 <template>
@@ -667,16 +677,30 @@ onBeforeUnmount(() => { if (pollId) clearInterval(pollId) })
       </div>
 
       <div v-else-if="view === 'translation'" class="workspace-body">
-        <div class="section-heading"><div><h3>Bilingual transcript</h3><p>Translate finalized segments without modifying the original transcript.</p></div></div>
+        <div class="section-heading"><div><h3>Bilingual transcript</h3><p>Translate the saved meeting. Results are stored separately from the source transcript.</p></div></div>
         <div class="content-card translation-card">
-          <div class="translation-toolbar"><label class="switch-label"><input v-model="translationEnabled" type="checkbox" /> <span>Enable translation</span></label>
+          <div class="translation-toolbar">
             <label class="select-label">Target language <select v-model="language" class="ui-select" aria-label="Translation language">
               <option v-for="entry in PHASE1_LANGUAGES" :key="entry[0]" :value="entry[0]">{{ entry[1] }}</option>
             </select></label>
-            <button type="button" class="ui-btn ui-btn-solid" :disabled="!translationEnabled || !!busyKind || !translationRows.length" @click="queueTranslations">Translate new segments</button>
+            <button type="button" class="ui-btn ui-btn-solid"
+              :disabled="translationLoading || translationSubmitting || translationPending || !translationRows.length || translatedCount === translationRows.length"
+              @click="queueTranslations">
+              {{ translationSubmitting ? 'Queueing…' : translationPending ? 'Translating…' : translationFailed ? 'Retry remaining' : 'Translate saved meeting' }}
+            </button>
           </div>
-          <div v-if="!translationEnabled" class="empty-card"><strong>Translation is off</strong><p>Enable translation to queue confirmed segments for bilingual viewing.</p></div>
-          <div v-else-if="!translationRows.length" class="empty-card"><strong>No finalized speech yet</strong><p>Record or open a meeting with transcript content.</p></div>
+          <p v-if="translationError" class="job-error" role="alert">{{ translationError }}</p>
+          <p v-else-if="translationFailed && !translationPending && translatedCount < translationRows.length" class="job-error" role="alert">
+            {{ translation?.last_error || 'Some batches did not finish. Retry the remaining segments.' }}
+          </p>
+          <p v-if="translationRows.length" class="card-description" role="status">
+            {{ translatedCount }} / {{ translationRows.length }} segments translated.
+            <template v-if="translationPending"> Background work waits for active recording to finish.</template>
+          </p>
+          <div v-if="!translationRows.length" class="empty-card">
+            <strong>{{ translationLoading ? 'Loading saved transcript…' : 'No saved speech yet' }}</strong>
+            <p v-if="!translationLoading && !translationError">Save a meeting with transcript content to translate it.</p>
+          </div>
           <div v-else class="translation-list"><div class="translation-head"><span>Original</span><span>Translation</span></div>
             <div v-for="seg in translationRows" :key="seg.id" class="translation-entry"><div><span class="segment-time">{{ formatTime(seg.start_ms) }}</span><p>{{ seg.text }}</p></div>
               <div><span :class="['translation-status', { ready: !!translated[seg.id] }]">{{ translated[seg.id] ? 'Translated' : 'Pending' }}</span><p :class="{ 'placeholder-copy': !translated[seg.id] }">{{ translated[seg.id] || 'Waiting for translation' }}</p></div></div>

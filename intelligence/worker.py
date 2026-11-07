@@ -193,10 +193,14 @@ def process(job, gateway):
             results.append({'segment_id':segment['id'],'source_hash':source_hash(original),'source_text':original,'text':translated})
         return {'target':target,'translations':results,'source':'live_unverified'}
     if kind=='translate':
-        _,segments=_context(job)
+        revision,segments=_context(job)
         target=translation_target(job['payload'].get('target'))
         if not target:
             raise ValueError('A supported translation target is required')
+        if job['payload'].get('workspace') is True:
+            from intelligence.meeting_translation import translate_batch
+            return translate_batch(job['meeting_id'], revision, segments, target,
+                                   job['payload'], gateway)
         requested=job['payload'].get('segment_ids')
         if not isinstance(requested,list) or not 1<=len(requested)<=12:
             raise ValueError('Translation requires 1-12 saved segment IDs')
