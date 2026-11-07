@@ -29,6 +29,8 @@ test('meeting-local tools appear once in the compact header, not duplicated in n
     assert.ok(header.includes("'" + tool + "'"), 'Missing tool in header: ' + tool)
   }
   assert.match(header, /class="synodos-quick-tool synodos-recordings-tool"/)
+  assert.match(header, /class="synodos-quick-tool synodos-assistant-tool"/)
+  assert.match(header, /<span>Assistant<\/span>/)
   assert.ok(header.indexOf('synodos-recordings-tool') < header.indexOf('synodos-meeting-more'))
   assert.doesNotMatch(header.slice(header.indexOf('synodos-meeting-more')), /\> Recordings\s*<\/button>/)
   assert.match(header, /class="synodos-meeting-more"/)

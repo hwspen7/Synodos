@@ -989,11 +989,12 @@ onBeforeUnmount(() => stopInternal())
               :value="option[0]">{{ option[1] }}</option>
           </select>
         </label>
-        <button type="button" class="synodos-quick-tool"
+        <button type="button" class="synodos-quick-tool synodos-assistant-tool"
+          aria-label="Assistant" title="Assistant"
           :class="{ active: activeMeetingTool === 'review' }"
           :aria-pressed="activeMeetingTool === 'review'"
           @click="selectMeetingTool(activeMeetingTool === 'review' ? 'transcript' : 'review')">
-          <AppIcon name="sparkles" :size="16" /><span>AI</span>
+          <AppIcon name="sparkles" :size="16" /><span>Assistant</span>
         </button>
           <button type="button" class="synodos-quick-tool synodos-recordings-tool"
             :class="{ active: activeMeetingTool === 'recordings' }"

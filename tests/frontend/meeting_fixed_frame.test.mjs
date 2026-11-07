@@ -83,3 +83,14 @@ test('inline meeting rename persists, and controls use descriptive aligned icons
   assert.match(theme, /min-width:177px/)
   assert.match(theme, /\.synodos-brand-mark \{\s*position:relative;top:2px;/)
 })
+
+test('Assistant toolbar label and one shared vertical centerline are explicit', () => {
+  assert.match(page, /class="synodos-quick-tool synodos-assistant-tool"/)
+  assert.match(page, /aria-label="Assistant" title="Assistant"/)
+  assert.match(page, /AppIcon name="sparkles" :size="16"\s*\/><span>Assistant<\/span>/)
+  assert.doesNotMatch(page, /<span>AI<\/span>/)
+  assert.match(theme, /height:52px;min-height:52px;box-sizing:border-box;align-items:center/)
+  assert.match(theme, /height:34px;min-height:34px;align-items:center;gap:6px/)
+  assert.match(theme, /\.synodos-global-actions \.synodos-meeting-more \{\s*display:flex;align-items:center;height:34px;/)
+  assert.match(theme, /\.meeting-title-trigger \{[\s\S]*?height:34px;/)
+})

@@ -670,7 +670,7 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
   align-items:center;
 }
 .synodos-shell.meeting-route .synodos-global-actions .synodos-meeting-heading-actions {
-  min-height:52px;gap:6px;
+  height:34px;min-height:34px;align-items:center;gap:6px;
 }
 .synodos-shell.meeting-route .synodos-global-actions .synodos-quick-tool,
 .synodos-shell.meeting-route .synodos-global-actions .synodos-participants-button,
@@ -694,11 +694,54 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
   padding:0 24px 0 8px;line-height:1.2;font-size:11px;
   white-space:nowrap;text-overflow:clip;
 }
+/* The top bar and its teleported controls share one 52px row and 34px hit targets. */
+.synodos-shell.meeting-route .synodos-topbar {
+  height:52px;min-height:52px;box-sizing:border-box;align-items:center;
+}
+.synodos-shell.meeting-route .synodos-topbar-branding,
+.synodos-shell.meeting-route .synodos-topbar-actions {
+  height:100%;align-items:center;
+}
+.synodos-shell.meeting-route .synodos-topbar-branding > .synodos-brand,
+.synodos-shell.meeting-route .synodos-global-context,
+.synodos-shell.meeting-route .synodos-global-actions,
+.synodos-shell.meeting-route .synodos-global-context .compact-meeting-heading,
+.synodos-shell.meeting-route .synodos-global-context .compact-meeting-titles,
+.synodos-shell.meeting-route .synodos-global-context .synodos-meeting-title,
+.synodos-shell.meeting-route .synodos-global-context .meeting-running-status {
+  height:34px;min-height:34px;display:flex;align-items:center;
+}
+.synodos-shell.meeting-route .synodos-global-context .compact-meeting-titles h1 {
+  line-height:1;height:34px;
+}
+.synodos-shell.meeting-route .synodos-global-context .meeting-running-status .status-chip {
+  align-self:center;line-height:1;
+}
+.synodos-shell.meeting-route .synodos-global-actions .synodos-meeting-more {
+  display:flex;align-items:center;height:34px;
+}
+.synodos-shell.meeting-route .synodos-global-actions .synodos-language-control {
+  height:34px;
+}
+.synodos-shell.meeting-route .synodos-global-actions .synodos-assistant-tool {
+  white-space:nowrap;padding-inline:11px;gap:7px;
+}
+.synodos-shell.meeting-route .synodos-global-actions .synodos-assistant-tool > span {
+  display:inline-block;line-height:1;
+}
+@media (max-width:760px) {
+  .synodos-shell.meeting-route .synodos-topbar {
+    height:50px;min-height:50px;
+  }
+  .synodos-shell.meeting-route .synodos-global-actions .synodos-assistant-tool > span {
+    display:none;
+  }
+}
 .synodos-shell.meeting-route .synodos-global-context .synodos-meeting-title {
   display:flex;align-items:center;min-width:0;
 }
 .synodos-shell.meeting-route .meeting-title-trigger {
-  display:inline-flex;align-items:center;gap:5px;max-width:100%;height:30px;
+  display:inline-flex;align-items:center;gap:5px;max-width:100%;height:34px;
   min-width:0;padding:0 3px;border:0;border-radius:6px;background:transparent;
   font:inherit;font-weight:inherit;letter-spacing:inherit;color:inherit;
   text-align:left;cursor:text;
@@ -716,7 +759,7 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
 .synodos-shell.meeting-route .meeting-title-trigger:hover svg,
 .synodos-shell.meeting-route .meeting-title-trigger:focus-visible svg { opacity:1; }
 .synodos-shell.meeting-route .meeting-title-editor {
-  width:100%;min-width:110px;max-width:100%;height:29px;
+  width:100%;min-width:110px;max-width:100%;height:34px;
   box-sizing:border-box;padding:3px 8px;
   border:1px solid #eb7100;border-radius:7px;background:#fff;
   color:#292521;font:inherit;font-size:13px;font-weight:650;letter-spacing:0;
