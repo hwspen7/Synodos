@@ -54,7 +54,8 @@ test('meeting uses a single command bar and keeps all existing tools reachable',
   assert.doesNotMatch(meeting, /class="synodos-participant-stage"|class="synodos-top-controls"|class="synodos-session-bar"/)
   assert.doesNotMatch(meeting, /class="meeting-tool-sidebar"/)
   assert.match(meeting, /class="synodos-meeting-center"/)
-  assert.match(meeting, /<IntelligencePanel v-if="activeReviewTool === 'overview'" compact/)
+  assert.match(meeting, /<IntelligencePanel v-if="activeReviewTool !== 'correction' && activeReviewTool !== 'speakers'"/)
+  assert.match(meeting, /:section="intelligenceSection"/)
   assert.doesNotMatch(meeting, /<video\b/)
 })
 

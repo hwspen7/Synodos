@@ -67,13 +67,19 @@ function closeMeetingActions(): void {
 const showDiagnostics = ref(false)
 const showAllRecordings = ref(false)
 type MeetingTool = 'transcript' | 'review' | 'recordings' | 'settings'
-type ReviewTool = 'overview' | 'correction' | 'speakers'
+type ReviewTool = 'overview' | 'knowledge' | 'translation' | 'media' | 'correction' | 'speakers'
 const activeMeetingTool = ref<MeetingTool>(
   route.query.tool === 'settings' ? 'settings'
     : route.query.tool === 'recordings' ? 'recordings'
       : route.query.tool === 'transcript' ? 'transcript' : 'review',
 )
 const activeReviewTool = ref<ReviewTool>('overview')
+const intelligenceSection = computed<'overview' | 'knowledge' | 'translation' | 'media'>(() => {
+  if (activeReviewTool.value === 'knowledge') return 'knowledge'
+  if (activeReviewTool.value === 'translation') return 'translation'
+  if (activeReviewTool.value === 'media') return 'media'
+  return 'overview'
+})
 function selectMeetingTool(tool: MeetingTool): void {
   activeMeetingTool.value = tool
   if (tool === 'review') activeReviewTool.value = 'overview'
@@ -1075,10 +1081,19 @@ onBeforeUnmount(() => stopInternal())
         </header>
         <div class="meeting-detail-scroll">
           <template v-if="activeMeetingTool === 'review'">
-            <nav class="meeting-review-tools" aria-label="Review sections">
+            <nav class="meeting-review-tools" aria-label="Assistant sections">
               <button type="button" :class="{ active: activeReviewTool === 'overview' }"
                 :aria-current="activeReviewTool === 'overview' ? 'page' : undefined"
-                @click="activeReviewTool = 'overview'">Overview</button>
+                @click="activeReviewTool = 'overview'">Summary</button>
+              <button type="button" :class="{ active: activeReviewTool === 'knowledge' }"
+                :aria-current="activeReviewTool === 'knowledge' ? 'page' : undefined"
+                @click="activeReviewTool = 'knowledge'">Knowledge</button>
+              <button type="button" :class="{ active: activeReviewTool === 'translation' }"
+                :aria-current="activeReviewTool === 'translation' ? 'page' : undefined"
+                @click="activeReviewTool = 'translation'">Translation</button>
+              <button type="button" :class="{ active: activeReviewTool === 'media' }"
+                :aria-current="activeReviewTool === 'media' ? 'page' : undefined"
+                @click="activeReviewTool = 'media'">Files</button>
               <button type="button" :class="{ active: activeReviewTool === 'correction' }"
                 :aria-current="activeReviewTool === 'correction' ? 'page' : undefined"
                 @click="activeReviewTool = 'correction'">Corrections</button>
@@ -1087,7 +1102,8 @@ onBeforeUnmount(() => stopInternal())
                 @click="activeReviewTool = 'speakers'">Speakers</button>
             </nav>
             <div class="meeting-selected-tool">
-              <IntelligencePanel v-if="activeReviewTool === 'overview'" compact
+              <IntelligencePanel v-if="activeReviewTool !== 'correction' && activeReviewTool !== 'speakers'"
+                compact :section="intelligenceSection"
                 :meeting-id="props.id" :segments="segments" />
               <div v-else-if="activeReviewTool === 'correction'" class="review-focus-panel">
                 <div class="review-focus-heading">

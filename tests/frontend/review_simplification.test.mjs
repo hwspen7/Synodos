@@ -14,9 +14,9 @@ const icons = read('src/components/AppIcon.vue')
 test('review starts with an immediately usable overview, not a workflow chooser', () => {
   assert.match(meeting, /const activeReviewTool = ref<ReviewTool>\('overview'\)/)
   assert.doesNotMatch(meeting, /review-tool-welcome|Open AI workspace/)
-  assert.match(meeting, /<IntelligencePanel v-if="activeReviewTool === 'overview'" compact/)
-  assert.match(intelligence, /v-if="props.compact"/)
-  assert.match(intelligence, /aria-label="Meeting review overview"/)
+  assert.match(meeting, /<IntelligencePanel v-if="activeReviewTool !== 'correction' && activeReviewTool !== 'speakers'"/)
+  assert.match(meeting, /:section="intelligenceSection"/)
+  assert.match(intelligence, /aria-label="Meeting AI tools"/)
   assert.match(intelligence, /Generate summary/)
   assert.match(intelligence, /Extract next steps/)
   assert.match(intelligence, /briefSummary\?\.content\.summary/)
@@ -24,13 +24,16 @@ test('review starts with an immediately usable overview, not a workflow chooser'
   assert.match(intelligence, /briefFindings\.actions/)
 })
 
-test('advanced workflows remain accessible only after an explicit expansion', () => {
-  assert.match(intelligence, /showAdvanced = ref\(false\)/)
-  assert.match(intelligence, /v-if="!props.compact \|\| showAdvanced"/)
-  assert.match(intelligence, /@click="showAdvanced = !showAdvanced"/)
-  assert.match(intelligence, /More AI tools/)
+test('AI abilities are integrated into the Assistant without a second workspace', () => {
+  assert.doesNotMatch(intelligence, /showAdvanced|More AI tools|AI Workspace|Choose a workflow/)
   assert.match(intelligence, /const modes: Array/)
-  assert.match(intelligence, /const views: Array/)
+  assert.match(intelligence, /aria-label="Analysis type"/)
+  assert.match(intelligence, /view === 'knowledge'/)
+  assert.match(intelligence, /view === 'translation'/)
+  assert.match(intelligence, /view === 'media'/)
+  for (const action of ['indexMeeting', 'queueTranslations', 'cancelJob(job)', "review('actions'", "review('decisions'", "mediaInput?.click()"]) {
+    assert.ok(intelligence.includes(action), 'Missing integrated action ' + action)
+  }
 })
 
 test('speaker confirmation and optional second model remain accessible in one section', () => {
