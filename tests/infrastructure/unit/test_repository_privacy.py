@@ -73,13 +73,13 @@ class RepositoryPrivacyTests(unittest.TestCase):
             "analysis.jsonl",
         )
         result = subprocess.run(
-            ["git", "check-ignore", "--no-index", "-z", "--", *examples],
+            ["git", "check-ignore", "--no-index", "--", *examples],
             cwd=ROOT,
             capture_output=True,
             check=False,
         )
         self.assertEqual(result.returncode, 0)
-        ignored = set(result.stdout.decode("utf-8").split("\0"))
+        ignored = set(result.stdout.decode("utf-8").splitlines())
         self.assertTrue(set(examples) <= ignored)
 
 
