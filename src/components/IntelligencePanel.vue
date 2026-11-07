@@ -89,7 +89,6 @@ const translationError = ref('')
 let translationScope = 0
 const selectedArtifactId = ref<string | null>(null)
 const busyKind = ref<string | null>(null)
-const refreshing = ref(false)
 const aiEnabled = ref(false)
 const loading = ref(true)
 const provider = ref('')
@@ -171,7 +170,6 @@ const briefFindings = computed<ArtifactContent>(() =>
 async function refresh(silent = false): Promise<void> {
   if (!props.meetingId || refreshPending) return
   refreshPending = true
-  if (!silent) refreshing.value = true
   try {
     const meetingId = props.meetingId
     const overview = await request<{ jobs: Job[]; artifacts: Artifact[]; actions: Review[]; decisions: Review[] }>(
@@ -187,7 +185,6 @@ async function refresh(silent = false): Promise<void> {
     error.value = messageFromError(e)
   } finally {
     refreshPending = false
-    refreshing.value = false
   }
 }
 async function perform(kind: string, payload: Record<string, unknown> = {}): Promise<boolean> {
@@ -301,8 +298,6 @@ onBeforeUnmount(() => {
         <h3>Meeting overview</h3>
         <p>Summary, decisions and next steps from your saved transcript.</p>
       </div>
-      <button type="button" class="review-insights-refresh" :disabled="refreshing || loading"
-        @click="refresh()" title="Refresh results"><AppIcon name="clock" :size="16" /></button>
     </div>
 
     <p v-if="loading" class="review-insights-hint" role="status">Loading meeting insights...</p>
@@ -690,8 +685,6 @@ onBeforeUnmount(() => {
 .review-insights-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .review-insights-header h3{margin:0;font-size:16px;letter-spacing:-.025em;font-weight:770}
 .review-insights-header p{margin:6px 0 0;font-size:12px;line-height:1.6;color:#777981}
-.review-insights-refresh{flex:none;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid #e6e4df;border-radius:9px;background:#fff;color:#7d7e84}
-.review-insights-refresh:hover:not(:disabled){background:#fff5ec;color:#9b4800}
 .review-insights-actions{display:flex;flex-wrap:wrap;gap:8px}
 .review-insights-actions button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:39px;padding:9px 12px;border-radius:9px;font-size:12px;font-weight:700;flex:1 1 155px}
 .review-insights-primary{background:#a94f00;border:1px solid #a94f00;color:#fff}
