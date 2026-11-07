@@ -4,7 +4,7 @@ import AppIcon from './AppIcon.vue'
 import { PHASE1_LANGUAGES } from '@/config/phase1Languages'
 
 type Mode = 'meeting' | 'research' | 'classroom' | 'interview' | 'standup' | 'sales'
-type View = 'overview' | 'knowledge' | 'translation' | 'media'
+type View = 'overview' | 'translation'
 type ReviewKind = 'actions' | 'decisions'
 type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | string
 
@@ -57,12 +57,6 @@ interface Review {
   owner?: string | null
   due_date?: string | null
 }
-interface SearchResult {
-  text: string
-  source_id: string
-  source_kind: string
-  evidence: Record<string, unknown>
-}
 interface WorkspaceTranslation {
   segments: Segment[]
   translations: Array<{ segment_id: number; text: string }>
@@ -70,11 +64,6 @@ interface WorkspaceTranslation {
   failed_jobs: number
   last_error: string | null
 }
-interface AskResult {
-  answer?: string
-  sources?: Array<SearchResult>
-}
-
 const props = defineProps<{ meetingId: string; segments: Segment[]; compact?: boolean; section?: View }>()
 const modes: Array<{ id: Mode; name: string; description: string }> = [
   { id: 'meeting', name: 'Meeting', description: 'Summaries and decisions' },
@@ -87,31 +76,20 @@ const modes: Array<{ id: Mode; name: string; description: string }> = [
 const mode = ref<Mode>('meeting')
 const view = computed<View>(() => props.section ?? 'overview')
 const language = ref('en')
-const question = ref('')
-const searchText = ref('')
-const searchAllMeetings = ref(false)
 const notice = ref('')
 const error = ref('')
 const jobs = ref<Job[]>([])
 const artifacts = ref<Artifact[]>([])
 const actions = ref<Review[]>([])
 const decisions = ref<Review[]>([])
-const searchResults = ref<SearchResult[]>([])
 const translation = ref<WorkspaceTranslation | null>(null)
 const translationLoading = ref(false)
 const translationSubmitting = ref(false)
 const translationError = ref('')
 let translationScope = 0
 const selectedArtifactId = ref<string | null>(null)
-const askJobId = ref<string | null>(null)
-const askJob = ref<Job | null>(null)
-const mediaJobId = ref<string | null>(null)
-const mediaJob = ref<Job | null>(null)
-const mediaName = ref('')
-const mediaInput = ref<HTMLInputElement | null>(null)
 const busyKind = ref<string | null>(null)
 const refreshing = ref(false)
-const searching = ref(false)
 const aiEnabled = ref(false)
 const loading = ref(true)
 const provider = ref('')
@@ -155,10 +133,6 @@ function kindLabel(kind: string): string {
     live_translate: 'Translation', translate: 'Translation', ask: 'Knowledge answer',
     analyze_media: 'Media analysis', index_media: 'Media index', ask_evidence: 'Evidence-only answer' } as Record<string, string>)[kind] ?? kind.replace(/_/g, ' ')
 }
-function sourceLabel(hit: SearchResult): string {
-  const ms = hit.evidence?.start_ms
-  return `${hit.source_kind === 'meeting' ? 'Meeting' : 'Media'} · ${typeof ms === 'number' ? formatTime(ms) : hit.source_id.slice(0, 12)}`
-}
 function evidenceText(ids?: number[]): string {
   return ids?.length ? `Segments ${ids.join(', ')}` : 'No source reference'
 }
@@ -194,27 +168,20 @@ const briefExtraction = computed(() =>
 const briefFindings = computed<ArtifactContent>(() =>
   briefExtraction.value?.content ?? briefSummary.value?.content ?? {})
 
-const currentAskAnswer = computed(() => (askJob.value?.result as AskResult | null)?.answer ?? '')
-const currentAskSources = computed(() => (askJob.value?.result as AskResult | null)?.sources ?? [])
-
 async function refresh(silent = false): Promise<void> {
   if (!props.meetingId || refreshPending) return
   refreshPending = true
   if (!silent) refreshing.value = true
   try {
     const meetingId = props.meetingId
-    const [overview, activeAsk, activeMedia] = await Promise.all([
-      request<{ jobs: Job[]; artifacts: Artifact[]; actions: Review[]; decisions: Review[] }>(`/meetings/${encodeURIComponent(meetingId)}/overview`),
-      askJobId.value ? request<Job>(`/jobs/${encodeURIComponent(askJobId.value)}`) : Promise.resolve(null),
-      mediaJobId.value ? request<Job>(`/jobs/${encodeURIComponent(mediaJobId.value)}`) : Promise.resolve(null),
-    ])
+    const overview = await request<{ jobs: Job[]; artifacts: Artifact[]; actions: Review[]; decisions: Review[] }>(
+      `/meetings/${encodeURIComponent(meetingId)}/overview`,
+    )
     if (meetingId !== props.meetingId) return
     jobs.value = overview.jobs ?? []
     artifacts.value = overview.artifacts ?? []
     actions.value = overview.actions ?? []
     decisions.value = overview.decisions ?? []
-    if (activeAsk) askJob.value = activeAsk
-    if (activeMedia) mediaJob.value = activeMedia
     if (!silent) error.value = ''
   } catch (e) {
     error.value = messageFromError(e)
@@ -242,35 +209,6 @@ async function perform(kind: string, payload: Record<string, unknown> = {}): Pro
 async function analyze(kind: 'summary' | 'extract'): Promise<void> {
   await perform(kind, { mode: mode.value })
 }
-async function indexMeeting(): Promise<void> { await perform('index_meeting') }
-async function ask(): Promise<void> {
-  if (!question.value.trim() || busyKind.value) return
-  busyKind.value = 'ask'
-  clearMessages()
-  try {
-    const result = await request<{ job_id: string }>('/ask/evidence', jsonPost({
-      question: question.value.trim(),
-      ...(searchAllMeetings.value ? {} : { meeting_ids: [props.meetingId] }),
-    }))
-    askJobId.value = result.job_id
-    askJob.value = { id: result.job_id, kind: 'ask_evidence', status: 'queued' }
-    notice.value = 'Evidence query queued. Only exact excerpts from saved source records will be shown.'
-  } catch (e) { error.value = messageFromError(e) }
-  finally { busyKind.value = null }
-}
-async function search(): Promise<void> {
-  if (!searchText.value.trim()) return
-  searching.value = true
-  clearMessages()
-  try {
-    const data = await request<{ results: SearchResult[] }>('/search', jsonPost({
-      query: searchText.value.trim(), limit: 12,
-      ...(searchAllMeetings.value ? {} : { meeting_ids: [props.meetingId] }),
-    }))
-    searchResults.value = data.results ?? []
-  } catch (e) { error.value = messageFromError(e) }
-  finally { searching.value = false }
-}
 async function review(kind: ReviewKind, item: Review, status: string): Promise<void> {
   if (busyKind.value) return
   busyKind.value = `review-${item.id}`
@@ -292,25 +230,6 @@ async function cancelJob(job: Job): Promise<void> {
     await refresh()
   } catch (e) { error.value = messageFromError(e) }
   finally { busyKind.value = null }
-}
-async function upload(ev: Event): Promise<void> {
-  const input = ev.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file || busyKind.value) return
-  busyKind.value = 'upload'
-  clearMessages()
-  mediaName.value = file.name
-  try {
-    const data = await request<{ media_id: string; job_id: string }>('/media/upload', {
-      method: 'POST',
-      headers: { 'X-File-Name': encodeURIComponent(file.name), 'Content-Type': file.type || 'application/octet-stream' },
-      body: file,
-    })
-    mediaJobId.value = data.job_id
-    mediaJob.value = { id: data.job_id, kind: 'analyze_media', status: 'queued' }
-    notice.value = `${file.name} uploaded. Analysis queued.`
-  } catch (e) { error.value = messageFromError(e) }
-  finally { busyKind.value = null; input.value = '' }
 }
 async function fetchTranslations(): Promise<void> {
   if (!translationVisible.value || translationLoading.value) return
@@ -352,15 +271,7 @@ watch([translationPath, translationVisible], () => {
 watch(() => props.meetingId, () => {
   jobs.value = []; artifacts.value = []; actions.value = []; decisions.value = []
   selectedArtifactId.value = null
-  searchResults.value = []
-  askJobId.value = null; askJob.value = null
-  mediaJobId.value = null; mediaJob.value = null; mediaName.value = ''
   void refresh()
-})
-watch(searchAllMeetings, () => {
-  searchResults.value = []
-  askJobId.value = null
-  askJob.value = null
 })
 onMounted(async () => {
   try {
@@ -532,42 +443,6 @@ onBeforeUnmount(() => {
       <strong>AI worker unavailable</strong>
       <p>Enable the local AI worker to use this tool. Existing transcripts remain accessible.</p>
     </div>
-    <template v-else-if="view === 'knowledge'">
-      <div v-if="error" class="review-insights-error" role="alert">{{ error }}</div>
-      <p v-if="notice" class="review-insights-hint" role="status">{{ notice }}</p>
-      <div class="review-inline-index">
-        <span>Index this meeting to make it searchable.</span>
-        <button type="button" class="ui-btn" :disabled="!!busyKind || !hasSegments || activeJobs.some(j => j.kind === 'index_meeting')" @click="indexMeeting">
-          {{ busyKind === 'index_meeting' ? 'Indexing...' : 'Index meeting' }}
-        </button>
-      </div>
-      <div class="workspace-body">
-        <div class="section-heading"><div><h3>Knowledge center</h3><p>Search the current meeting, or explicitly include your other saved sources.</p></div></div>
-        <label class="switch-label"><input v-model="searchAllMeetings" type="checkbox" /> <span>Search all meetings and indexed media</span></label>
-        <div class="knowledge-grid">
-          <div class="content-card knowledge-card"><div class="card-header"><h3>Search your library</h3></div>
-            <div class="input-row"><input v-model="searchText" class="ui-input" type="search" placeholder="Search meetings, topics, or files" aria-label="Knowledge search" @keyup.enter="search" />
-              <button type="button" class="ui-btn ui-btn-solid" :disabled="searching || !searchText.trim()" @click="search">{{ searching ? 'Searching' : 'Search' }}</button></div>
-            <div v-if="searchResults.length" class="search-list"><div v-for="(hit, i) in searchResults" :key="`${hit.source_id}-${i}`" class="search-hit">
-              <span class="source-chip">{{ sourceLabel(hit) }}</span><p>{{ hit.text }}</p>
-            </div></div>
-            <div v-else class="empty-card compact-empty"><strong>No search results yet</strong><p>Index a meeting, then search for a topic or phrase.</p></div>
-          </div>
-          <div class="content-card knowledge-card"><div class="card-header"><h3>Ask your knowledge</h3></div>
-            <p class="card-description">Evidence-only mode. Each returned quote must match an indexed source exactly. This does not independently verify the spoken facts.</p>
-            <div class="input-row"><input v-model="question" class="ui-input" type="text" placeholder="What decisions did we make?" aria-label="Ask a knowledge question" @keyup.enter="ask" />
-              <button type="button" class="ui-btn ui-btn-solid" :disabled="!!busyKind || !question.trim()" @click="ask">Find evidence</button></div>
-            <div v-if="askJob" class="answer-card"><span :class="['status-pill', `status-${askJob.status}`]">{{ askJob.status }}</span>
-              <p v-if="currentAskAnswer" class="answer-text">{{ currentAskAnswer }}</p>
-              <p v-else-if="askJob.error" class="job-error">{{ askJob.error }}</p>
-              <p v-else class="card-description">{{ askJob.status === 'queued' ? 'Waiting for the worker to pick up your question.' : 'Processing your question.' }}</p>
-              <div v-if="currentAskSources.length" class="answer-sources"><strong>Sources</strong><div v-for="(source, i) in currentAskSources" :key="i" class="answer-source"><span class="source-chip">{{ sourceLabel(source) }}</span><span>{{ source.text }}</span></div></div>
-            </div>
-            <div v-else class="empty-card compact-empty"><strong>Start with a question</strong><p>Ask about decisions, key ideas, or follow-up items.</p></div>
-          </div>
-        </div>
-      </div>
-    </template>
     <template v-else-if="view === 'translation'">
       <div v-if="error" class="review-insights-error" role="alert">{{ error }}</div>
       <div class="workspace-body">
@@ -598,24 +473,6 @@ onBeforeUnmount(() => {
           <div v-else class="translation-list"><div class="translation-head"><span>Original</span><span>Translation</span></div>
             <div v-for="seg in translationRows" :key="seg.id" class="translation-entry"><div><span class="segment-time">{{ formatTime(seg.start_ms) }}</span><p>{{ seg.text }}</p></div>
               <div><span :class="['translation-status', { ready: !!translated[seg.id] }]">{{ translated[seg.id] ? 'Translated' : 'Pending' }}</span><p :class="{ 'placeholder-copy': !translated[seg.id] }">{{ translated[seg.id] || 'Waiting for translation' }}</p></div></div>
-          </div>
-        </div>
-      </div>
-    </template>
-    <template v-else-if="view === 'media'">
-      <div v-if="error" class="review-insights-error" role="alert">{{ error }}</div>
-      <p v-if="notice" class="review-insights-hint" role="status">{{ notice }}</p>
-      <div class="workspace-body">
-        <div class="section-heading"><div><h3>Media analysis</h3><p>Bring documents, audio, and video into your searchable knowledge base.</p></div></div>
-        <div class="content-card media-card"><span class="media-mark"><AppIcon name="file-text" :size="27" /></span>
-          <h3>Analyze a file</h3><p>Upload a PDF, document, slide deck, image, or recording. Processing runs in the background.</p>
-          <input ref="mediaInput" class="visually-hidden" type="file" accept=".txt,.md,.pdf,.docx,.pptx,.png,.jpg,.jpeg,.wav,.mp3,.m4a,.mp4,.mov" aria-label="Select media file" :disabled="!!busyKind" @change="upload" />
-          <button type="button" class="ui-btn ui-btn-solid media-pick" :disabled="!!busyKind" @click="mediaInput?.click()">{{ busyKind === 'upload' ? 'Uploading...' : 'Choose file' }}</button>
-          <small>Accepted: PDF, DOCX, PPTX, TXT, images, WAV, MP3, M4A, MP4, MOV</small>
-          <div v-if="mediaJob" class="media-progress"><div><strong>{{ mediaName || 'Uploaded file' }}</strong><span :class="['status-pill', `status-${mediaJob.status}`]">{{ mediaJob.status }}</span></div>
-            <p v-if="mediaJob.error" class="job-error">{{ mediaJob.error }}</p>
-            <p v-else-if="mediaJob.status === 'completed' && mediaJob.result?.summary" class="answer-text">{{ String(mediaJob.result.summary) }}</p>
-            <p v-else class="card-description">{{ mediaJob.status === 'completed' ? 'Media indexing completed.' : 'The AI worker is processing your file.' }}</p>
           </div>
         </div>
       </div>
@@ -766,26 +623,11 @@ onBeforeUnmount(() => {
 .disabled-state { margin:18px 26px 26px; display:flex; gap:13px; padding:16px; border:1px solid #e9cba2; border-radius:10px; background:#fff9ef; }
 .disabled-state strong { font-size:12px; }
 .disabled-state p { margin:4px 0 0; color:var(--ai-muted); font-size:11px; }
-.knowledge-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:15px; }
-.knowledge-card { padding-bottom:14px; }
 .card-description { margin:0 18px 12px; font-size:11px; color:var(--ai-muted); }
-.input-row { display:flex; align-items:center; gap:8px; margin:0 18px 15px; }
-.ui-input,.ui-select { width:100%; min-width:0; padding:10px 12px; border:1px solid #dcd6cc; border-radius:8px; background:#fff; color:var(--ai-text); font-size:12px; }
-.input-row .ui-input { flex:1; }
-.ui-input::placeholder { color:#a39b91; }
-.search-list { padding:0 18px; }
-.search-hit { padding:12px 0; border-top:1px solid var(--ai-border); }
-.search-hit p { margin:7px 0 0; line-height:1.75; font-size:12px; white-space:pre-wrap; overflow-wrap:anywhere; }
-.source-chip { display:inline-flex; padding:3px 7px; border-radius:5px; color:var(--ai-teal); background:rgba(22,124,128,.09); font-size:10px; font-weight:650; }
-.answer-card { padding:12px 18px 15px; margin:0 18px; background:#fbfaf8; border-radius:10px; }
-.answer-text { font-size:12.5px; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.85; }
-.answer-card .card-description { margin:8px 0 0; }
-.answer-sources { padding-top:14px; border-top:1px solid var(--ai-border); font-size:11px; }
-.answer-source { display:flex; flex-direction:column; gap:6px; padding-top:10px; line-height:1.65; overflow-wrap:anywhere; }
+.ui-select { width:100%; min-width:0; padding:10px 12px; border:1px solid #dcd6cc; border-radius:8px; background:#fff; color:var(--ai-text); font-size:12px; }
 .translation-card { padding:17px 18px; }
 .translation-toolbar { display:flex; align-items:center; gap:18px; flex-wrap:wrap; margin-bottom:14px; }
-.switch-label,.select-label { display:flex; align-items:center; gap:8px; font-size:11.5px; font-weight:650; }
-.switch-label input { accent-color:var(--ai-primary); width:15px; height:15px; }
+.select-label { display:flex; align-items:center; gap:8px; font-size:11.5px; font-weight:650; }
 .select-label { margin-left:auto; color:var(--ai-muted); }
 .ui-select { width:auto; padding:7px 10px; }
 .translation-head,.translation-entry { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; }
@@ -796,23 +638,13 @@ onBeforeUnmount(() => {
 .translation-status { font-size:10px; color:#a5743e; }
 .translation-status.ready { color:var(--ai-teal); }
 .placeholder-copy { color:var(--ai-muted); font-style:italic; }
-.media-card { text-align:center; display:flex; align-items:center; flex-direction:column; padding:34px 22px; }
-.media-mark { display:flex; align-items:center; justify-content:center; border-radius:15px; height:58px; width:58px; background:rgba(218,117,29,.09); color:var(--ai-primary-dark); }
-.media-card h3 { margin:13px 0 4px; font-size:17px; }
-.media-card > p { color:var(--ai-muted); font-size:12px; max-width:430px; margin:0 0 20px; }
-.media-pick { padding:10px 20px; }
-.media-card > small { color:var(--ai-muted); font-size:10.5px; margin-top:15px; }
-.media-progress { margin-top:22px; padding:14px 16px; border:1px solid var(--ai-border); border-radius:10px; text-align:left; width:min(100%,550px); }
-.media-progress > div { display:flex; justify-content:space-between; gap:10px; }
-.media-progress strong { overflow-wrap:anywhere; }
-.media-progress .card-description { margin:6px 0 0; }
 .visually-hidden { position:absolute; height:1px; width:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
 @media (max-width:820px) {
   .workspace-head { padding:20px 18px 12px; }
   .workspace-meta { padding:4px 18px 17px; }
   .workspace-nav { padding:0 13px; }
   .workspace-body { padding:20px 18px 24px; }
-  .overview-grid,.knowledge-grid { grid-template-columns:minmax(0,1fr); }
+  .overview-grid { grid-template-columns:minmax(0,1fr); }
   .feedback { margin-left:18px; margin-right:18px; }
 }
 @media (max-width:640px) {
@@ -937,7 +769,6 @@ onBeforeUnmount(() => {
 .intelligence-inline .section-heading {margin:0 0 11px;align-items:stretch;}
 .intelligence-inline .section-heading h3 {font-size:13px;font-weight:760;}
 .intelligence-inline .section-heading p {font-size:11px;line-height:1.55;}
-.intelligence-inline .knowledge-grid,
 .intelligence-inline .review-grid,
 .intelligence-inline .overview-grid {
   display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin:0;
@@ -949,18 +780,8 @@ onBeforeUnmount(() => {
 .intelligence-inline .card-header {padding:12px 12px 10px;}
 .intelligence-inline .card-header h3 {font-size:12px;}
 .intelligence-inline .card-description {margin:0 12px 12px;font-size:11px;line-height:1.55;}
-.intelligence-inline .input-row {margin:0 12px 12px;display:flex;flex-wrap:wrap;gap:6px;}
-.intelligence-inline .input-row .ui-input {flex:1 1 135px;width:100%;min-width:0;padding:8px 10px;}
-.intelligence-inline .input-row .ui-btn {flex:none;min-height:32px;padding:6px 9px;}
 .intelligence-inline .ui-btn {cursor:pointer;}
 .intelligence-inline .ui-btn-solid {color:#fff;background:#b85710;border-color:#b85710;}
-.intelligence-inline .switch-label {display:flex;align-items:start;gap:8px;margin:0 0 13px;font-size:11px;line-height:1.5;}
-.intelligence-inline .switch-label input {margin-top:3px;}
-.intelligence-inline .search-list {padding:0 12px;}
-.intelligence-inline .search-hit {overflow-wrap:anywhere;}
-.intelligence-inline .search-hit p {font-size:11px;}
-.intelligence-inline .answer-card {min-width:0;margin:0 12px 12px;padding:10px;}
-.intelligence-inline .answer-text,.intelligence-inline .answer-source {font-size:11px;overflow-wrap:anywhere;}
 .intelligence-inline .translation-card {padding:12px;}
 .intelligence-inline .translation-toolbar {align-items:flex-start;gap:8px;}
 .intelligence-inline .translation-toolbar .select-label {margin:0;flex-wrap:wrap;}
@@ -972,14 +793,6 @@ onBeforeUnmount(() => {
   border-left:2px solid #f0d2b5;padding-left:10px;
 }
 .intelligence-inline .translation-entry p {font-size:11px;line-height:1.55;}
-.intelligence-inline .media-card {padding:19px 12px;text-align:left;align-items:flex-start;}
-.intelligence-inline .media-mark {width:37px;height:37px;border-radius:10px;}
-.intelligence-inline .media-mark svg {width:18px;height:18px;}
-.intelligence-inline .media-card h3 {font-size:13px;}
-.intelligence-inline .media-card p {font-size:11px;}
-.intelligence-inline .media-card>small {font-size:10px;text-align:left;}
-.intelligence-inline .media-pick {min-height:34px;padding:7px 12px;}
-.intelligence-inline .media-progress {width:100%;padding:11px;}
 .intelligence-inline .review-grid {margin-top:8px;}
 .intelligence-inline .review-card {min-width:0;}
 .intelligence-inline .review-item {padding:11px 12px;}

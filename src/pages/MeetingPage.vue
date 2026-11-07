@@ -67,17 +67,15 @@ function closeMeetingActions(): void {
 const showDiagnostics = ref(false)
 const showAllRecordings = ref(false)
 type MeetingTool = 'transcript' | 'review' | 'recordings' | 'settings'
-type ReviewTool = 'overview' | 'knowledge' | 'translation' | 'media' | 'correction' | 'speakers'
+type ReviewTool = 'overview' | 'translation' | 'correction' | 'speakers'
 const activeMeetingTool = ref<MeetingTool>(
   route.query.tool === 'settings' ? 'settings'
     : route.query.tool === 'recordings' ? 'recordings'
       : route.query.tool === 'transcript' ? 'transcript' : 'review',
 )
 const activeReviewTool = ref<ReviewTool>('overview')
-const intelligenceSection = computed<'overview' | 'knowledge' | 'translation' | 'media'>(() => {
-  if (activeReviewTool.value === 'knowledge') return 'knowledge'
+const intelligenceSection = computed<'overview' | 'translation'>(() => {
   if (activeReviewTool.value === 'translation') return 'translation'
-  if (activeReviewTool.value === 'media') return 'media'
   return 'overview'
 })
 function selectMeetingTool(tool: MeetingTool): void {
@@ -1085,15 +1083,9 @@ onBeforeUnmount(() => stopInternal())
               <button type="button" :class="{ active: activeReviewTool === 'overview' }"
                 :aria-current="activeReviewTool === 'overview' ? 'page' : undefined"
                 @click="activeReviewTool = 'overview'">Summary</button>
-              <button type="button" :class="{ active: activeReviewTool === 'knowledge' }"
-                :aria-current="activeReviewTool === 'knowledge' ? 'page' : undefined"
-                @click="activeReviewTool = 'knowledge'">Knowledge</button>
               <button type="button" :class="{ active: activeReviewTool === 'translation' }"
                 :aria-current="activeReviewTool === 'translation' ? 'page' : undefined"
                 @click="activeReviewTool = 'translation'">Translation</button>
-              <button type="button" :class="{ active: activeReviewTool === 'media' }"
-                :aria-current="activeReviewTool === 'media' ? 'page' : undefined"
-                @click="activeReviewTool = 'media'">Files</button>
               <button type="button" :class="{ active: activeReviewTool === 'correction' }"
                 :aria-current="activeReviewTool === 'correction' ? 'page' : undefined"
                 @click="activeReviewTool = 'correction'">Corrections</button>

@@ -39,14 +39,14 @@ test('meeting-local tools appear once in the compact header, not duplicated in n
   assert.doesNotMatch(source, /showAdvancedControls = !showAdvancedControls/)
 })
 
-test('Assistant provides six directly accessible tools with overview as the default', () => {
-  assert.match(source, /type ReviewTool = 'overview' \| 'knowledge' \| 'translation' \| 'media' \| 'correction' \| 'speakers'/)
+test('Assistant provides four directly accessible tools with overview as the default', () => {
+  assert.match(source, /type ReviewTool = 'overview' \| 'translation' \| 'correction' \| 'speakers'/)
   assert.match(source, /activeReviewTool = ref<ReviewTool>\('overview'\)/)
   assert.match(source, /if \(tool === 'review'\) activeReviewTool\.value = 'overview'/)
   const from = source.indexOf('<nav class="meeting-review-tools"')
   const nav = source.slice(from, source.indexOf('</nav>', from))
-  assert.equal((nav.match(/<button\b/g) ?? []).length, 6)
-  for (const label of ['Summary', 'Knowledge', 'Translation', 'Files', 'Corrections', 'Speakers']) {
+  assert.equal((nav.match(/<button\b/g) ?? []).length, 4)
+  for (const label of ['Summary', 'Translation', 'Corrections', 'Speakers']) {
     assert.ok(nav.includes('>' + label + '</button>'), 'Assistant section missing: ' + label)
   }
   assert.doesNotMatch(nav, /AI workspace|Choose a review tool|More AI tools/)

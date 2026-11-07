@@ -28,10 +28,10 @@ test('AI abilities are integrated into the Assistant without a second workspace'
   assert.doesNotMatch(intelligence, /showAdvanced|More AI tools|AI Workspace|Choose a workflow/)
   assert.match(intelligence, /const modes: Array/)
   assert.match(intelligence, /aria-label="Analysis type"/)
-  assert.match(intelligence, /view === 'knowledge'/)
+  assert.doesNotMatch(intelligence, /view === 'knowledge'/)
   assert.match(intelligence, /view === 'translation'/)
-  assert.match(intelligence, /view === 'media'/)
-  for (const action of ['indexMeeting', 'queueTranslations', 'cancelJob(job)', "review('actions'", "review('decisions'", "mediaInput?.click()"]) {
+  assert.doesNotMatch(intelligence, /view === 'media'/)
+  for (const action of ['queueTranslations', 'cancelJob(job)', "review('actions'", "review('decisions'"]) {
     assert.ok(intelligence.includes(action), 'Missing integrated action ' + action)
   }
 })
