@@ -113,16 +113,80 @@ onMounted(load)
 
 <template>
   <div class="home">
-    <section class="home-compact-hero">
+    <section class="home-compact-hero" aria-labelledby="home-hero-title">
       <div class="home-compact-hero-inner">
-        <div>
-          <p class="home-eyebrow">SYNODOS · YOUR MEETING WORKSPACE</p>
-          <h1>Every conversation, in focus.</h1>
-          <p>Meet, transcribe, and turn important conversations into clear next steps.</p>
+        <div class="home-hero-copy">
+          <p class="home-eyebrow">
+            <span class="home-hero-kicker-mark" aria-hidden="true"></span>
+            THE MEETING, REIMAGINED
+            <span class="home-hero-kicker-index">/ SYNODOS</span>
+          </p>
+          <h1 id="home-hero-title">
+            <span>Talk freely.</span>
+            <span>Leave with <em>clarity.</em></span>
+          </h1>
+          <p class="home-hero-description">
+            Capture the conversation. Keep the decisions, details, and next steps that move things forward.
+          </p>
+          <div class="home-hero-actions">
+            <button type="button" class="btn btn-primary btn-lg home-hero-primary"
+              @click="showCreate = true">
+              <AppIcon name="plus" :size="17" />
+              Start a meeting
+              <span class="home-hero-cta-arrow" aria-hidden="true">↗</span>
+            </button>
+            <a href="#meetings" class="home-hero-library-link">
+              View saved meetings <span aria-hidden="true">→</span>
+            </a>
+          </div>
+          <div class="home-hero-process" aria-label="Capture, understand, remember">
+            <span>01 <strong>Capture</strong></span>
+            <span class="home-hero-process-line" aria-hidden="true"></span>
+            <span>02 <strong>Understand</strong></span>
+            <span class="home-hero-process-line" aria-hidden="true"></span>
+            <span>03 <strong>Remember</strong></span>
+          </div>
         </div>
-        <button class="btn btn-primary btn-lg" @click="showCreate = true">
-          <AppIcon name="plus" :size="18" /> Start a meeting
-        </button>
+
+        <div class="home-hero-visual" aria-hidden="true">
+          <div class="home-hero-visual-orbit"></div>
+          <div class="home-hero-visual-accent"></div>
+          <div class="home-hero-preview">
+            <div class="home-preview-heading">
+              <span class="home-preview-brand">
+                <span class="home-preview-brand-symbol">✳</span>
+                SYNODOS / NOTES
+              </span>
+              <span class="home-preview-demo-label">PREVIEW</span>
+            </div>
+            <div class="home-preview-audio">
+              <div class="home-preview-audio-label">
+                <span>THE CONVERSATION</span>
+                <span>01 / 03</span>
+              </div>
+              <div class="home-preview-waveform">
+                <i v-for="(height, index) in [12,22,16,33,42,24,17,34,51,37,20,15,31,47,25,12,27,43,36,19,12,30,40,21,14,28,18,10]"
+                  :key="index" :style="{ height: height + 'px' }"></i>
+              </div>
+            </div>
+            <div class="home-preview-insight">
+              <span class="home-preview-section-label">02 / THE IMPORTANT PART</span>
+              <p>Not just what was said.<br />What matters next.</p>
+            </div>
+            <div class="home-preview-next">
+              <span class="home-preview-next-mark">✓</span>
+              <span class="home-preview-next-copy">
+                <strong>Next step, captured.</strong>
+                <small>Clarity beyond the conversation.</small>
+              </span>
+              <span class="home-preview-next-arrow">↗</span>
+            </div>
+          </div>
+          <div class="home-hero-visual-stamp">
+            <span>FROM WORDS</span>
+            <strong>TO MOMENTUM.</strong>
+          </div>
+        </div>
       </div>
     </section>
     <main class="page-shell">

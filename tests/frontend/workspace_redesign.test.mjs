@@ -73,3 +73,24 @@ test('CSS blocks and Vue UI templates remain balanced', () => {
     }
   }
 })
+
+test('home welcome is editorial, responsive, and keeps its existing actions', () => {
+  const page = read('src/pages/HomePage.vue')
+  const css = read('src/assets/home-refresh.css')
+  const tokens = read('src/assets/synodos-theme.css')
+  assert.match(page, /id="home-hero-title"/)
+  assert.match(page, /Talk freely\./)
+  assert.match(page, /Leave with <em>clarity\.<\/em>/)
+  assert.match(page, /class="home-hero-preview"/)
+  assert.match(page, /class="home-preview-demo-label">PREVIEW/)
+  assert.match(page, /class="home-hero-visual" aria-hidden="true"/)
+  assert.match(page, /class="home-hero-primary"/)
+  assert.match(page, /@click="showCreate = true"/)
+  assert.match(page, /href="#meetings"/)
+  assert.match(page, /<main class="page-shell">/)
+  assert.match(css, /grid-template-columns:minmax\(0,1\.12fr\) minmax\(350px,\.88fr\)/)
+  assert.match(css, /@media\(max-width:950px\)/)
+  assert.match(css, /@media\(max-width:680px\)/)
+  assert.match(css, /prefers-reduced-motion:reduce/)
+  assert.doesNotMatch(tokens, /\.synodos-shell \.home-compact-hero h1 \{/)
+})

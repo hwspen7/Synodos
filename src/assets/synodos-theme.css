@@ -128,12 +128,7 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
 .synodos-shell a:focus-visible,
 .synodos-shell select:focus-visible { outline:3px solid rgba(105,65,35,.36);outline-offset:2px; }
 
-/* Dashboard and library */
-.synodos-shell .home-compact-hero-inner { padding-top:39px;padding-bottom:24px; }
-.synodos-shell .home-eyebrow { color:#8d7d70;letter-spacing:.16em; }
-.synodos-shell .home-compact-hero h1 { color:#2d2925;font-size:clamp(31px,3vw,44px);letter-spacing:-.053em; }
-.synodos-shell .home-compact-hero-inner p:not(.home-eyebrow) { color:#8d7d70;font-size:14px; }
-.synodos-shell .home-compact-hero .btn { background:#c4550d!important;border-color:#c4550d!important;color:white!important;box-shadow:0 10px 30px rgba(105,65,35,.15)!important; }
+/* Dashboard hero composition and call-to-action live in home-refresh.css. */
 .synodos-shell .home .metric-tile,.synodos-shell .home-library-shortcut,
 .synodos-shell .home .meeting-card,.synodos-shell .panel,
 .synodos-shell .speaker-card,.synodos-shell .hotword-card {
