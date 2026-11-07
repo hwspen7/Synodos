@@ -7,6 +7,7 @@ import { test } from 'node:test'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const page = readFileSync(path.join(root, 'src/pages/MeetingPage.vue'), 'utf8')
 const css = readFileSync(path.join(root, 'src/assets/meeting-tool-layout.css'), 'utf8')
+const theme = readFileSync(path.join(root, 'src/assets/synodos-theme.css'), 'utf8')
 
 test('a single meeting command bar keeps every critical action reachable', () => {
   const start = page.indexOf('<Teleport to="#synodos-global-context">')
@@ -23,7 +24,10 @@ test('a single meeting command bar keeps every critical action reachable', () =>
   assert.match(page, /class="synodos-meeting-center"/)
   assert.doesNotMatch(page, /<header class="compact-meeting-header/)
   assert.match(header, /synodos-recordings-tool/)
-  assert.match(page, /class="synodos-transcript-heading"/)
+  assert.doesNotMatch(page, /class="synodos-transcript-heading"/)
+  assert.match(page, /<main ref="transcriptEl" class="transcript"[\s\S]*?aria-label="Meeting transcript"/)
+  assert.match(page, /class="compact-meeting-titles"/)
+  assert.match(page, /class="meeting-running-status" role="status"/)
   assert.doesNotMatch(page, /class="meeting-workspace-summary"/)
   assert.doesNotMatch(page, /class="synodos-participant-stage"|class="meeting-tool-sidebar"/)
 })
@@ -53,4 +57,10 @@ test('meeting template and layout style are structurally balanced', () => {
     assert.equal(opens, closes, tag + ' count mismatch')
   }
   assert.equal((css.match(/\{/g) || []).length,(css.match(/\}/g) || []).length)
+})
+
+test('meeting identity stays inline with an unobtrusive status', () => {
+  assert.ok(theme.includes('display:flex;flex-direction:row;align-items:center;gap:12px;'))
+  assert.ok(theme.includes('padding:0;border:0;border-radius:0;background:transparent;'))
+  assert.ok(!theme.includes('.synodos-transcript-heading {'))
 })

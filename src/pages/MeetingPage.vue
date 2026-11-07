@@ -988,11 +988,8 @@ onBeforeUnmount(() => stopInternal())
     <div class="meeting-workspace" :class="{ 'tool-panel-open': activeMeetingTool !== 'transcript' }">
       <div class="synodos-meeting-center">
       <div class="meeting-primary">
-        <div class="synodos-transcript-heading">
-          <span><strong>Transcript</strong></span>
-          <small>{{ paragraphs.length }} {{ paragraphs.length === 1 ? 'turn' : 'turns' }}</small>
-        </div>
-    <main ref="transcriptEl" class="transcript" @scroll="onTranscriptScroll">
+        <main ref="transcriptEl" class="transcript"
+          aria-label="Meeting transcript" @scroll="onTranscriptScroll">
       <div v-if="segments.length === 0 && !partialText" class="empty-state">
         <div class="empty-icon"><AppIcon name="mic" :size="26" /></div>
         <h3>{{ recording ? 'Listening...' : 'No transcript yet' }}</h3>
@@ -1066,7 +1063,7 @@ onBeforeUnmount(() => stopInternal())
             :key="index" class="para-text transcript-sentence">{{ sentence }}</p>
         </div>
       </article>
-    </main>
+        </main>
       </div>
       </div>
 
