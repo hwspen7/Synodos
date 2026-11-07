@@ -4,11 +4,11 @@ on:
   push:
     branches: [feature/meeting-knowledge-quality]
     paths:
-      - "sessions/stable_speaker_channels.py"
+      - "sessions/channels/stable_speaker_channels.py"
       - "sessions/processor.py"
       - "sessions/session.py"
-      - "speech/content_first_projection.py"
-      - "speech/overlap_content_risk.py"
+      - "speech/captions/content_first_projection.py"
+      - "speech/diarization/overlap_content_risk.py"
       - "tests/backend/test_stable_speaker_channels.py"
       - "tests/backend/test_speaker_display_projection.py"
       - "tests/backend/test_content_first_long_turn.py"
@@ -41,11 +41,11 @@ jobs:
           import ast
           from pathlib import Path
           for filename in [
-              'sessions/stable_speaker_channels.py',
+              'sessions/channels/stable_speaker_channels.py',
               'sessions/processor.py',
               'sessions/session.py',
-              'speech/content_first_projection.py',
-              'speech/overlap_content_risk.py',
+              'speech/captions/content_first_projection.py',
+              'speech/diarization/overlap_content_risk.py',
               'tests/backend/test_content_first_long_turn.py',
           ]:
               ast.parse(Path(filename).read_text(encoding='utf-8'), filename=filename)

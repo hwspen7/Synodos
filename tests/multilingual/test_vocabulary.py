@@ -14,12 +14,12 @@ import numpy as np
 from sessions.processor import SessionProcessor
 from speech.config import SpeechSettings
 from speech.contracts import Recognition, Utterance
-from speech.engine import _ENGINES, recognize
-from speech.qwen import QwenEngine
-from speech.qwen_bridge import QwenWorkerClient
-from speech.qwen_worker import process_request
-from speech.vocabulary import prompt_terms, repeated_terms
-from speech.whisper import WhisperEngine
+from speech.asr.engine import _ENGINES, recognize
+from speech.asr.qwen import QwenEngine
+from speech.asr.qwen_bridge import QwenWorkerClient
+from speech.asr.qwen_worker import process_request
+from speech.captions.vocabulary import prompt_terms, repeated_terms
+from speech.asr.whisper import WhisperEngine
 from storage.hotwords import HotwordStore
 from tests.multilingual.test_adapters import mock_voiced_audio
 
@@ -62,8 +62,8 @@ class VocabularyTests(unittest.TestCase):
         config = SpeechSettings(engine="hybrid", hybrid_qwen_python="python")
         with mock_voiced_audio(), patch.object(client, "_request", side_effect=lambda request:
                 process_request(qwen, request)), patch.dict(_ENGINES, {}, clear=True), patch(
-                    "speech.qwen_bridge.QwenWorkerClient", return_value=client,
-                ), patch("speech.whisper.WhisperEngine"):
+                    "speech.asr.qwen_bridge.QwenWorkerClient", return_value=client,
+                ), patch("speech.asr.whisper.WhisperEngine"):
             with self.assertWarnsRegex(RuntimeWarning, "Forced alignment failed"):
                 result = recognize(np.zeros(16000, np.float32), language="fr",
                                    terms="Spring Boot\nJava", config=config)
@@ -97,7 +97,7 @@ class VocabularyTests(unittest.TestCase):
                 audio = np.zeros(48000, np.float32)
                 config = SpeechSettings(engine="whisper")
                 with patch.dict(_ENGINES, {}, clear=True), patch(
-                        "speech.whisper.WhisperEngine", return_value=engine):
+                        "speech.asr.whisper.WhisperEngine", return_value=engine):
                     result = recognize(audio, language="en", terms="Spring Boot", config=config)
                 self.assertEqual(engine.recognize.call_count, 2)
                 self.assertEqual(engine.recognize.call_args.args[-1], "")
@@ -112,7 +112,7 @@ class VocabularyTests(unittest.TestCase):
             (Utterance("We use Spring Boot.", 0, 1500),), "en", engine="whisper",
         )
         with patch.dict(_ENGINES, {}, clear=True), patch(
-                "speech.whisper.WhisperEngine", return_value=engine):
+                "speech.asr.whisper.WhisperEngine", return_value=engine):
             result = recognize(np.zeros(24000, np.float32), language="en",
                                terms="Spring Boot", config=SpeechSettings(engine="whisper"))
         engine.recognize.assert_called_once()

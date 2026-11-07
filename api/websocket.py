@@ -12,17 +12,17 @@ from core.runtime import settings, sessions, meeting_sessions, meeting_store, sp
 from sessions.session import Session
 from speech.config import load_settings
 from speech.supported_languages import spoken_language, translation_target
-from speech.diarization import resolve_diarization_mode
-from speech.quality_profile import quality_candidate_enabled, speaker_candidate_enabled
-from speech.recording import RecordingWriter, RecordingQuotaExceeded
-from speech.streaming import NativeOnlineRecognizer, PreviewTracker
+from speech.diarization.diarization import resolve_diarization_mode
+from speech.captions.quality_profile import quality_candidate_enabled, speaker_candidate_enabled
+from speech.audio.recording import RecordingWriter, RecordingQuotaExceeded
+from speech.asr.streaming import NativeOnlineRecognizer, PreviewTracker
 import os
 from api.session_lifecycle import meeting_connection_lock, stop_and_join
 from api.socket_transport import decode_pcm_frame, AudioFrameSequence, AudioSequenceError
-from audio.buffer import AudioBackpressureError
+from sessions.audio_buffer import AudioBackpressureError
 from core.runtime import infra
-from foundation.security import origin_allowed
-from observability.metrics import metrics
+from core.security import origin_allowed
+from core.metrics import metrics
 from sessions.lifecycle import SessionPhase
 
 router = APIRouter()

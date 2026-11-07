@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from tools.evaluate_meeting_audio_quality import (
+from tools.diagnostics.evaluate_meeting_audio_quality import (
     SCHEMA, tokenize, edit_distance, cross_talk_count, evaluate_windows,
     verify_reference, save_report,
 )

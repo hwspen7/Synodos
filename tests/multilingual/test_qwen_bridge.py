@@ -7,11 +7,11 @@ import unittest
 from unittest.mock import Mock
 import numpy as np
 from speech.contracts import Recognition, Utterance, Word
-from speech.qwen_bridge import (
+from speech.asr.qwen_bridge import (
     PREFIX_BYTES, QwenWorkerClient, decode_recognition,
     parse_worker_stdout,
 )
-from speech.qwen_worker import encode_recognition, process_request
+from speech.asr.qwen_worker import encode_recognition, process_request
 
 class QwenLocalBridgeTests(unittest.TestCase):
     def test_wire_round_trip_preserves_text_and_word_times(self):

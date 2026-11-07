@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlparse
 import numpy as np
 
 from api.socket_transport import AudioFrameSequence
-from tools.live_caption_ws_replay import (
+from tools.diagnostics.live_caption_ws_replay import (
     DEFAULT_WS_URL, _clock_wait_seconds, _speaker_switch_age_bucket,
     capture_event, new_capture, pcm_packet, summarize_timing,
     require_complete_private_export,

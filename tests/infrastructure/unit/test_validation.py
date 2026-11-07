@@ -1,6 +1,6 @@
 import unittest
 from core.config import Settings
-from foundation.validation import validate_application_settings
+from core.validation import validate_application_settings
 
 
 class ValidationTests(unittest.TestCase):

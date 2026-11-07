@@ -13,35 +13,49 @@ const toolHandler = source.slice(start, end)
 
 test('meeting tools share exactly one active destination', () => {
   assert.match(toolHandler, /activeMeetingTool\.value = tool/)
-  assert.match(source, /activeMeetingTool = ref<MeetingTool>\('transcript'\)/)
+  assert.match(source, /activeMeetingTool = ref<MeetingTool>\(/)
+  assert.match(source, /: 'review',/)
   assert.doesNotMatch(source, /const showReviewPanel = ref/)
   assert.doesNotMatch(source, /const showRecordings = ref/)
   assert.doesNotMatch(source, /const showAdvancedControls = ref/)
 })
 
-test('meeting tool controls live inside the local sidebar', () => {
-  const nav = source.slice(source.indexOf('class="meeting-tool-sidebar"'), source.indexOf('</nav>', source.indexOf('class="meeting-tool-sidebar"')))
-  for (const tool of ['transcript', 'review', 'recordings', 'settings']) {
-    assert.ok(nav.includes("selectMeetingTool('" + tool + "')"), tool + ' navigation missing')
+test('meeting-local tools appear once in the compact header, not duplicated in navigation', () => {
+  const start = source.indexOf('<Teleport to="#synodos-global-context">')
+  const end = source.indexOf('</Teleport>', source.indexOf('<Teleport to="#synodos-global-actions">'))
+  const header = source.slice(start, end + '</Teleport>'.length)
+  assert.ok(start >= 0 && end > start, 'Global meeting toolbar teleport must exist')
+  for (const tool of ['review', 'recordings', 'settings']) {
+    assert.ok(header.includes("'" + tool + "'"), 'Missing tool in header: ' + tool)
   }
+  assert.match(header, /class="synodos-quick-tool synodos-recordings-tool"/)
+  assert.match(header, /class="synodos-quick-tool synodos-assistant-tool"/)
+  assert.match(header, /<span>Assistant<\/span>/)
+  assert.ok(header.indexOf('synodos-recordings-tool') < header.indexOf('synodos-meeting-more'))
+  assert.doesNotMatch(header.slice(header.indexOf('synodos-meeting-more')), /\> Recordings\s*<\/button>/)
+  assert.match(header, /class="synodos-meeting-more"/)
   assert.match(source, /class="meeting-detail-panel"/)
+  assert.doesNotMatch(source, /class="meeting-tool-sidebar"/)
   assert.doesNotMatch(source, /showReviewPanel = !showReviewPanel/)
   assert.doesNotMatch(source, /showRecordings = !showRecordings/)
   assert.doesNotMatch(source, /showAdvancedControls = !showAdvancedControls/)
 })
 
-test('review has three tabs and opens overview by default', () => {
-  assert.match(source, /type ReviewTool = 'overview' \| 'correction' \| 'speakers'/)
+test('Assistant provides four directly accessible tools with overview as the default', () => {
+  assert.match(source, /type ReviewTool = 'overview' \| 'translation' \| 'correction' \| 'speakers'/)
   assert.match(source, /activeReviewTool = ref<ReviewTool>\('overview'\)/)
   assert.match(source, /if \(tool === 'review'\) activeReviewTool\.value = 'overview'/)
   const from = source.indexOf('<nav class="meeting-review-tools"')
   const nav = source.slice(from, source.indexOf('</nav>', from))
-  assert.equal((nav.match(/<button\b/g) ?? []).length, 3)
-  for (const label of ['Overview', 'Corrections', 'Speakers']) {
-    assert.ok(nav.includes('>' + label + '</button>'), 'Review tab missing: ' + label)
+  assert.equal((nav.match(/<button\b/g) ?? []).length, 4)
+  const theme = readFileSync(path.join(root, 'src/assets/synodos-theme.css'), 'utf8')
+  assert.match(theme, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/)
+  for (const label of ['Summary', 'Translation', 'Corrections', 'Speakers']) {
+    assert.ok(nav.includes('>' + label + '</button>'), 'Assistant section missing: ' + label)
   }
-  assert.doesNotMatch(nav, /Identity evidence|AI workspace|Speaker review|Choose a review tool/)
-  assert.match(source, /<IntelligencePanel v-if="activeReviewTool === 'overview'" compact/)
+  assert.doesNotMatch(nav, /AI workspace|Choose a review tool|More AI tools/)
+  assert.match(source, /<IntelligencePanel v-if="activeReviewTool !== 'correction' && activeReviewTool !== 'speakers'"/)
+  assert.match(source, /:section="intelligenceSection"/)
   assert.match(source, /v-else-if="activeReviewTool === 'correction'"/)
   assert.match(source, /openIdentityEvidence[\s\S]*?activeReviewTool\.value = 'speakers'/)
   assert.match(source, /<SpeakerContributionPanel v-if="selectedSpeakerId !== null"/)
@@ -59,7 +73,7 @@ test('existing transcription and recording workflows are retained', () => {
 
 test('responsive tool CSS has no unbalanced blocks', () => {
   assert.equal((css.match(/\{/g) || []).length, (css.match(/\}/g) || []).length)
-  for (const selector of ['meeting-tool-sidebar', 'meeting-detail-panel', 'meeting-review-tools']) {
+  for (const selector of ['meeting-detail-panel', 'meeting-review-tools']) {
     assert.ok(css.includes('.' + selector))
   }
   assert.match(css, /@media\(max-width:720px\)/)

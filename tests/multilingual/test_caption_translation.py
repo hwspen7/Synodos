@@ -14,8 +14,8 @@ from unittest.mock import patch
 from api import speech_features
 from intelligence.model_gateway import AIModelError
 from sessions.translation_tasks import CaptionTranslation
-from speech.corrections import correct_segment
-from speech.translation import TranslationUnavailable, translate_batch
+from speech.captions.corrections import correct_segment
+from speech.captions.translation import TranslationUnavailable, translate_batch
 from storage.meetings import MeetingStore
 
 
@@ -35,7 +35,7 @@ class TranslationProviderTests(unittest.TestCase):
         with patch.dict("os.environ", {"MEETING_AI_ENABLED": "1",
                         "MEETING_AI_ENDPOINT": "http://127.0.0.1:11435",
                         "MEETING_AI_PROVIDER": "ollama"}, clear=True), patch(
-            "speech.translation.translate",
+            "speech.captions.translation.translate",
             side_effect=["Already English.", TranslationUnavailable("Missing pair"),
                          TranslationUnavailable("Unknown language")],
         ), patch("intelligence.model_gateway._request", side_effect=reply):
@@ -53,7 +53,7 @@ class TranslationProviderTests(unittest.TestCase):
 
     def test_provider_outage_keeps_completed_offline_results(self):
         with patch.dict("os.environ", {"MEETING_AI_ENABLED": "1"}, clear=True), patch(
-            "speech.translation.translate",
+            "speech.captions.translation.translate",
             side_effect=["Hello", TranslationUnavailable("Missing pair")],
         ), patch("intelligence.model_gateway._request", side_effect=AIModelError("timeout")):
             actual = translate_batch(((1, "Bonjour", "fr"), (2, "Hola", "es")), "en")
@@ -117,7 +117,7 @@ class SavedTranslationTests(unittest.TestCase):
         ]})}}
         with patch.object(speech_features, "meeting_store", self.store), patch.dict(
             "os.environ", {"MEETING_AI_ENABLED": "1", "MEETING_AI_PROVIDER": "ollama"}, clear=True,
-        ), patch("speech.translation.translate", side_effect=TranslationUnavailable("Missing pair")), patch(
+        ), patch("speech.captions.translation.translate", side_effect=TranslationUnavailable("Missing pair")), patch(
             "intelligence.model_gateway._request", return_value=response,
         ) as gateway:
             self.assertEqual(self.request()["translated"], 1)

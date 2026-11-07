@@ -194,16 +194,9 @@ onBeforeUnmount(resetPoll)
 <template>
   <section class="context-review" aria-label="Dialogue-aware transcript correction">
     <div class="context-head">
-      <div>
-        <h3>Dialogue-aware correction</h3>
-        <p class="context-hint">
-          Saluki reviews the surrounding conversation. Changes are suggestions only.
-          Original speech, timing and speaker labels are never automatically overwritten.
-        </p>
-      </div>
-      <div class="context-actions">
-        <label class="context-mode">Review style
-          <select v-model="mode" :disabled="busy">
+      <div class="context-actions context-review-toolbar">
+        <label class="context-mode"><span>Review style</span>
+          <select v-model="mode" :disabled="busy" aria-label="Review style">
             <option value="conservative">Faithful transcript</option>
             <option value="readable">Improve readability</option>
           </select>
@@ -216,6 +209,7 @@ onBeforeUnmount(resetPoll)
           Cancel queued job
         </button>
       </div>
+      <p class="context-review-note">Suggestions only. Changes require your approval.</p>
     </div>
     <p v-if="busy" class="context-hint" role="status">
       {{ status === 'queued' ? 'Waiting for the local model...' : 'Reviewing nearby dialogue...' }}
@@ -300,4 +294,75 @@ onBeforeUnmount(resetPoll)
 .context-item{background:#fff;border:1px solid #e7e5e1;border-radius:11px;padding:15px}
 .context-item p{line-height:1.65}
 
+/* Assistant Corrections: a single focused toolbar and clear change comparisons. */
+.context-review {
+  margin:0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;
+}
+.context-head {
+  display:flex;flex-direction:column;align-items:stretch;gap:11px;
+}
+.context-review-toolbar {
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(125px,.8fr);
+  align-items:end;gap:10px;
+}
+.context-review-toolbar .context-mode {
+  display:flex;flex-direction:column;min-width:0;gap:7px;
+  color:#6a6057;font-size:11px;font-weight:650;
+}
+.context-review-toolbar .context-mode select {
+  box-sizing:border-box;display:block;width:100%;min-width:0;height:41px;
+  min-height:41px;padding:0 29px 0 11px;
+  border:1px solid #e5ded6;border-radius:9px;
+  background:#fff;color:#302a25;font-size:12px;
+}
+.context-review-toolbar > button.btn {
+  display:inline-flex;align-items:center;justify-content:center;
+  box-sizing:border-box;height:41px;min-height:41px;
+  min-width:0;margin:0;padding:0 12px;border-radius:9px;
+  white-space:nowrap;font-size:12px;font-weight:690;
+}
+.context-review-toolbar > button.btn-primary {
+  background:#c4550d;border-color:#c4550d;color:#fff;
+}
+.context-review-note {
+  margin:1px 0 4px;color:#8e8379;font-size:11px;line-height:1.5;
+}
+.context-results {margin-top:14px;gap:13px;}
+.context-results > .context-summary {
+  display:flex;gap:5px 13px;flex-wrap:wrap;
+  margin:0;padding:9px 0;border-bottom:1px solid #e9e4de;
+  border-radius:0;background:transparent;
+  color:#736a60;font-size:10px;
+}
+.context-item {
+  min-width:0;padding:15px;border:1px solid #e9e3db;
+  border-radius:11px;background:#fff;box-shadow:none;
+}
+.context-item .context-summary {
+  display:flex;justify-content:space-between;gap:8px;
+  margin:0 0 12px;padding:0;background:transparent;
+  color:#8b8176;font-size:10px;
+}
+.context-item .context-summary strong {
+  color:#322a24;font-size:11px;
+}
+.context-item > p:not(.context-hint) {
+  margin:8px 0;padding:11px 12px;border:1px solid #eee9e3;
+  border-radius:8px;background:#faf9f7;color:#443d36;
+  font-size:11px;line-height:1.65;
+}
+.context-item > p:not(.context-hint) strong {
+  display:block;margin-bottom:4px;color:#776a5f;font-size:10px;
+}
+.context-item > p:nth-of-type(2) {
+  border-color:#eed9c7;background:#fffaf5;
+}
+.context-item > p:nth-of-type(2) strong {color:#a65012;}
+.context-item > .context-actions {margin-top:12px;align-items:center;}
+.context-item > .context-actions button {
+  min-height:32px;padding:6px 12px;border-radius:8px;
+}
+@media(max-width:370px){
+  .context-review-toolbar {grid-template-columns:minmax(0,1fr);}
+}
 </style>

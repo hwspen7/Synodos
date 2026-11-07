@@ -14,8 +14,8 @@ from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from typing import Callable, Any
 
-from observability.metrics import metrics
-from phase07.telemetry import telemetry
+from core.metrics import metrics
+from runtime_quality.telemetry import telemetry
 
 
 class InferenceBusyError(RuntimeError):

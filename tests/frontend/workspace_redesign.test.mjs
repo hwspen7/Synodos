@@ -18,12 +18,19 @@ test('global workspace has accessible primary routes and a responsive sidebar', 
   assert.match(shell, /sidebarCollapsed/)
 })
 
-test('design system uses warm orange palette rather than previous purple primary', () => {
-  const base = read('src/assets/main.css')
-  const shared = read('src/assets/workspace-system.css')
-  assert.match(base, /--mop-primary:\s*#eb7100/i)
-  assert.match(shared, /--ui-orange:#eb7100/i)
-  assert.doesNotMatch(shared, /#68389a/i)
+test('Synodos uses warm Hermes/Chegg-inspired orange with restrained neutrals', () => {
+  const tokens = read('src/assets/synodos-theme.css')
+  const app = read('src/App.vue')
+  const favicon = read('public/favicon.svg')
+  assert.match(tokens, /--mop-primary:\s*#eb7100/i)
+  assert.match(tokens, /--mop-accent:\s*#f37021/i)
+  assert.match(tokens, /--synodos-ink:\s*#292521/i)
+  assert.doesNotMatch(tokens, /#68389a|#8850c9|#4b196f/i)
+  assert.doesNotMatch(tokens, /radial-gradient\(|linear-gradient\(/)
+  assert.match(app, /<SynodosMark /)
+  assert.match(app, /Synodos/)
+  assert.match(favicon, /#EB7100/i)
+  assert.doesNotMatch(favicon, /8850c9|4c1d83/i)
 })
 
 test('meeting controls preserve all critical operations after redesign', () => {
@@ -65,4 +72,25 @@ test('CSS blocks and Vue UI templates remain balanced', () => {
       assert.equal(start, end, 'Unbalanced ' + tag + ' in ' + file)
     }
   }
+})
+
+test('home welcome is editorial, responsive, and keeps its existing actions', () => {
+  const page = read('src/pages/HomePage.vue')
+  const css = read('src/assets/home-refresh.css')
+  const tokens = read('src/assets/synodos-theme.css')
+  assert.match(page, /id="home-hero-title"/)
+  assert.match(page, /Talk freely\./)
+  assert.match(page, /Leave with <em>clarity\.<\/em>/)
+  assert.match(page, /class="home-hero-preview"/)
+  assert.match(page, /class="home-preview-demo-label">PREVIEW/)
+  assert.match(page, /class="home-hero-visual" aria-hidden="true"/)
+  assert.match(page, /class="btn btn-primary btn-lg home-hero-primary"/)
+  assert.match(page, /@click="showCreate = true"/)
+  assert.match(page, /href="#meetings"/)
+  assert.match(page, /<main class="page-shell">/)
+  assert.match(css, /grid-template-columns:minmax\(0,1\.12fr\) minmax\(350px,\.88fr\)/)
+  assert.match(css, /@media\(max-width:950px\)/)
+  assert.match(css, /@media\(max-width:680px\)/)
+  assert.match(css, /prefers-reduced-motion:reduce/)
+  assert.doesNotMatch(tokens, /\.synodos-shell \.home-compact-hero h1 \{/)
 })

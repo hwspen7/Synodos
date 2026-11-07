@@ -5,7 +5,7 @@ on:
     branches:
       - feature/meeting-knowledge-quality
     paths:
-      - 'tools/prepare_ami_individual_headsets.py'
+      - 'tools/evaluation/ami/prepare_ami_individual_headsets.py'
       - 'tests/release/test_ami_individual_headsets.py'
       - '.github/workflows/ami-individual-headsets.yml'
   pull_request:
@@ -24,4 +24,4 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install "numpy>=1.26"
       - run: python -m unittest tests.release.test_ami_individual_headsets -v
-      - run: python -m compileall -q tools/prepare_ami_individual_headsets.py
+      - run: python -m compileall -q tools/evaluation/ami/prepare_ami_individual_headsets.py

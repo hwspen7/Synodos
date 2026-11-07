@@ -1,6 +1,6 @@
-/** Assign display colors for speaker IDs provided by the backend. */
+/** Display-only warm, distinguishable earth tones for speaker IDs. */
 
 export function speakerColor(id: number): string {
-  const colors = ['#5b8def', '#e07b54', '#5fbf8f', '#b58be0', '#d9b44a', '#6fc3d6']
+  const colors = ['#AD4E11', '#8C5B32', '#B6661D', '#735944', '#C66B29', '#996B41']
   return colors[((id % colors.length) + colors.length) % colors.length]!
 }

@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 import numpy as np
 
-from sessions.speaker_partition_evidence import consistent_partition_embedding
+from sessions.channels.speaker_partition_evidence import consistent_partition_embedding
 
 
 def part(start, end, voice, **overrides):

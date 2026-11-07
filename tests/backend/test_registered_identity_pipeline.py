@@ -154,7 +154,7 @@ class SpeakerSessionIntegrationTests(unittest.TestCase):
     def test_all_touched_python_modules_are_syntax_valid(self):
         root = Path(__file__).resolve().parents[2]
         for filename in (
-            "sessions/processor.py", "sessions/registered_identity.py",
+            "sessions/processor.py", "sessions/identity/registered_identity.py",
             "storage/speakers.py", "storage/meetings.py",
             "api/meetings.py", "api/websocket.py", "sessions/session.py",
         ):

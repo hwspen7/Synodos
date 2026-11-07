@@ -14,6 +14,6 @@ class CompatibilityTests(unittest.TestCase):
                 load_settings()
 
     def test_native_model_asset_validation(self):
-        from speech.streaming import NativeOnlineRecognizer
+        from speech.asr.streaming import NativeOnlineRecognizer
         with self.assertRaises(ValueError):
             NativeOnlineRecognizer('', '', '', '')

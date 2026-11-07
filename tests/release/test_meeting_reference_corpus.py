@@ -7,7 +7,7 @@ import unittest
 import wave
 import zipfile
 
-from tools.prepare_meeting_reference_corpus import (
+from tools.evaluation.corpora.prepare_meeting_reference_corpus import (
     MEETINGS, inspect_annotations, inspect_wav, sha256_file, verified_file,
 )
 

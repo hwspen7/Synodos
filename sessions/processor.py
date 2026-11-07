@@ -31,64 +31,67 @@ from typing import Optional
 
 import numpy as np
 
-from audio.buffer import AudioBuffer
+from sessions.audio_buffer import AudioBuffer
 from speech.config import load_settings
-from speech.vocabulary import prompt_terms
-from speech.streaming import PreviewTracker
+from speech.captions.vocabulary import prompt_terms
+from speech.asr.streaming import PreviewTracker
 from core.config import Settings
 from storage.hotwords import HotwordStore
 from inference.models import ModelManager
 from storage.speakers import SpeakerStore
 from storage.meetings import MeetingStore
 from sessions.save_queue import SaveQueue
-from observability.metrics import metrics
-from phase07.telemetry import telemetry
-from phase07.speakers import speaker_stats, find_distinct_participant
-from speech.commit_guard import is_temporal_duplicate, is_adjacent_tail_echo
-from speech.commit_boundary import completed_island_drop, unclosed_voice_turn
-from speech.acoustic_guard import uninformative_audio
-from speech.adaptive_audio import AdaptiveAudio
-from sessions.speaker_birth_guard import tentative_new_clusters
-from speech.coverage_retention import choose_safe_drop
-from speech.quality_profile import (
+from core.metrics import metrics
+from runtime_quality.telemetry import telemetry
+from runtime_quality.speakers import speaker_stats, find_distinct_participant
+from speech.captions.commit_guard import (
+    is_temporal_duplicate, is_adjacent_tail_echo, replayed_audio_end,
+)
+from speech.captions.commit_boundary import completed_island_drop, unclosed_voice_turn
+from speech.audio.acoustic_guard import uninformative_audio
+from speech.audio.adaptive_audio import AdaptiveAudio
+from sessions.identity.speaker_birth_guard import tentative_new_clusters
+from speech.captions.coverage_retention import choose_safe_drop
+from speech.captions.quality_profile import (
     quality_candidate_enabled, speaker_candidate_enabled,
 )
-from speech.nemotron_activity import (
+from speech.diarization.nemotron_activity import (
     activity_turns, choose_caption_speaker, choose_caption_speaker_from_turns,
 )
-from speech.caption_acoustic_alignment import caption_support_summary
-from speech.content_first_projection import project_confirmed_caption
-from speech.asr_stage_trace import shifted
+from speech.captions.caption_acoustic_alignment import caption_support_summary
+from speech.captions.content_first_projection import project_confirmed_caption
+from speech.captions.asr_stage_trace import shifted
 from speech.contracts import Utterance
 from speech.language import normalize_language
 from speech.supported_languages import PHASE1_LANGUAGE_SET
-from phase07.recovery import autosave_seconds
+from runtime_quality.recovery import autosave_seconds
 from sessions.outbox import enqueue_message
 from sessions.translation_tasks import (
     MAX_PENDING, CaptionTranslation, caption_batch, submit_translation,
 )
-from sessions.speaker_tasks import submit_speaker_analysis, submit_acoustic_window
-from sessions.speaker_evidence import speaker_evidence
-from sessions.provisional_speakers import (
-    PROVISIONAL_NEW, PROVISIONAL_RESOLUTIONS, assign_provisional_speakers, numbered_saved_segments,
+from sessions.identity.speaker_tasks import submit_speaker_analysis, submit_acoustic_window
+from sessions.identity.speaker_evidence import speaker_evidence
+from sessions.channels.provisional_speakers import (
+    ATTRIBUTION_DEFERRED, PROVISIONAL_EXISTING, PROVISIONAL_RESOLUTIONS,
+    assign_provisional_speakers, project_saved_speaker_assignments,
 )
-from sessions.registered_identity import match_saved_voice
-from sessions.corroborated_speaker_channels import CorroboratedSpeakerChannels
-from sessions.speaker_cluster_birth import gate_new_cluster_births
-from sessions.short_turn_identity import recover_short_turn_identity
-from sessions.fused_short_turn_recovery import recover_fused_short_turns
-from sessions.retroactive_channel_recovery import (
+from sessions.identity.registered_identity import match_saved_voice
+from sessions.channels.corroborated_speaker_channels import CorroboratedSpeakerChannels
+from sessions.identity.speaker_cluster_birth import gate_new_cluster_births
+from sessions.channels.short_turn_identity import recover_short_turn_identity
+from sessions.channels.fused_short_turn_recovery import recover_fused_short_turns
+from sessions.channels.retroactive_channel_recovery import (
     backfill_confirmed_channels, reconcile_final_channels,
 )
-from sessions.speaker_partition_evidence import consistent_partition_embedding
-from sessions.speaker_resolution import preserve_supported_camplus
-from speech.acoustic_timeline import AcousticTimeline
-from speech.diarization import resolve_diarization_mode
-from speech.turn_integrity import valid_turn_partition
-from sessions.speaker_fallback import (
+from sessions.channels.speaker_partition_evidence import consistent_partition_embedding
+from sessions.identity.speaker_resolution import preserve_supported_camplus
+from speech.audio.acoustic_timeline import AcousticTimeline
+from speech.diarization.diarization import resolve_diarization_mode
+from speech.captions.turn_integrity import valid_turn_partition
+from sessions.identity.speaker_fallback import (
     UNIDENTIFIED_CLUSTER, fallback_speaker_id, normalized_embedding,
 )
-from sessions.speaker_stability import (
+from sessions.identity.speaker_stability import (
     collect_mature_labels, restore_mature_labels, stabilized_cluster_ids,
     summarize_cluster_fragmentation, diagnose_cluster_merge_thresholds,
     diagnose_fresh_cluster_candidates,
@@ -223,6 +226,8 @@ class SessionProcessor(threading.Thread):
         self._phase07_last_autosave = time.monotonic()
         self._phase07_saved_segment_id = 0
         self.ui_settings: dict = {}
+        # Meeting-local, unverified display labels survive resumed recordings.
+        self.speaker_labels: dict[str, dict] = {}
         self._translation_tasks: dict[Future, tuple[str, tuple[CaptionTranslation, ...]]] = {}
         self._translation_pending: dict[int, CaptionTranslation] = {}
         self._translation_warning = False
@@ -293,7 +298,7 @@ class SessionProcessor(threading.Thread):
             # Lazily admit one optional background ECAPA session. This does
             # not load its model and cannot affect the live CAM++ path.
             try:
-                from sessions.speaker_shadow import create_shadow_session
+                from sessions.identity.speaker_shadow import create_shadow_session
                 self._ecapa_shadow = create_shadow_session()
             except Exception:
                 logger.warning("Optional ECAPA shadow unavailable; CAM++ unchanged")
@@ -384,7 +389,7 @@ class SessionProcessor(threading.Thread):
                         ),
                     })
                 try:
-                    from speech.overlap_content_risk import overlap_content_risk
+                    from speech.diarization.overlap_content_risk import overlap_content_risk
                     official = independent.final_turns_snapshot()
                     if official is not None:
                         sr = self.settings.sample_rate
@@ -415,7 +420,7 @@ class SessionProcessor(threading.Thread):
                         # Derive the actual display-level voice hypothesis
                         # independently, without counting a split caption's
                         # parent as an additional simultaneous speaker.
-                        from speech.content_first_projection import (
+                        from speech.captions.content_first_projection import (
                             project_caption_activity_for_audit,
                         )
                         projection = project_caption_activity_for_audit(
@@ -817,6 +822,9 @@ class SessionProcessor(threading.Thread):
             "next_segment_id": self._next_segment_id,
             "speaker_map": dict(self._speaker_map),
             "ui_settings": dict(self.ui_settings),
+            "speaker_labels": {
+                str(k): dict(v) for k, v in self.speaker_labels.items()
+            },
         }
         for row in state["segments"]:
             label = self._provisional_published.get(row["id"])
@@ -827,9 +835,8 @@ class SessionProcessor(threading.Thread):
                         "speaker_name", row.get("speaker_name") or f"Speaker {label}",
                     ),
                 )
-        state["segments"] = numbered_saved_segments(
+        state["segments"] = project_saved_speaker_assignments(
             state["segments"], self.settings.sample_rate,
-            reserved_labels=self._participant_label_map.values(),
         )
         return state
 
@@ -847,7 +854,7 @@ class SessionProcessor(threading.Thread):
                 item.get("speaker_final_resolution_status") in PROVISIONAL_RESOLUTIONS
                 and published > 0 and int(item.get("speaker_override_id") or 0) <= 0
             )
-            if provisional:
+            if provisional and item.get("speaker_final_resolution_status") == PROVISIONAL_EXISTING:
                 self._provisional_published[int(item["id"])] = published
             self.segments.append(
                 {
@@ -930,6 +937,10 @@ class SessionProcessor(threading.Thread):
             if type(s.get("speaker_id")) is int and s["speaker_id"] > 0
         }
         self.ui_settings = dict(state.get("ui_settings") or {})
+        self.speaker_labels = {
+            str(k): dict(v)
+            for k, v in (state.get("speaker_labels") or {}).items()
+        }
         self._speaker_seg_ids = {}
         if not self._participants_explicit:
             self.participant_ids = list(state.get("participant_ids") or [])
@@ -1111,6 +1122,8 @@ class SessionProcessor(threading.Thread):
                     current_content_trace = stage
         telemetry.observe_asr_cycle(buffer_s, time.monotonic() - phase07_asr_started)
         unconfirmed = []
+        preview_spans = []
+        mono_decode = self._speech_settings.engine in ("whisper", "hybrid")
         published_intervals_ms = []
         local_end = 0
         # Per-inference-cycle provenance for content conservation. Repeated
@@ -1166,7 +1179,15 @@ class SessionProcessor(threading.Thread):
                 metrics.increment("asr_temporal_duplicate_skipped")
                 local_end = max(local_end, e_g - start_offset)
                 continue
-            if (self._speech_settings.engine in ("whisper", "hybrid")
+            if mono_decode and (covered_end := replayed_audio_end(
+                    s_g, e_g, self.segments, sample_rate=sr,
+                    timestamp_quality=sentence.get("timestamp_quality", "segment"),
+            )) is not None:
+                commit_receipt["duplicate_skipped"] += 1
+                metrics.increment("asr_replayed_audio_skipped")
+                local_end = max(local_end, min(covered_end, absolute_end) - start_offset)
+                continue
+            if (mono_decode
                     and is_adjacent_tail_echo(
                         s_g, e_g, text, self.segments, sample_rate=sr,
                         timestamp_quality=sentence.get(
@@ -1193,6 +1214,18 @@ class SessionProcessor(threading.Thread):
                 )
             )
             if should_hold:
+                if mono_decode:
+                    quality = sentence.get("timestamp_quality", "segment")
+                    if replayed_audio_end(
+                            s_g, e_g, preview_spans, sample_rate=sr,
+                            timestamp_quality=quality,
+                    ) is not None:
+                        commit_receipt["duplicate_skipped"] += 1
+                        metrics.increment("asr_preview_replayed_audio_skipped")
+                        continue
+                    preview_spans.append({
+                        "start_sample": s_g, "end_sample": e_g, "timestamp_quality": quality,
+                    })
                 unconfirmed.append(sentence)
                 commit_receipt["held"] += 1
                 continue
@@ -1313,7 +1346,7 @@ class SessionProcessor(threading.Thread):
                         self._put({"type": "partial", **vars(cleared)})
         if final and (self._speech_settings.enable_events or self._speech_settings.enable_overlap):
             try:
-                from speech.analysis import analyze
+                from speech.diarization.analysis import analyze
                 result = analyze(audio, self._speech_settings)
                 base_ms = round(start_offset * 1000 / sr)
                 result["audio_window_start_ms"] = base_ms
@@ -1456,7 +1489,7 @@ class SessionProcessor(threading.Thread):
             # Reclaim only very-low-energy LEADING silence when ASR returned
             # no utterances. Preserve all uncertain or voice-like samples.
             if os.getenv("MEETING_SAFE_SILENCE_RECLAIM", "1").strip().lower() in ("1", "true", "yes"):
-                from speech.silence_retention import safe_silence_prefix
+                from speech.audio.silence_retention import safe_silence_prefix
                 drop = safe_silence_prefix(audio, sr)
                 if drop:
                     self.buffer.drop_before(drop)
@@ -1844,7 +1877,7 @@ class SessionProcessor(threading.Thread):
                 record["speaker_name"] = "Speaker 1"
             return
         if mode == "centroid":
-            from speech.diarization import SpeakerCentroidTracker
+            from speech.diarization.diarization import SpeakerCentroidTracker
             tracker = SpeakerCentroidTracker(threshold=float(os.getenv("MEETING_SPEAKER_SIMILARITY", "0.72")))
             for record in self.segments:
                 stable = record.get("speaker_id")
@@ -2113,7 +2146,7 @@ class SessionProcessor(threading.Thread):
                     note()
                 continue
             try:
-                from sessions.speaker_shadow import select_shadow_window
+                from sessions.identity.speaker_shadow import select_shadow_window
                 audio = select_shadow_window(raw_audio)
                 if audio is None:
                     note = getattr(shadow, "note_no_active_window", None)
@@ -2604,36 +2637,30 @@ class SessionProcessor(threading.Thread):
                 "speaker_final_resolution_status": final_reason,
             }
         phase07_speaker = speaker_stats(items)
-        # Preserve saved display assignments on resume unless real evidence
-        # resolves them or a newly confirmed identity now owns the number.
+        # Resume an earlier match to an existing voice, never a placeholder.
         restored = {}
-        occupied = {
-            item["speaker_id"] for item in items
-            if type(item["speaker_id"]) is int and item["speaker_id"] > 0
-        }
         for item, source in zip(items, ordered, strict=True):
             saved = source.get("saved_provisional_id")
-            reason = source.get("speaker_final_resolution_status")
             label = item["speaker_id"]
             if ((type(label) is not int or label <= 0) and saved is not None
-                    and (reason != PROVISIONAL_NEW or saved not in occupied)):
+                    and source.get("speaker_final_resolution_status") == PROVISIONAL_EXISTING):
                 item.update(speaker_id=saved, speaker_name=source["speaker_name"],
                             speaker_status="uncertain", speaker_uncertain=True,
-                            speaker_final_resolution_status=reason)
+                            speaker_final_resolution_status=PROVISIONAL_EXISTING)
                 restored[item["id"]] = saved
         self._provisional_published = restored | assign_provisional_speakers(
             items,
-            previous=getattr(self, "_provisional_published", {}),
             channel_labels=channel_mapper.labels if channel_mapper is not None else None,
+            channel_stream_start=origin,
             voice_embeddings={
                 **{int(source["id"]): source["emb"] for source in ordered
                    if source.get("emb") is not None},
                 **effective_embeddings,
             },
-            reserved_labels=getattr(self, "_participant_label_map", {}).values(),
         )
         for item in items:
-            if item["id"] in self._provisional_published:
+            if (item["id"] in self._provisional_published
+                    or item["speaker_final_resolution_status"] == ATTRIBUTION_DEFERRED):
                 self._fused_final_status[item["id"]].update(
                     speaker_status=item["speaker_status"],
                     speaker_name=item["speaker_name"],

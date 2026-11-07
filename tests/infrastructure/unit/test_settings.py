@@ -1,7 +1,7 @@
 """Validate configuration before accepting requests or opening databases."""
 
 import unittest
-from foundation.settings import load_infrastructure_settings
+from core.infrastructure_settings import load_infrastructure_settings
 
 
 class SettingsTests(unittest.TestCase):

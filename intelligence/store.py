@@ -59,7 +59,9 @@ def job_status(jid):
 
 def list_jobs(meeting_id, limit=30):
     with connection() as conn:
-        rows = conn.execute('SELECT id FROM ai_jobs WHERE meeting_id=%s ORDER BY created_at DESC LIMIT %s',
+        rows = conn.execute("""SELECT id FROM ai_jobs WHERE meeting_id=%s
+                            AND (kind <> 'translate' OR payload->>'workspace' IS DISTINCT FROM 'true')
+                            ORDER BY created_at DESC LIMIT %s""",
                             (meeting_id, max(1, min(limit, 100)))).fetchall()
     return [job_status(row[0]) for row in rows]
 
@@ -359,12 +361,32 @@ def save_translation(meeting_id, segment_id, source_text, lang, output, model):
           (uuid.uuid4(),meeting_id,segment_id,source_text,digest,lang,output,model))
 
 
-def translations(meeting_id, target):
+def translations(meeting_id, target, *, segments=None):
     from intelligence.contracts import source_hash
-    _, segs = meeting_segments(meeting_id)
-    by_id = {s['id']:s for s in segs}
+    if segments is None:
+        _, segments = meeting_segments(meeting_id)
+    by_id = {s['id']:s for s in segments}
     with connection() as conn:
         rows = conn.execute('''SELECT segment_id,source_hash,translated_text FROM ai_translations
              WHERE meeting_id=%s AND target_language=%s''',(meeting_id,target)).fetchall()
     return [{'segment_id':r[0], 'text':r[2]} for r in rows
             if r[0] in by_id and source_hash(by_id[r[0]]['text']) == r[1]]
+
+
+def workspace_translation_progress(meeting_id, target, revision):
+    with connection() as conn:
+        rows = conn.execute("""
+            SELECT status, error FROM (
+                SELECT DISTINCT ON (payload) payload, status, error, created_at
+                FROM ai_jobs
+                WHERE meeting_id=%s AND kind='translate'
+                  AND payload->>'workspace'='true' AND payload->>'target'=%s
+                  AND payload->>'source_revision'=%s
+                ORDER BY payload, created_at DESC, id DESC
+            ) AS latest ORDER BY created_at DESC
+        """, (meeting_id, target, str(revision))).fetchall()
+    return {
+        "active_jobs": sum(status in ("queued", "running") for status, _ in rows),
+        "failed_jobs": sum(status in ("failed", "cancelled") for status, _ in rows),
+        "last_error": next((error for status, error in rows if status == "failed" and error), None),
+    }

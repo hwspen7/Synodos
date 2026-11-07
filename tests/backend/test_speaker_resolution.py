@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 import numpy as np
 
-from sessions.speaker_resolution import preserve_supported_camplus
+from sessions.identity.speaker_resolution import preserve_supported_camplus
 from storage.meetings import MeetingStore
 
 

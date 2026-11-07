@@ -9,7 +9,7 @@ import re
 import threading
 import uuid
 from functools import reduce
-from speech.text_format import join_transcript_text, split_display_sentences, ends_finished_thought
+from speech.captions.text_format import join_transcript_text, split_display_sentences, ends_finished_thought
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -79,6 +79,34 @@ class MeetingStore:
         self._write_pickle(d / "meeting.pkl", {"meta": meta, "state": None})
         return meta
 
+
+    def rename(self, meeting_id: str, title: str) -> dict | None:
+        """Atomically update the canonical title and any resumable snapshot."""
+        with self._write_lock:
+            payload = self._read_payload(meeting_id)
+            if payload is None:
+                return None
+            meta = dict(payload.get("meta") or {})
+            if not meta:
+                return None
+            if meta.get("title") == title:
+                return meta
+            meta["title"] = title
+            meta["updated_at"] = _now_iso()
+            meta["_store_version"] = int(meta.get("_store_version", 0)) + 1
+            payload["meta"] = meta
+            state = payload.get("state")
+            if isinstance(state, dict):
+                payload["state"] = {**state, "title": title}
+            folder = self._dir(meeting_id)
+            temp = folder / ("meeting-" + uuid.uuid4().hex + ".tmp")
+            try:
+                self._write_pickle(temp, payload)
+                os.replace(temp, folder / "meeting.pkl")
+            finally:
+                temp.unlink(missing_ok=True)
+            return meta
+
     def exists(self, meeting_id: str) -> bool:
         return self._dir(meeting_id).joinpath("meeting.pkl").exists()
 
@@ -122,6 +150,7 @@ class MeetingStore:
             "hotword_ids": list(state.get("hotword_ids") or []),
             "spk_threshold": float(state.get("spk_threshold", 0.3)),
             "ui_settings": dict(state.get("ui_settings") or {}),
+            "speaker_labels": dict(state.get("speaker_labels") or {}),
         }
 
     @staticmethod
@@ -197,13 +226,44 @@ class MeetingStore:
         }
 
     @staticmethod
-    def _numbered_segments(state: dict, sample_rate: int) -> list[dict]:
-        from sessions.provisional_speakers import numbered_saved_segments
+    def _projected_segments(state: dict, sample_rate: int) -> list[dict]:
+        from sessions.channels.provisional_speakers import project_saved_speaker_assignments
 
-        return numbered_saved_segments(
+        return project_saved_speaker_assignments(
             state.get("segments") or [], sample_rate,
-            reserved_labels=(state.get("participant_label_map") or {}).values(),
         )
+
+    @staticmethod
+    def _display_speaker_id(segment: dict, aliases: dict[int, int]) -> int:
+        """Use the same acoustic alias gate as the transcript UI."""
+        sid = int(segment.get("speaker_id", -1))
+        if (segment.get("speaker_final_resolution_status") ==
+                "independent_acoustic_assigned"
+                and sid > 0 and not segment.get("speaker_uncertain")
+                and sid in aliases):
+            return aliases[sid]
+        return sid
+
+    @classmethod
+    def _apply_display_labels(
+        cls, segments: list[dict], state: dict, sample_rate: int,
+    ) -> list[dict]:
+        """Name only the presentation layer, never the saved voice evidence."""
+        labels = state.get("speaker_labels") or {}
+        if not labels:
+            return segments
+        from sessions.channels.corroborated_speaker_channels import saved_speaker_continuity
+
+        aliases = saved_speaker_continuity(segments, sample_rate)
+        out = []
+        for segment in segments:
+            display_id = cls._display_speaker_id(segment, aliases)
+            label = labels.get(str(display_id)) or {}
+            if label.get("name"):
+                out.append({**segment, "speaker_name": label["name"]})
+            else:
+                out.append(segment)
+        return out
 
     def list_segments(self, meeting_id: str) -> list[dict] | None:
         """Return complete safe evidence for later summaries, no voiceprints."""
@@ -213,10 +273,11 @@ class MeetingStore:
         meta = payload.get("meta") or {}
         state = payload.get("state") or {}
         sr = int(state.get("sample_rate", meta.get("sample_rate") or 16000))
-        from sessions.corroborated_speaker_channels import saved_speaker_continuity
+        from sessions.channels.corroborated_speaker_channels import saved_speaker_continuity
 
-        segments = self._numbered_segments(state, sr)
+        segments = self._projected_segments(state, sr)
         aliases = saved_speaker_continuity(segments, sr)
+        segments = self._apply_display_labels(segments, state, sr)
         rows = []
         for segment in segments:
             row = self._segment_summary(segment, sr)
@@ -329,7 +390,9 @@ class MeetingStore:
         meta = payload.get("meta") or {}
         state = payload.get("state") or {}
         sr = int(state.get("sample_rate", meta.get("sample_rate") or 16000))
-        segments = self._numbered_segments(state, sr)
+        segments = self._apply_display_labels(
+            self._projected_segments(state, sr), state, sr,
+        )
         merge_gap_s = float(state.get("merge_gap_s", meta.get("merge_gap_s") or 2.0))
         speaker_map = {int(k): int(v) for k, v in (state.get("speaker_map") or {}).items()}
         paragraphs = self._build_paragraphs(segments, sr, merge_gap_s, speaker_map)

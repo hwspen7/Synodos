@@ -13,7 +13,7 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from speech.vocabulary import normalize_terms
+from speech.captions.vocabulary import normalize_terms
 
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")

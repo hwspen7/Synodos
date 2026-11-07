@@ -49,7 +49,7 @@ if (-not (Test-Path -LiteralPath $lex)) {
 if (-not (Test-Path -LiteralPath $hyb)) {
     throw "HYBRID NOT_ACCEPTED: report missing at $hyb. Verify the embedding model is installed and run Invoke-Meeting-Knowledge-Acceptance.ps1 -HybridOnly."
 }
-& $Python -m tools.meeting_release_gate freeze --lexical $lex --hybrid $hyb --output $baseline
+& $Python -m tools.validation.meeting_release_gate freeze --lexical $lex --hybrid $hyb --output $baseline
 if ($LASTEXITCODE -ne 0) { throw "Synthetic baseline failed strict freeze" }
 Write-Host "Frozen synthetic baseline: $baseline"
 $frozen = Get-Content -LiteralPath $baseline -Raw | ConvertFrom-Json
@@ -70,20 +70,20 @@ if (Test-Path -LiteralPath $GoldManifest) {
     $extra = @()
     if ($ReindexTestMeetings) { $extra += "--reindex" }
     $env:MEETING_AI_EMBEDDINGS = "0"
-    & $Python -m tools.meeting_knowledge_benchmark --manifest $GoldManifest --output $realLex --mode lexical @extra
+    & $Python -m tools.maintenance.meeting_knowledge_benchmark --manifest $GoldManifest --output $realLex --mode lexical @extra
     $lexExit = $LASTEXITCODE
     $env:MEETING_AI_EMBEDDINGS = "1"
-    & $Python -m tools.meeting_knowledge_benchmark --manifest $GoldManifest --output $realHyb --mode hybrid @extra
+    & $Python -m tools.maintenance.meeting_knowledge_benchmark --manifest $GoldManifest --output $realHyb --mode hybrid @extra
     $hybExit = $LASTEXITCODE
     if ($lexExit -ne 0 -or $hybExit -ne 0) {
         Write-Warning "Real meeting quality tests did not pass. Release remains blocked."
     }
 } else {
     Write-Warning "Human-reviewed real audio gold manifest missing: $GoldManifest"
-    Write-Warning "No fake real-meeting PASS will be generated. See docs/meeting_knowledge_quality.md"
+    Write-Warning "No real-meeting PASS will be generated without a human-reviewed gold manifest."
 }
 $decision = Join-Path $ReportRoot "meeting_release_decision_$tag.json"
-$argsList = @("-m", "tools.meeting_release_gate", "decide", "--baseline", $baseline,
+$argsList = @("-m", "tools.validation.meeting_release_gate", "decide", "--baseline", $baseline,
               "--real-lexical", $realLex, "--real-hybrid", $realHyb,
               "--commit", $env:MEETING_SOURCE_COMMIT, "--output", $decision)
 if ($AudioIdentityGate) { $argsList += @("--audio-identity", $AudioIdentityGate) }

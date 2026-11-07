@@ -3,9 +3,9 @@ import tempfile
 import wave
 from pathlib import Path
 import numpy as np
-from speech.recording import RecordingWriter, RecordingQuotaExceeded
-from speech.enhancement import quality
-from speech.diarization import SpeakerCentroidTracker
+from speech.audio.recording import RecordingWriter, RecordingQuotaExceeded
+from speech.audio.enhancement import quality
+from speech.diarization.diarization import SpeakerCentroidTracker
 
 class AudioTests(unittest.TestCase):
     def test_wav_reopens_and_preserves_pcm(self):

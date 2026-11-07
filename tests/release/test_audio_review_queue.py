@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import unittest
 import wave
 
-from tools.prepare_audio_review_queue import (
+from tools.evaluation.corpora.prepare_audio_review_queue import (
     annotation_stats, classify_window, extract_wav_clip, make_review_rows,
     select_windows, word_overlap_indices,
 )

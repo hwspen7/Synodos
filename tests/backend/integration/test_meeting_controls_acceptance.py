@@ -10,10 +10,10 @@ import wave
 
 import numpy as np
 
-from audio.buffer import AudioBuffer
+from sessions.audio_buffer import AudioBuffer
 from core.config import Settings
 from sessions.processor import SessionProcessor
-from speech.corrections import (
+from speech.captions.corrections import (
     RevisionConflict, assign_segment_speaker, correct_segment,
 )
 from storage.meetings import MeetingStore

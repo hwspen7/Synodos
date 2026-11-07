@@ -4,7 +4,7 @@ import ContextCorrectionPanel from '@/components/ContextCorrectionPanel.vue'
 import OfflineSpeakerPanel from '@/components/OfflineSpeakerPanel.vue'
 import SpeakerContributionPanel from '@/components/SpeakerContributionPanel.vue'
 import Phase07Status from '@/components/Phase07Status.vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { downloadUrl, hotwordsApi, meetingsApi, speakersApi } from '@/api/client'
 import { RealtimeClient } from '@/api/ws'
@@ -14,7 +14,7 @@ import { speakerColor } from '@/speaker/clustering'
 import { splitDisplaySentences } from '@/transcript/display'
 import { expandContentFirstSegments } from '@/transcript/contentFirst'
 import { buildTranscriptParagraphs } from '@/transcript/paragraphs'
-import { projectChannelSpeakers } from '@/transcript/channelSpeakers'
+import { projectReportedSpeakers } from '@/transcript/reportedSpeakers'
 import {
   supportedLanguages, restoredSpeechChoices,
 } from '@/config/phase1Languages'
@@ -51,6 +51,62 @@ const vadThreshold = ref(4)
 const recThreshold = ref(1.5)
 const serverInfo = ref<ServerReady | null>(null)
 const meetingTitle = ref('')
+const editingMeetingTitle = ref(false)
+const renamingMeetingTitle = ref(false)
+const meetingTitleDraft = ref('')
+const meetingTitleInput = ref<HTMLInputElement | null>(null)
+const titleRenamedLocally = ref(false)
+const renameError = ref('')
+
+function editMeetingTitle(): void {
+  if (renamingMeetingTitle.value) return
+  renameError.value = ''
+  meetingTitleDraft.value = meetingTitle.value || 'Untitled Meeting'
+  editingMeetingTitle.value = true
+  void nextTick(() => {
+    meetingTitleInput.value?.focus()
+    meetingTitleInput.value?.select()
+  })
+}
+
+function cancelMeetingRename(): void {
+  if (renamingMeetingTitle.value) return
+  renameError.value = ''
+  editingMeetingTitle.value = false
+  meetingTitleDraft.value = meetingTitle.value
+}
+
+async function commitMeetingRename(): Promise<void> {
+  // Enter and blur can both fire while a request is pending. Save only once.
+  if (!editingMeetingTitle.value || renamingMeetingTitle.value) return
+  const title = meetingTitleDraft.value.trim()
+  if (!title) {
+    renameError.value = 'Enter a meeting name.'
+    return
+  }
+  if (title === meetingTitle.value) {
+    renameError.value = ''
+    editingMeetingTitle.value = false
+    return
+  }
+  renamingMeetingTitle.value = true
+  renameError.value = ''
+  try {
+    const { meeting } = await meetingsApi.rename(props.id, title)
+    meetingTitle.value = meeting.title
+    meetingTitleDraft.value = meeting.title
+    titleRenamedLocally.value = true
+    editingMeetingTitle.value = false
+    // Renaming is an inline action. No recording alert or success popup.
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    renameError.value = /method not allowed|^405\b|^404\b|^not found$/i.test(message)
+      ? 'Rename is unavailable on the running server. Restart the backend and retry.'
+      : `Could not save meeting name: ${message}`
+  } finally {
+    renamingMeetingTitle.value = false
+  }
+}
 const bufferedMs = ref(0)
 const segments = ref<Segment[]>([])
 const mergeGapS = ref(2)
@@ -60,17 +116,37 @@ const saving = ref(false)
 const speakers = ref<Speaker[]>([])
 const hotwords = ref<HotwordLibrary[]>([])
 const showParticipants = ref(false)
+const moreMenuRef = ref<HTMLDetailsElement | null>(null)
+function closeMeetingActions(): void {
+  if (moreMenuRef.value) moreMenuRef.value.open = false
+}
 const showDiagnostics = ref(false)
 const showAllRecordings = ref(false)
 type MeetingTool = 'transcript' | 'review' | 'recordings' | 'settings'
-type ReviewTool = 'overview' | 'correction' | 'speakers'
-const activeMeetingTool = ref<MeetingTool>('transcript')
+type ReviewTool = 'overview' | 'translation' | 'correction' | 'speakers'
+const activeMeetingTool = ref<MeetingTool>(
+  route.query.tool === 'settings' ? 'settings'
+    : route.query.tool === 'recordings' ? 'recordings'
+      : route.query.tool === 'transcript' ? 'transcript' : 'review',
+)
 const activeReviewTool = ref<ReviewTool>('overview')
+const intelligenceSection = computed<'overview' | 'translation'>(() => {
+  if (activeReviewTool.value === 'translation') return 'translation'
+  return 'overview'
+})
 function selectMeetingTool(tool: MeetingTool): void {
   activeMeetingTool.value = tool
   if (tool === 'review') activeReviewTool.value = 'overview'
   if (tool === 'recordings') void loadRecordings()
 }
+
+watch(() => route.query.tool, (tool) => {
+  if (tool === 'transcript' || tool === 'review' || tool === 'recordings' || tool === 'settings') {
+    selectMeetingTool(tool)
+  } else if (tool == null) {
+    selectMeetingTool('transcript')
+  }
+})
 
 const selectedParticipantIds = ref<string[]>([])
 const showHotwords = ref(false)
@@ -88,6 +164,73 @@ const translatingSaved = ref(false)
 const translationWarning = ref('')
 const appliedSettings = ref('')
 const editingSpeakerId = ref<number | null>(null)
+const speakerLabels = ref<Record<string, { name: string; profile_id: string }>>({})
+const speakerNameEditorParagraph = ref<number | null>(null)
+const speakerNameEditorId = ref<number | null>(null)
+const speakerNameDraft = ref('')
+const speakerNameBusy = ref(false)
+const speakerNameError = ref('')
+const speakerNameInput = ref<HTMLInputElement | null>(null)
+
+function speakerDisplayLabel(segment: Segment): Segment {
+  const label = speakerLabels.value[String(segment.speaker_id)]
+  return label?.name ? { ...segment, speaker_name: label.name } : segment
+}
+
+function editDisplayedSpeaker(para: Paragraph): void {
+  if (para.speaker_id <= 0 || speakerNameBusy.value) return
+  speakerNameEditorParagraph.value = para.id
+  speakerNameEditorId.value = para.speaker_id
+  speakerNameDraft.value = para.speaker_name || `Speaker ${para.speaker_id}`
+  speakerNameError.value = recording.value || status.value === 'stopping'
+    ? 'Stop recording before renaming a speaker.' : ''
+  void nextTick(() => {
+    speakerNameInput.value?.focus()
+    speakerNameInput.value?.select()
+  })
+}
+
+function cancelSpeakerName(): void {
+  if (speakerNameBusy.value) return
+  speakerNameEditorParagraph.value = null
+  speakerNameEditorId.value = null
+  speakerNameError.value = ''
+}
+
+async function commitSpeakerName(): Promise<void> {
+  if (speakerNameEditorParagraph.value === null ||
+      speakerNameEditorId.value === null || speakerNameBusy.value) return
+  if (recording.value || status.value === 'stopping' || status.value === 'connecting') {
+    speakerNameError.value = 'Stop recording before renaming a speaker.'
+    return
+  }
+  const name = speakerNameDraft.value.trim()
+  if (!name) {
+    speakerNameError.value = 'Enter a speaker name.'
+    return
+  }
+  const id = speakerNameEditorId.value
+  const current = speakerLabels.value[String(id)]?.name
+  const displayed = paragraphs.value.find(para => para.id === speakerNameEditorParagraph.value)?.speaker_name
+  if (name === (current || displayed)) {
+    cancelSpeakerName()
+    return
+  }
+  speakerNameBusy.value = true
+  speakerNameError.value = ''
+  try {
+    const { speaker, speaker_labels } = await meetingsApi.labelSpeaker(props.id, id, name)
+    speakerLabels.value = speaker_labels
+    speakers.value = [speaker, ...speakers.value.filter(item => item.id !== speaker.id)]
+    speakerNameEditorParagraph.value = null
+    speakerNameEditorId.value = null
+  } catch (err) {
+    speakerNameError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    speakerNameBusy.value = false
+  }
+}
+
 const identityReviewSegmentId = ref<number | null>(null)
 const selectedSpeakerId = ref<number | null>(null)
 const speakerDetailTab = ref<'insights' | 'statements' | 'identity'>('insights')
@@ -95,9 +238,11 @@ const highlightedSegmentId = ref<number | null>(null)
 const showIndependentSpeakerAnalysis = ref(false)
 const reviewSpeakers = computed(() => {
   const byId = new Map<number, { id: number; name: string; segments: number; firstSegmentId: number }>()
-  const ordered = [...segments.value].sort((a, b) => a.start_ms - b.start_ms || a.id - b.id)
+  const ordered = [...(reportedSegments.value ?? publishedSegments.value)]
+    .map(speakerDisplayLabel)
+    .sort((a, b) => a.start_ms - b.start_ms || a.id - b.id)
   for (const segment of ordered) {
-    if (!segment.text.trim()) continue
+    if (!segment.text.trim() || segment.speaker_final_resolution_status === 'speaker_attribution_deferred') continue
     const name = segment.speaker_name || (segment.speaker_id > 0
       ? `Speaker ${segment.speaker_id}` : 'Unidentified Speaker')
     const previous = byId.get(segment.speaker_id)
@@ -118,6 +263,7 @@ function inspectSpeaker(segmentId: number): void {
   selectedSpeakerId.value = segment.speaker_id
   speakerDetailTab.value = 'insights'
   activeReviewTool.value = 'speakers'
+  activeMeetingTool.value = 'review'
 }
 function jumpToSpeakerStatement(segmentId: number): void {
   const paragraph = paragraphs.value.find(p => p.segmentIds.includes(segmentId))
@@ -175,18 +321,20 @@ const statusClass = computed(() => {
   return status.value === 'disconnected' ? 'bad' : 'muted'
 })
 
-/** Use acoustic report channels for headings when the meeting has them. */
-const channelSegments = computed(() => projectChannelSpeakers(segments.value))
-const paragraphs = computed<Paragraph[]>(() =>
-  buildTranscriptParagraphs(channelSegments.value ?? expandContentFirstSegments(
-    segments.value, translationTarget.value,
-  ), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value,
-    channelHeadings: channelSegments.value !== null,
-    singlePrimarySpeaker: channelSegments.value === null }),
-)
-const overlapWarnings = computed(() => segments.value.reduce(
-  (sum, seg) => sum + (seg.overlap_intervals_ms?.length ?? 0), 0,
+/** Show each report speaker separately when independent acoustic evidence is available. */
+const publishedSegments = computed(() => segments.value.filter(segment =>
+  segment.speaker_final_resolution_status !== 'speaker_attribution_deferred',
 ))
+const reportedSegments = computed(() =>
+  projectReportedSpeakers(publishedSegments.value)?.map(speakerDisplayLabel) ?? null,
+)
+const paragraphs = computed<Paragraph[]>(() =>
+  buildTranscriptParagraphs(reportedSegments.value ?? expandContentFirstSegments(
+    publishedSegments.value, translationTarget.value,
+  ).map(speakerDisplayLabel), { mergeGapS: mergeGapS.value, translationTarget: translationTarget.value,
+    channelHeadings: reportedSegments.value !== null,
+    singlePrimarySpeaker: reportedSegments.value === null }),
+)
 const untranslatedCount = computed(() => segments.value.filter((seg) =>
   translationTarget.value && seg.language !== translationTarget.value &&
   (seg.translation_target !== translationTarget.value || !seg.translation?.trim()),
@@ -197,6 +345,30 @@ const participantNames = computed(() => {
     .map((id) => byId.get(id))
     .filter((n): n is string => Boolean(n))
 })
+const meetingCast = computed(() => {
+  if (reviewSpeakers.value.length) {
+    return reviewSpeakers.value.map(speaker => ({
+      id: speaker.id,
+      name: speaker.name,
+      turns: speaker.segments,
+      firstSegmentId: speaker.firstSegmentId as number | null,
+    }))
+  }
+  return participantNames.value.map((name, index) => ({
+    id: -(index + 1),
+    name,
+    turns: 0,
+    firstSegmentId: null as number | null,
+  }))
+})
+function speakerInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return '?'
+  return (parts.length >= 2
+    ? parts.slice(0, 2).map(part => part[0] ?? '').join('')
+    : parts[0]!.slice(0, 2)).toUpperCase()
+}
+
 const hotwordNames = computed(() => {
   const byId = new Map(hotwords.value.map((h) => [h.id, h.name]))
   return selectedHotwordIds.value
@@ -297,6 +469,10 @@ async function saveMeeting(quiet = false): Promise<boolean> {
 async function loadMeetingConfig(): Promise<void> {
   try {
     const { meeting } = await meetingsApi.get(props.id)
+    if (!titleRenamedLocally.value && !editingMeetingTitle.value) {
+      meetingTitle.value = meeting.title || 'Untitled Meeting'
+    }
+    speakerLabels.value = meeting.speaker_labels ?? {}
     selectedParticipantIds.value = meeting.ui_settings?.participant_ids ?? meeting.participant_ids ?? []
     autoMatchSaved.value = meeting.ui_settings?.auto_match_saved ?? meeting.auto_match_saved ?? true
     selectedHotwordIds.value = meeting.ui_settings?.hotword_ids ?? meeting.hotword_ids ?? []
@@ -602,7 +778,9 @@ function connect(autostart = false): void {
       if (recordAudio.value && !wavRecordingEnabled.value) {
         error.value = 'WAV recording was requested but the server could not enable it.'
       }
-      meetingTitle.value = msg.title ?? 'Untitled Meeting'
+      if (!titleRenamedLocally.value && !editingMeetingTitle.value) {
+        meetingTitle.value = msg.title ?? 'Untitled Meeting'
+      }
       mergeGapS.value = msg.merge_gap_s || 2
       if (msg.participant_ids) selectedParticipantIds.value = msg.participant_ids
       if (msg.hotword_ids) selectedHotwordIds.value = msg.hotword_ids
@@ -839,47 +1017,110 @@ onBeforeUnmount(() => stopInternal())
 
 <template>
   <div class="meeting-page">
-    <header class="compact-meeting-header">
+    <Teleport to="#synodos-global-context">
       <div class="compact-meeting-heading">
-        <button class="meeting-back" aria-label="Back to home" title="Back to home" @click="router.push('/')">
-          <AppIcon name="arrow-left" :size="18" />
+        <button type="button" class="meeting-back" aria-label="Back to meetings"
+          title="Back to meetings" @click="router.push('/#meetings')">
+          <AppIcon name="arrow-left" :size="17" />
         </button>
         <div class="compact-meeting-titles">
-          <h1>{{ meetingTitle || 'Untitled Meeting' }}</h1>
-          <div class="meeting-running-status">
-            <span class="status-chip" :class="statusClass"><span class="status-dot" aria-hidden="true"></span>{{ statusText }}</span>
-            <span v-if="recording" class="compact-mic-meter" :style="{ '--mic-fill': Math.min(100, micLevel * 300) + '%' }" aria-label="Microphone input level"></span>
-            <span v-if="recording">Captured {{ capturedSeconds.toFixed(1) }}s · Received {{ deliveredSeconds.toFixed(1) }}s</span>
-            <span v-else>{{ paragraphs.length }} turns</span>
-          </div>
-          <div class="meeting-header-context" aria-label="Meeting details">
-            <span><strong>Language</strong> {{ language === 'auto' ? 'Auto' : language.toUpperCase() }}</span>
-            <span class="identity-mode-label"><strong>Voice identities</strong> {{ selectedParticipantIds.length ? selectedParticipantIds.length + ' selected' : !autoMatchSaved ? 'Off' : serverInfo && (!serverInfo.auto_match_active || serverInfo.auto_match_profile_count === 0) ? 'No eligible voices' : 'Auto library match' }}</span>
-            <span><strong>Translation</strong> {{ translationTarget || 'Off' }}</span>
-            <span v-if="durableSeconds !== null"><strong>Audio</strong> {{ durableSeconds.toFixed(1) }}s saved</span>
+          <h1 class="synodos-meeting-title">
+            <button v-if="!editingMeetingTitle" type="button" class="meeting-title-trigger"
+              :title="`Rename ${meetingTitle || 'Untitled Meeting'}`"
+              aria-label="Rename meeting" @click="editMeetingTitle">
+              <span class="meeting-title-text">{{ meetingTitle || 'Untitled Meeting' }}</span>
+              <AppIcon name="pencil" :size="13" />
+            </button>
+            <input v-else ref="meetingTitleInput" v-model="meetingTitleDraft"
+              class="meeting-title-editor" type="text" maxlength="120"
+              aria-label="Meeting title" :aria-invalid="!!renameError"
+              :disabled="renamingMeetingTitle"
+              @input="renameError = ''"
+              @keydown.enter.stop.prevent="commitMeetingRename"
+              @keydown.esc.stop.prevent="cancelMeetingRename"
+              @blur="commitMeetingRename" />
+          </h1>
+          <p v-if="renameError" class="meeting-title-error" role="alert">{{ renameError }}</p>
+          <div class="meeting-running-status" role="status">
+            <span class="status-chip" :class="statusClass">
+              <span class="status-dot" aria-hidden="true"></span>{{ statusText }}
+            </span>
+            <span v-if="recording" class="compact-mic-meter"
+              :style="{ '--mic-fill': Math.min(100, micLevel * 300) + '%' }"
+              aria-label="Microphone input level"></span>
+            <span v-if="recording" class="synodos-recording-time">
+              {{ capturedSeconds.toFixed(0) }}s recorded
+            </span>
           </div>
         </div>
       </div>
-      <div class="compact-meeting-toolbar" aria-label="Meeting actions">
-        <details class="workspace-export-menu">
-        <summary><AppIcon name="download" :size="15" /> Export <span aria-hidden="true">⌄</span></summary>
-        <div class="workspace-export-options">
-          <button type="button" @click="exportMeeting('md')">Download transcript (.md)</button>
-          <button type="button" @click="exportMeeting('json')">Download structured data (.json)</button>
-          <button type="button" :disabled="paragraphs.length === 0" @click="copyTranscript">Copy transcript</button>
-        </div>
-      </details>
-        <div class="toolbar-secondary-actions">
-          <button class="btn btn-ghost toolbar-save" :disabled="saving" @click="saveMeeting()">
-            <AppIcon name="save" :size="16" /> {{ saving ? 'Saving...' : 'Save' }}
+    </Teleport>
+    <Teleport to="#synodos-global-actions">
+      <div class="synodos-meeting-heading-actions" aria-label="Meeting actions">
+        <button type="button" class="synodos-participants-button"
+          :title="`${meetingCast.length} speakers in this meeting`"
+          @click="selectMeetingTool('review'); activeReviewTool = 'speakers'">
+          <AppIcon name="users" :size="16" />
+          <span>Speakers</span>
+          <span class="synodos-speaker-count">{{ meetingCast.length }}</span>
+        </button>
+        <label class="synodos-language-control">
+          <span>Language</span>
+          <select v-model="language"
+            :disabled="recording || status === 'connecting' || status === 'stopping'"
+            aria-label="Recognition language">
+            <option v-for="option in supportedLanguages" :key="option[0]"
+              :value="option[0]">{{ option[1] }}</option>
+          </select>
+        </label>
+        <button type="button" class="synodos-quick-tool synodos-assistant-tool"
+          aria-label="Assistant" title="Assistant"
+          :class="{ active: activeMeetingTool === 'review' }"
+          :aria-pressed="activeMeetingTool === 'review'"
+          @click="selectMeetingTool(activeMeetingTool === 'review' ? 'transcript' : 'review')">
+          <AppIcon name="sparkles" :size="16" /><span>Assistant</span>
+        </button>
+          <button type="button" class="synodos-quick-tool synodos-recordings-tool"
+            :class="{ active: activeMeetingTool === 'recordings' }"
+            :aria-pressed="activeMeetingTool === 'recordings'"
+            @click="selectMeetingTool(activeMeetingTool === 'recordings' ? 'transcript' : 'recordings')">
+            <AppIcon name="audio-lines" :size="16" /><span>Recordings</span>
           </button>
-        </div>
-        <button class="btn btn-primary compact-record-action" :class="{ danger: recording }" :disabled="status === 'connecting' || status === 'stopping'" @click="recording ? stop() : start()">
+        <details ref="moreMenuRef" class="synodos-meeting-more">
+          <summary aria-label="More meeting actions" title="More meeting actions">···</summary>
+          <div class="synodos-meeting-more-popover">
+            <button type="button" @click="selectMeetingTool('settings'); closeMeetingActions()">
+              <AppIcon name="settings" :size="16" /> Meeting settings
+              <span v-if="settingsPending" class="meeting-tool-unsaved" title="Unsaved changes"></span>
+            </button>
+            <div class="synodos-more-divider" aria-hidden="true"></div>
+            <button type="button" @click="exportMeeting('md'); closeMeetingActions()">
+              <AppIcon name="download" :size="16" /> Export transcript
+            </button>
+            <button type="button" @click="exportMeeting('json'); closeMeetingActions()">
+              <AppIcon name="download" :size="16" /> Export JSON
+            </button>
+            <button type="button" :disabled="paragraphs.length === 0" @click="copyTranscript(); closeMeetingActions()">
+              <AppIcon name="file-text" :size="16" /> Copy transcript
+            </button>
+          </div>
+        </details>
+        <button type="button" class="btn btn-ghost toolbar-save"
+          :aria-label="saving ? 'Saving meeting' : 'Save meeting'"
+          :disabled="saving" @click="saveMeeting()">
+          <AppIcon name="save" :size="16" /> {{ saving ? 'Saving...' : 'Save' }}
+        </button>
+        <button type="button" class="btn btn-primary compact-record-action"
+          :aria-label="recording ? 'Stop recording' : 'Start recording'"
+          :class="{ danger: recording }"
+          :disabled="status === 'connecting' || status === 'stopping'"
+          @click="recording ? stop() : start()">
           <AppIcon :name="recording ? 'stop' : 'mic'" :size="17" />
           {{ recording ? 'Stop recording' : 'Start recording' }}
         </button>
       </div>
-    </header>
+    </Teleport>
+
     <p v-if="settingsPending && !recording" class="hint-text warn-text" role="status">Settings changed. Apply to save them, or start recording to use these values.</p>
     <p v-if="selectedWithoutVoiceprints.length" class="hint-text warn-text" role="status">
       {{ selectedWithoutVoiceprints.length }} selected participant(s) have no usable voiceprints. Enroll clean voice samples before relying on identification.
@@ -894,30 +1135,11 @@ onBeforeUnmount(() => stopInternal())
         {{ translatingSaved ? 'Translating...' : 'Translate saved transcript' }}
       </button>
     </div>
-    <div class="meeting-workspace" :class="{ 'tool-panel-open': activeMeetingTool !== 'transcript' }">
-      <nav class="meeting-tool-sidebar" aria-label="Meeting tools">
-        <div class="meeting-tool-nav-title">MEETING</div>
-        <button type="button" class="meeting-tool-link" :class="{ active: activeMeetingTool === 'transcript' }" :aria-current="activeMeetingTool === 'transcript' ? 'page' : undefined" @click="selectMeetingTool('transcript')">
-          <AppIcon name="file-text" :size="18" /><span>Transcript</span>
-        </button>
-        <div class="meeting-tool-nav-title meeting-tool-section-title">TOOLS</div>
-        <button type="button" class="meeting-tool-link" :class="{ active: activeMeetingTool === 'review' }" :aria-pressed="activeMeetingTool === 'review'" @click="selectMeetingTool('review')">
-          <AppIcon name="edit" :size="18" /><span>Review</span>
-        </button>
-        <button type="button" class="meeting-tool-link" :class="{ active: activeMeetingTool === 'recordings' }" :aria-pressed="activeMeetingTool === 'recordings'" @click="selectMeetingTool('recordings')">
-          <AppIcon name="list" :size="18" /><span>Recordings</span>
-        </button>
-        <button type="button" class="meeting-tool-link" :class="{ active: activeMeetingTool === 'settings' }" :aria-pressed="activeMeetingTool === 'settings'" @click="selectMeetingTool('settings')">
-          <AppIcon name="settings" :size="18" /><span>Settings</span>
-          <span v-if="settingsPending" class="meeting-tool-unsaved" title="Unsaved changes"></span>
-        </button>
-        <div class="meeting-tool-nav-bottom">
-          <span class="meeting-tool-status-dot" :class="{ recording }"></span>
-          <span>{{ recording ? 'Recording now' : 'Local session' }}</span>
-        </div>
-      </nav>
+    <div class="meeting-workspace" :class="{ 'tool-panel-open': activeMeetingTool !== 'transcript', 'assistant-panel-open': activeMeetingTool === 'review' }">
+      <div class="synodos-meeting-center">
       <div class="meeting-primary">
-    <main ref="transcriptEl" class="transcript" @scroll="onTranscriptScroll">
+        <main ref="transcriptEl" class="transcript"
+          aria-label="Meeting transcript" @scroll="onTranscriptScroll">
       <div v-if="segments.length === 0 && !partialText" class="empty-state">
         <div class="empty-icon"><AppIcon name="mic" :size="26" /></div>
         <h3>{{ recording ? 'Listening...' : 'No transcript yet' }}</h3>
@@ -929,18 +1151,41 @@ onBeforeUnmount(() => stopInternal())
       </div>
 
       <template v-else>
-        <p v-if="overlapWarnings > 0" class="transcript-overlap-warning">
-          Overlapping voices detected in {{ overlapWarnings }} acoustic intervals.
-          The system may not have transcribed every simultaneous speaker.
-          Untranscribed words are never fabricated.
-        </p>
         <article v-for="para in paragraphs" :key="para.id" :data-paragraph-id="para.id"
           class="paragraph" :class="{ 'paragraph-unidentified': para.speaker_id <= 0,
             'paragraph-highlighted': highlightedSegmentId !== null && para.segmentIds.includes(highlightedSegmentId) }">
           <div class="para-head">
-            <span class="speaker-dot" :style="{ background: para.color }"></span>
-            <span class="speaker-name">{{ para.speaker_name || `Speaker ${para.speaker_id}` }}</span>
-            <span v-if="para.overlapping" class="speaker-registered-label">{{ channelSegments ? 'Overlap' : 'Primary during overlap' }}</span>
+            <template v-if="speakerNameEditorParagraph === para.id">
+              <span class="speaker-dot synodos-speaker-avatar" aria-hidden="true"
+                :data-initials="speakerInitials(para.speaker_name || `Speaker ${para.speaker_id}`)"
+                :style="{ '--synodos-speaker-accent': para.color }"></span>
+              <input ref="speakerNameInput" v-model="speakerNameDraft"
+                type="text" class="transcript-speaker-name-input" maxlength="120"
+                aria-label="Speaker name" :aria-invalid="!!speakerNameError"
+                :disabled="speakerNameBusy || recording || status === 'stopping'"
+                @input="speakerNameError = ''"
+                @keydown.enter.stop.prevent="commitSpeakerName"
+                @keydown.esc.stop.prevent="cancelSpeakerName"
+                @blur="commitSpeakerName" />
+            </template>
+            <button v-else-if="para.speaker_id > 0" type="button"
+              class="transcript-speaker-name-button"
+              :aria-label="`Rename ${para.speaker_name || `Speaker ${para.speaker_id}`}`"
+              title="Rename speaker and add to Speakers"
+              @click="editDisplayedSpeaker(para)">
+              <span class="speaker-dot synodos-speaker-avatar" aria-hidden="true"
+                :data-initials="speakerInitials(para.speaker_name || `Speaker ${para.speaker_id}`)"
+                :style="{ '--synodos-speaker-accent': para.color }"></span>
+              <span class="speaker-name">{{ para.speaker_name || `Speaker ${para.speaker_id}` }}</span>
+              <AppIcon name="pencil" :size="12" class="transcript-speaker-name-pencil" />
+            </button>
+            <template v-else>
+              <span class="speaker-dot synodos-speaker-avatar" aria-hidden="true"
+                :data-initials="speakerInitials(para.speaker_name || 'Unidentified Speaker')"
+                :style="{ '--synodos-speaker-accent': para.color }"></span>
+              <span class="speaker-name">{{ para.speaker_name || 'Unidentified Speaker' }}</span>
+            </template>
+            <span v-if="para.overlapping" class="speaker-registered-label">{{ reportedSegments ? 'Overlap' : 'Primary during overlap' }}</span>
             <span v-if="para.provisional" class="speaker-registered-label">Provisional</span>
             <span v-if="segments.some(seg => para.segmentIds.includes(seg.id) && seg.speaker_name === para.speaker_name && seg.speaker_diarization_source === 'registered_voiceprint')"
               class="speaker-registered-label" title="Matched to a saved voiceprint. Verify important identities before relying on them.">
@@ -950,6 +1195,8 @@ onBeforeUnmount(() => stopInternal())
                  looked like a phantom Speaker 12 or Speaker 13. -->
             <span class="para-time">{{ formatCaptionTime(para.start_ms, para.end_ms) }}</span>
           </div>
+          <p v-if="speakerNameEditorParagraph === para.id && speakerNameError"
+            class="transcript-speaker-name-error" role="alert">{{ speakerNameError }}</p>
           <div class="transcript-utterance-lines">
             <p v-for="(sentence, sentenceIndex) in splitDisplaySentences(para.text)"
               :key="sentenceIndex" class="para-text transcript-sentence">{{ sentence }}</p>
@@ -994,23 +1241,26 @@ onBeforeUnmount(() => stopInternal())
             :key="index" class="para-text transcript-sentence">{{ sentence }}</p>
         </div>
       </article>
-    </main>
+        </main>
+      </div>
       </div>
 
       <aside v-if="activeMeetingTool !== 'transcript'" class="meeting-detail-panel" :aria-label="activeMeetingTool === 'review' ? 'Review tools' : activeMeetingTool === 'settings' ? 'Meeting settings' : 'Recording library'">
         <header class="meeting-detail-header">
           <div>
-            <span class="transcript-eyebrow">{{ activeMeetingTool === 'review' ? 'REVIEW WORKSPACE' : activeMeetingTool === 'settings' ? 'PREFERENCES' : 'AUDIO LIBRARY' }}</span>
-            <h2>{{ activeMeetingTool === 'review' ? 'Review' : activeMeetingTool === 'settings' ? 'Meeting settings' : 'Recordings' }}</h2>
+            <h2>{{ activeMeetingTool === 'review' ? 'Assistant' : activeMeetingTool === 'settings' ? 'Meeting settings' : 'Recordings' }}</h2>
           </div>
           <button type="button" class="meeting-back" aria-label="Close tool panel" @click="selectMeetingTool('transcript')"><AppIcon name="x" :size="17" /></button>
         </header>
         <div class="meeting-detail-scroll">
           <template v-if="activeMeetingTool === 'review'">
-            <nav class="meeting-review-tools" aria-label="Review sections">
+            <nav class="meeting-review-tools" aria-label="Assistant sections">
               <button type="button" :class="{ active: activeReviewTool === 'overview' }"
                 :aria-current="activeReviewTool === 'overview' ? 'page' : undefined"
-                @click="activeReviewTool = 'overview'">Overview</button>
+                @click="activeReviewTool = 'overview'">Summary</button>
+              <button type="button" :class="{ active: activeReviewTool === 'translation' }"
+                :aria-current="activeReviewTool === 'translation' ? 'page' : undefined"
+                @click="activeReviewTool = 'translation'">Translation</button>
               <button type="button" :class="{ active: activeReviewTool === 'correction' }"
                 :aria-current="activeReviewTool === 'correction' ? 'page' : undefined"
                 @click="activeReviewTool = 'correction'">Corrections</button>
@@ -1019,13 +1269,10 @@ onBeforeUnmount(() => stopInternal())
                 @click="activeReviewTool = 'speakers'">Speakers</button>
             </nav>
             <div class="meeting-selected-tool">
-              <IntelligencePanel v-if="activeReviewTool === 'overview'" compact
+              <IntelligencePanel v-if="activeReviewTool !== 'correction' && activeReviewTool !== 'speakers'"
+                compact :section="intelligenceSection"
                 :meeting-id="props.id" :segments="segments" />
-              <div v-else-if="activeReviewTool === 'correction'" class="review-focus-panel">
-                <div class="review-focus-heading">
-                  <h3>Transcript corrections</h3>
-                  <p>Review AI suggestions before applying them. To edit a specific turn, use its Edit control in the transcript.</p>
-                </div>
+              <div v-else-if="activeReviewTool === 'correction'" class="review-focus-panel review-correction-panel">
                 <ContextCorrectionPanel :meeting-id="props.id" :segments="segments"
                   :recording="recording || status === 'connecting' || status === 'stopping'"
                   @applied="loadSavedTranscript" />

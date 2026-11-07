@@ -1,8 +1,8 @@
 import json
 import logging
 import unittest
-from observability.metrics import Metrics
-from observability.logging_setup import JsonFormatter
+from core.metrics import Metrics
+from core.logging_setup import JsonFormatter
 
 
 class DiagnosticsTests(unittest.TestCase):

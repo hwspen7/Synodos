@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import unittest
 
-from sessions.retroactive_channel_recovery import backfill_confirmed_channels
+from sessions.channels.retroactive_channel_recovery import backfill_confirmed_channels
 
 
 class ChannelBackfillTests(unittest.TestCase):

@@ -7,10 +7,10 @@ import unittest
 import numpy as np
 
 from speech.contracts import Utterance
-from speech.gap_recovery import (
+from speech.captions.gap_recovery import (
     recover_missing_voice, uncovered_voice_intervals,
 )
-from speech.quality_guard import verify_utterances
+from speech.captions.quality_guard import verify_utterances
 
 
 def vad(*spans):
@@ -114,6 +114,29 @@ class GapRecoveryTests(unittest.TestCase):
             uncovered_voice_intervals(vad((0, 600)), (), 10000),
             (),
         )
+
+    def test_default_recovery_rejects_text_with_invalid_word_alignment(self):
+        candidate = FakeText(
+            "Right.", .2, .75,
+            [SimpleNamespace(word="Right.", start=.6, end=.6)],
+        )
+
+        def transcribe(audio, **kwargs):
+            return [candidate], SimpleNamespace(language="en")
+
+        result, stats = recover_missing_voice(
+            self.audio, vad((0, 1200)), (), transcribe, {}, language="en",
+        )
+        self.assertEqual(result, ())
+        self.assertEqual(stats["recovery_attempted"], 1)
+        self.assertEqual(stats["recovery_confirmed"], 0)
+
+        preserved, _ = recover_missing_voice(
+            self.audio, vad((0, 1200)), (), transcribe, {}, language="en",
+            preserve_disputed_text=True,
+        )
+        self.assertEqual([item.text for item in preserved], ["Right."])
+        self.assertEqual(preserved[0].timestamp_quality, "segment")
 
     def test_subsecond_gap_only_under_opt_in_recovery_policy(self):
         original = (Utterance("Existing statement", 2500, 3500),)

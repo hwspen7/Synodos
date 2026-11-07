@@ -29,7 +29,7 @@ class SchedulerContractTests(unittest.TestCase):
         expected = Recognition((Utterance("hello", 0, 900, "en"),), "en", engine="whisper")
         audio = np.zeros(16000, dtype=np.float32)
         config = SpeechSettings(engine="whisper")
-        with patch("speech.engine.recognize", return_value=expected) as recognize:
+        with patch("speech.asr.engine.recognize", return_value=expected) as recognize:
             result = manager.recognize_multilingual(
                 audio, language="en", terms="technical term", config=config
             )
@@ -41,7 +41,7 @@ class SchedulerContractTests(unittest.TestCase):
 
     def test_session_processor_calls_public_gateway_for_multilingual_asr(self):
         import asyncio
-        from audio.buffer import AudioBuffer
+        from sessions.audio_buffer import AudioBuffer
         from core.config import Settings
         from sessions.processor import SessionProcessor
 

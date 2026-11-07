@@ -29,6 +29,11 @@ const router = createRouter({
       component: () => import('@/pages/SpeakerNewPage.vue'),
     },
     {
+      path: '/settings',
+      name: 'settings',
+      component: () => import('@/pages/SettingsPage.vue'),
+    },
+    {
       path: '/hotwords',
       name: 'hotwords',
       component: () => import('@/pages/HotwordsPage.vue'),

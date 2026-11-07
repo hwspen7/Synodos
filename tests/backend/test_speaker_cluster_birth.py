@@ -7,7 +7,7 @@ from __future__ import annotations
 import unittest
 import numpy as np
 
-from sessions.speaker_cluster_birth import (gate_new_cluster_births, _bounded_references, MAX_ANCHOR_VECTORS)
+from sessions.identity.speaker_cluster_birth import (gate_new_cluster_births, _bounded_references, MAX_ANCHOR_VECTORS)
 
 
 def row(number, cluster, vector, start, end, **extra):

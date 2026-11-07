@@ -16,6 +16,14 @@ $script:OwnerCommand = 'python -m uvicorn main:app --host 127.0.0.1 --port 8000'
 $script:ValidBackend = $true
 $script:ValidFrontend = $true
 
+function Get-NetTCPConnection {
+    param([int]$LocalPort, [string]$State, [string]$ErrorAction)
+    if ($LocalPort -ne 8000 -or $State -ne 'Listen') { throw 'Unexpected listener query.' }
+    foreach ($owner in $script:ListenerOwners) {
+        [pscustomobject]@{ OwningProcess = $owner }
+    }
+}
+
 function Get-ProcessInfo([int]$ProcessId) {
     return [pscustomobject]@{ Name = $script:OwnerName; CommandLine = $script:OwnerCommand }
 }
@@ -33,7 +41,7 @@ function Invoke-RestMethod {
 
 function Invoke-WebRequest {
     param([string]$Uri, [int]$TimeoutSec, [switch]$UseBasicParsing)
-    $name = if ($script:ValidFrontend) { 'Meeting of Pioneers' } else { 'Another Application' }
+    $name = if ($script:ValidFrontend) { 'Synodos - Meet' } else { 'Another Application' }
     return [pscustomobject]@{
         StatusCode = 200
         Content = '<html><title>' + $name + '</title><script src="/src/main.ts"></script></html>'
@@ -46,6 +54,11 @@ function Expect-Denied([scriptblock]$Action, [string]$Description) {
     if (-not $denied) { throw "Unsafe process accepted: $Description" }
     Write-Output "Rejected as expected: $Description"
 }
+
+$script:ListenerOwners = @(0)
+if ($null -ne (Get-ListeningPid 8000)) { throw 'PID 0 must not be treated as a listener.' }
+$script:ListenerOwners = @(0, 13776)
+if ((Get-ListeningPid 8000) -ne 13776) { throw 'A valid listener after PID 0 was missed.' }
 
 # A relative working-directory invocation does not expose the repository
 # absolute path in its command line, but Meeting's API identifies it.

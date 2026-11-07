@@ -5,12 +5,12 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 import numpy as np
-from speech.whisper import WhisperEngine
-from speech.engine import recognize
+from speech.asr.whisper import WhisperEngine
+from speech.asr.engine import recognize
 from speech.config import SpeechSettings
 from speech.contracts import Recognition
-from speech.translation import translate, TranslationUnavailable
-from speech.overlap import OverlapDetector, OverlapUnavailable
+from speech.captions.translation import translate, TranslationUnavailable
+from speech.diarization.overlap import OverlapDetector, OverlapUnavailable
 
 @contextmanager
 def mock_voiced_audio():
@@ -56,16 +56,16 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(fake.transcribe.call_args.kwargs["language"], "fr")
 
     def test_live_hybrid_registry_uses_full_context_v2(self):
-        from speech.engine import _ENGINES
+        from speech.asr.engine import _ENGINES
         whisper = Mock()
         whisper.recognize.return_value = Recognition(
             engine="whisper", speech_detected=False
         )
         qwen = Mock()
         with patch.dict(_ENGINES, {}, clear=True), patch(
-            "speech.whisper.WhisperEngine", return_value=whisper
+            "speech.asr.whisper.WhisperEngine", return_value=whisper
         ), patch(
-            "speech.qwen_bridge.QwenWorkerClient", return_value=qwen
+            "speech.asr.qwen_bridge.QwenWorkerClient", return_value=qwen
         ):
             settings = SpeechSettings(
                 engine="hybrid", hybrid_qwen_python=r"E:\AI-Cache\qwen\python.exe"

@@ -1,5 +1,5 @@
 import unittest
-from speech.corrections import correct_segment, RevisionConflict
+from speech.captions.corrections import correct_segment, RevisionConflict
 
 class CorrectionTests(unittest.TestCase):
     def setUp(self):

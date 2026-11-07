@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 import numpy as np
 
-from sessions.rapid_speaker_fragmentation import repair_rapid_anonymous_births
+from sessions.channels.rapid_speaker_fragmentation import repair_rapid_anonymous_births
 
 
 def segment(sid, speaker_id, t0, t1, vector, **extra):

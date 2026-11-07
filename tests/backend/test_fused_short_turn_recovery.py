@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 
-from sessions.fused_short_turn_recovery import recover_fused_short_turns
+from sessions.channels.fused_short_turn_recovery import recover_fused_short_turns
 
 
 SR = 16000

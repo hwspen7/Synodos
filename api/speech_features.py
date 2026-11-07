@@ -9,8 +9,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from core.runtime import meeting_store, meeting_sessions, speaker_store
 from speech.config import load_settings
-from speech.corrections import correct_segment, assign_segment_speaker, RevisionConflict
-from speech.translation import translate, TranslationUnavailable
+from speech.captions.corrections import correct_segment, assign_segment_speaker, RevisionConflict
+from speech.captions.translation import translate, TranslationUnavailable
 from speech.supported_languages import translation_target
 from sessions.translation_tasks import CaptionTranslation, caption_batch, submit_translation
 

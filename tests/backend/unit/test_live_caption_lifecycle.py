@@ -7,12 +7,12 @@ from unittest.mock import patch
 
 import numpy as np
 
-from audio.buffer import AudioBuffer
+from sessions.audio_buffer import AudioBuffer
 from core.config import Settings
 from sessions.processor import SessionProcessor
 from speech.config import SpeechSettings
 from speech.contracts import Recognition, Utterance
-from speech.streaming import PreviewTracker
+from speech.asr.streaming import PreviewTracker
 
 
 class FakeMultilingualModels:
@@ -199,6 +199,60 @@ class RealtimeSubtitleContracts(unittest.TestCase):
         processor._cycle(final=False)
         self.assertEqual(len(processor.segments), 1)
         self.assertLess(processor.buffer.start_offset(), int(sr * .9))
+
+    def test_retained_audio_cannot_commit_alternate_decodes_of_the_same_span(self):
+        processor, models, _ = self.make_processor(engine="whisper")
+        sr = processor.settings.sample_rate
+        traditional = "\u6709\u95dc\u65bc\u4f01\u696d\u793e\u6703\u8cac\u4efb\u7684"
+        simplified = "\u6709\u5173\u4e8e\u4f01\u4e1a\u793e\u4f1a\u8d23\u4efb\u7684"
+        processor.buffer.append(np.full(sr * 16, .03, dtype=np.float32))
+
+        def decode(audio, **kwargs):
+            offset = processor.buffer.start_offset() * 1000 // sr
+            phrases = [(traditional, 12000, 14000, "zh")]
+            if offset:
+                phrases = [
+                    (simplified, 12050, 14040, "zh"),
+                    ("When they find no project, I'll just...", 12050, 13960, "en"),
+                    (simplified[4:], 13200, 14000, "zh"),
+                    (traditional, 14700, 15200, "zh"),
+                ]
+            return Recognition(
+                tuple(Utterance(text, start - offset, end - offset, lang)
+                      for text, start, end, lang in phrases),
+                speech_detected=True,
+                speech_intervals_ms=tuple(
+                    (start - offset, end - offset)
+                    for start, end in ((1200, 2400), (12000, 14000), (14700, 15200))
+                ),
+            )
+
+        models.recognize_multilingual = decode
+        with patch("sessions.processor.submit_speaker_analysis", return_value=None):
+            processor._cycle()
+            self.assertLess(processor.buffer.start_offset(), 12 * sr)
+            processor.buffer.append(np.full(sr * 2, .03, dtype=np.float32))
+            processor._cycle()
+
+        self.assertEqual([row["text"] for row in processor.segments], [traditional, traditional])
+        self.assertEqual([row["start_sample"] * 1000 // sr for row in processor.segments],
+                         [12000, 14700])
+
+    def test_preview_and_final_cycle_each_publish_one_candidate_for_identical_audio(self):
+        processor, models, events = self.make_processor(engine="hybrid")
+        sr = processor.settings.sample_rate
+        processor.buffer.append(np.full(sr * 3, .03, dtype=np.float32))
+        models.recognize_multilingual = lambda *args, **kwargs: Recognition(
+            (Utterance("The first decoding.", 700, 1600, "en"),
+             Utterance("An alternate decoding.", 700, 1600, "en")),
+            speech_detected=True,
+        )
+        with patch("sessions.processor.submit_speaker_analysis", return_value=None):
+            processor._cycle()
+            processor._cycle(final=True)
+        self.assertEqual([row["text"] for row in events if row["type"] == "partial"],
+                         ["The first decoding.", ""])
+        self.assertEqual([row["text"] for row in processor.segments], ["The first decoding."])
 
     def test_unverified_foreign_language_does_not_reach_live_or_saved_text(self):
         processor, models, events = self.make_processor(engine="hybrid")

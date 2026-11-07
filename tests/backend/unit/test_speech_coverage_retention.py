@@ -7,12 +7,12 @@ from unittest.mock import patch
 
 import numpy as np
 
-from audio.buffer import AudioBuffer
+from sessions.audio_buffer import AudioBuffer
 from core.config import Settings
 from sessions.processor import SessionProcessor
 from speech.config import SpeechSettings
 from speech.contracts import Recognition, Utterance
-from speech.coverage_retention import choose_safe_drop
+from speech.captions.coverage_retention import choose_safe_drop
 
 
 class CoverageFakeModel:

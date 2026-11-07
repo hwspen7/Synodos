@@ -4,7 +4,7 @@ import AppIcon from './AppIcon.vue'
 import { PHASE1_LANGUAGES } from '@/config/phase1Languages'
 
 type Mode = 'meeting' | 'research' | 'classroom' | 'interview' | 'standup' | 'sales'
-type View = 'overview' | 'knowledge' | 'translation' | 'media'
+type View = 'overview' | 'translation'
 type ReviewKind = 'actions' | 'decisions'
 type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | string
 
@@ -57,27 +57,14 @@ interface Review {
   owner?: string | null
   due_date?: string | null
 }
-interface SearchResult {
-  text: string
-  source_id: string
-  source_kind: string
-  evidence: Record<string, unknown>
+interface WorkspaceTranslation {
+  segments: Segment[]
+  translations: Array<{ segment_id: number; text: string }>
+  active_jobs: number
+  failed_jobs: number
+  last_error: string | null
 }
-interface TranslatedFragment {
-  segment_id: number
-  source_text: string
-  text: string
-}
-interface TranslationJobResult {
-  target?: string
-  translations?: TranslatedFragment[]
-}
-interface AskResult {
-  answer?: string
-  sources?: Array<SearchResult>
-}
-
-const props = defineProps<{ meetingId: string; segments: Segment[]; compact?: boolean }>()
+const props = defineProps<{ meetingId: string; segments: Segment[]; compact?: boolean; section?: View }>()
 const modes: Array<{ id: Mode; name: string; description: string }> = [
   { id: 'meeting', name: 'Meeting', description: 'Summaries and decisions' },
   { id: 'research', name: 'Research', description: 'Experiments and findings' },
@@ -86,44 +73,27 @@ const modes: Array<{ id: Mode; name: string; description: string }> = [
   { id: 'standup', name: 'Standup', description: 'Progress and blockers' },
   { id: 'sales', name: 'Sales', description: 'Client discussions' },
 ]
-const views: Array<{ id: View; label: string }> = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'knowledge', label: 'Knowledge' },
-  { id: 'translation', label: 'Translation' },
-  { id: 'media', label: 'Media' },
-]
 const mode = ref<Mode>('meeting')
-const view = ref<View>('overview')
+const view = computed<View>(() => props.section ?? 'overview')
 const language = ref('en')
-const question = ref('')
-const searchText = ref('')
-const searchAllMeetings = ref(false)
 const notice = ref('')
 const error = ref('')
-const translationEnabled = ref(false)
 const jobs = ref<Job[]>([])
 const artifacts = ref<Artifact[]>([])
 const actions = ref<Review[]>([])
 const decisions = ref<Review[]>([])
-const searchResults = ref<SearchResult[]>([])
-const translated = ref<Record<number, string>>({})
+const translation = ref<WorkspaceTranslation | null>(null)
+const translationLoading = ref(false)
+const translationSubmitting = ref(false)
+const translationError = ref('')
+let translationScope = 0
 const selectedArtifactId = ref<string | null>(null)
-const askJobId = ref<string | null>(null)
-const askJob = ref<Job | null>(null)
-const mediaJobId = ref<string | null>(null)
-const mediaJob = ref<Job | null>(null)
-const mediaName = ref('')
-const mediaInput = ref<HTMLInputElement | null>(null)
 const busyKind = ref<string | null>(null)
-const refreshing = ref(false)
-const searching = ref(false)
 const aiEnabled = ref(false)
 const loading = ref(true)
 const provider = ref('')
 const modelName = ref('')
 const showAllJobs = ref(false)
-const showAdvanced = ref(false)
-const queuedTranslation = new Set<string>()
 let pollId: ReturnType<typeof setInterval> | null = null
 let refreshPending = false
 
@@ -162,10 +132,6 @@ function kindLabel(kind: string): string {
     live_translate: 'Translation', translate: 'Translation', ask: 'Knowledge answer',
     analyze_media: 'Media analysis', index_media: 'Media index', ask_evidence: 'Evidence-only answer' } as Record<string, string>)[kind] ?? kind.replace(/_/g, ' ')
 }
-function sourceLabel(hit: SearchResult): string {
-  const ms = hit.evidence?.start_ms
-  return `${hit.source_kind === 'meeting' ? 'Meeting' : 'Media'} · ${typeof ms === 'number' ? formatTime(ms) : hit.source_id.slice(0, 12)}`
-}
 function evidenceText(ids?: number[]): string {
   return ids?.length ? `Segments ${ids.join(', ')}` : 'No source reference'
 }
@@ -173,10 +139,18 @@ const latestArtifacts = computed(() => artifacts.value.slice(0, 15))
 const selectedArtifact = computed(() => latestArtifacts.value.find(a => a.id === selectedArtifactId.value) ?? latestArtifacts.value[0] ?? null)
 const activeJobs = computed(() => jobs.value.filter(j => j.status === 'queued' || j.status === 'running'))
 const recentJobs = computed(() => showAllJobs.value ? jobs.value.slice(0, 15) : jobs.value.slice(0, 5))
-const latestCompleted = computed(() => jobs.value.filter(j => j.status === 'completed').length)
-const currentMode = computed(() => modes.find(m => m.id === mode.value) ?? modes[0]!)
 const hasSegments = computed(() => props.segments.some(s => s.text.trim().length > 0))
-const translationRows = computed(() => props.segments.filter(s => s.text.trim()).slice(-12))
+const translationVisible = computed(() => aiEnabled.value && view.value === 'translation')
+const translationRows = computed(() => translation.value?.segments ?? [])
+const translated = computed(() => Object.fromEntries(
+  (translation.value?.translations ?? []).map(item => [item.segment_id, item.text]),
+))
+const translatedCount = computed(() => Object.keys(translated.value).length)
+const translationPending = computed(() => (translation.value?.active_jobs ?? 0) > 0)
+const translationFailed = computed(() => (translation.value?.failed_jobs ?? 0) > 0)
+const translationPath = computed(() =>
+  `/meetings/${encodeURIComponent(props.meetingId)}/workspace-translation/${encodeURIComponent(language.value)}`,
+)
 const selectedContent = computed<ArtifactContent>(() => selectedArtifact.value?.content ?? {})
 const selectedActionItems = computed(() => selectedContent.value.actions ?? [])
 const selectedDecisionItems = computed(() => selectedContent.value.decisions ?? [])
@@ -190,47 +164,26 @@ const briefExtraction = computed(() =>
   ?? artifacts.value.find(item => item.kind === 'extract')
   ?? null)
 const briefFindings = computed<ArtifactContent>(() =>
-  briefExtraction.value?.content ?? briefSummary.value?.content ?? {})
-
-const currentAskAnswer = computed(() => (askJob.value?.result as AskResult | null)?.answer ?? '')
-const currentAskSources = computed(() => (askJob.value?.result as AskResult | null)?.sources ?? [])
+  briefSummary.value?.content ?? briefExtraction.value?.content ?? {})
 
 async function refresh(silent = false): Promise<void> {
   if (!props.meetingId || refreshPending) return
   refreshPending = true
-  if (!silent) refreshing.value = true
   try {
     const meetingId = props.meetingId
-    const [overview, activeAsk, activeMedia] = await Promise.all([
-      request<{ jobs: Job[]; artifacts: Artifact[]; actions: Review[]; decisions: Review[] }>(`/meetings/${encodeURIComponent(meetingId)}/overview`),
-      askJobId.value ? request<Job>(`/jobs/${encodeURIComponent(askJobId.value)}`) : Promise.resolve(null),
-      mediaJobId.value ? request<Job>(`/jobs/${encodeURIComponent(mediaJobId.value)}`) : Promise.resolve(null),
-    ])
+    const overview = await request<{ jobs: Job[]; artifacts: Artifact[]; actions: Review[]; decisions: Review[] }>(
+      `/meetings/${encodeURIComponent(meetingId)}/overview`,
+    )
     if (meetingId !== props.meetingId) return
     jobs.value = overview.jobs ?? []
     artifacts.value = overview.artifacts ?? []
     actions.value = overview.actions ?? []
     decisions.value = overview.decisions ?? []
-    if (activeAsk) askJob.value = activeAsk
-    if (activeMedia) mediaJob.value = activeMedia
-    if (translationEnabled.value) {
-      await fetchTranslations()
-      for (const job of jobs.value) {
-        if (job.kind !== 'live_translate' || job.status !== 'completed') continue
-        const payload = job.result as TranslationJobResult | null
-        if (payload?.target !== language.value) continue
-        for (const item of payload.translations ?? []) {
-          const original = props.segments.find(s => s.id === item.segment_id)
-          if (original?.text === item.source_text) translated.value[item.segment_id] = item.text
-        }
-      }
-    }
     if (!silent) error.value = ''
   } catch (e) {
     error.value = messageFromError(e)
   } finally {
     refreshPending = false
-    refreshing.value = false
   }
 }
 async function perform(kind: string, payload: Record<string, unknown> = {}): Promise<boolean> {
@@ -249,38 +202,8 @@ async function perform(kind: string, payload: Record<string, unknown> = {}): Pro
     busyKind.value = null
   }
 }
-async function analyze(kind: 'summary' | 'extract'): Promise<void> {
-  await perform(kind, { mode: mode.value })
-}
-async function indexMeeting(): Promise<void> { await perform('index_meeting') }
-async function ask(): Promise<void> {
-  if (!question.value.trim() || busyKind.value) return
-  busyKind.value = 'ask'
-  clearMessages()
-  try {
-    const result = await request<{ job_id: string }>('/ask/evidence', jsonPost({
-      question: question.value.trim(),
-      ...(searchAllMeetings.value ? {} : { meeting_ids: [props.meetingId] }),
-    }))
-    askJobId.value = result.job_id
-    askJob.value = { id: result.job_id, kind: 'ask_evidence', status: 'queued' }
-    notice.value = 'Evidence query queued. Only exact excerpts from saved source records will be shown.'
-    view.value = 'knowledge'
-  } catch (e) { error.value = messageFromError(e) }
-  finally { busyKind.value = null }
-}
-async function search(): Promise<void> {
-  if (!searchText.value.trim()) return
-  searching.value = true
-  clearMessages()
-  try {
-    const data = await request<{ results: SearchResult[] }>('/search', jsonPost({
-      query: searchText.value.trim(), limit: 12,
-      ...(searchAllMeetings.value ? {} : { meeting_ids: [props.meetingId] }),
-    }))
-    searchResults.value = data.results ?? []
-  } catch (e) { error.value = messageFromError(e) }
-  finally { searching.value = false }
+async function analyze(): Promise<void> {
+  await perform('summary', { mode: mode.value })
 }
 async function review(kind: ReviewKind, item: Review, status: string): Promise<void> {
   if (busyKind.value) return
@@ -304,70 +227,47 @@ async function cancelJob(job: Job): Promise<void> {
   } catch (e) { error.value = messageFromError(e) }
   finally { busyKind.value = null }
 }
-async function upload(ev: Event): Promise<void> {
-  const input = ev.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file || busyKind.value) return
-  busyKind.value = 'upload'
-  clearMessages()
-  mediaName.value = file.name
-  try {
-    const data = await request<{ media_id: string; job_id: string }>('/media/upload', {
-      method: 'POST',
-      headers: { 'X-File-Name': encodeURIComponent(file.name), 'Content-Type': file.type || 'application/octet-stream' },
-      body: file,
-    })
-    mediaJobId.value = data.job_id
-    mediaJob.value = { id: data.job_id, kind: 'analyze_media', status: 'queued' }
-    notice.value = `${file.name} uploaded. Analysis queued.`
-    view.value = 'media'
-  } catch (e) { error.value = messageFromError(e) }
-  finally { busyKind.value = null; input.value = '' }
-}
 async function fetchTranslations(): Promise<void> {
-  const data = await request<{ translations: Array<{ segment_id: number; text: string }> }>(
-    `/meetings/${encodeURIComponent(props.meetingId)}/translations/${encodeURIComponent(language.value)}`,
-  )
-  const next: Record<number, string> = {}
-  for (const item of data.translations ?? []) next[item.segment_id] = item.text
-  translated.value = { ...translated.value, ...next }
+  if (!translationVisible.value || translationLoading.value) return
+  const scope = translationScope
+  translationLoading.value = true
+  try {
+    const data = await request<WorkspaceTranslation>(translationPath.value)
+    if (scope !== translationScope) return
+    translation.value = data
+    translationError.value = ''
+  } catch (e) {
+    if (scope === translationScope) translationError.value = messageFromError(e)
+  } finally {
+    if (scope === translationScope) translationLoading.value = false
+  }
 }
 async function queueTranslations(): Promise<void> {
-  if (!translationEnabled.value || busyKind.value) return
-  const untranslated = props.segments.filter(s => s.text.trim() && !translated.value[s.id])
-  const fresh = untranslated.filter(s => !queuedTranslation.has(`${language.value}/${s.id}/${s.text}`)).slice(0, 8)
-  if (!fresh.length) {
-    notice.value = 'No new finalized segments to translate.'
-    return
+  if (!translationVisible.value || translationSubmitting.value || translationPending.value) return
+  const scope = translationScope
+  translationSubmitting.value = true
+  translationError.value = ''
+  try {
+    await request(translationPath.value, { method: 'POST' })
+    if (scope === translationScope) await fetchTranslations()
+  } catch (e) {
+    if (scope === translationScope) translationError.value = messageFromError(e)
+  } finally {
+    if (scope === translationScope) translationSubmitting.value = false
   }
-  const keys = fresh.map(s => `${language.value}/${s.id}/${s.text}`)
-  keys.forEach(k => queuedTranslation.add(k))
-  const ok = await perform('live_translate', {
-    target: language.value,
-    segments: fresh.map(s => ({ id: s.id, text: s.text })),
-  })
-  if (!ok) keys.forEach(k => queuedTranslation.delete(k))
 }
+watch([translationPath, translationVisible], () => {
+  translationScope += 1
+  translation.value = null
+  translationLoading.value = false
+  translationSubmitting.value = false
+  translationError.value = ''
+  void fetchTranslations()
+})
 watch(() => props.meetingId, () => {
   jobs.value = []; artifacts.value = []; actions.value = []; decisions.value = []
   selectedArtifactId.value = null
-  searchResults.value = []
-  askJobId.value = null; askJob.value = null
-  mediaJobId.value = null; mediaJob.value = null; mediaName.value = ''
-  translated.value = {}; queuedTranslation.clear()
   void refresh()
-})
-watch(searchAllMeetings, () => {
-  searchResults.value = []
-  askJobId.value = null
-  askJob.value = null
-})
-watch(language, () => { translated.value = {}; queuedTranslation.clear(); if (translationEnabled.value) { void fetchTranslations().catch(e => { error.value = messageFromError(e) }); void queueTranslations() } })
-watch(() => props.segments.map(s => `${s.id}:${s.text}`).join('|'), () => {
-  if (translationEnabled.value) void queueTranslations()
-})
-watch(translationEnabled, enabled => {
-  if (enabled) { void fetchTranslations().catch(e => { error.value = messageFromError(e) }); void queueTranslations() }
 })
 onMounted(async () => {
   try {
@@ -378,53 +278,51 @@ onMounted(async () => {
     if (aiEnabled.value) await refresh()
   } catch (e) { error.value = messageFromError(e) }
   finally { loading.value = false }
-  pollId = setInterval(() => { if (aiEnabled.value) void refresh(true) }, 4000)
+  pollId = setInterval(() => {
+    if (aiEnabled.value) void refresh(true)
+    if (!translationSubmitting.value) void fetchTranslations()
+  }, 4000)
 })
-onBeforeUnmount(() => { if (pollId) clearInterval(pollId) })
+onBeforeUnmount(() => {
+  translationScope += 1
+  if (pollId) clearInterval(pollId)
+})
 </script>
 
 <template>
-  <section v-if="props.compact" class="review-insights" aria-label="Meeting review overview">
-    <div class="review-insights-header">
-      <div>
-        <h3>Meeting overview</h3>
-        <p>Summary, decisions and next steps from your saved transcript.</p>
-      </div>
-      <button type="button" class="review-insights-refresh" :disabled="refreshing || loading"
-        @click="refresh()" title="Refresh results"><AppIcon name="clock" :size="16" /></button>
-    </div>
-
+  <section class="review-insights intelligence-inline" aria-label="Meeting AI tools">
+    <template v-if="view === 'overview'">
     <p v-if="loading" class="review-insights-hint" role="status">Loading meeting insights...</p>
     <div v-else-if="!aiEnabled" class="review-insights-empty">
       <strong>AI analysis is unavailable</strong>
       <p>Enable the local AI worker to generate summaries. Transcript editing and speaker review remain available.</p>
     </div>
     <template v-else>
-      <div class="review-insights-actions">
+      <div class="review-insights-controls">
+        <label class="review-inline-mode"><span class="visually-hidden">Analysis type</span>
+          <select v-model="mode" aria-label="Analysis type" title="Analysis type">
+            <option v-for="item in modes" :key="item.id" :value="item.id">{{ item.name }}</option>
+          </select>
+        </label>
         <button type="button" class="review-insights-primary"
           :disabled="!!busyKind || !hasSegments || activeJobs.some(j => j.kind === 'summary')"
-          @click="analyze('summary')">
+          @click="analyze()">
           <AppIcon name="file-text" :size="16" />
           {{ busyKind === 'summary' ? 'Preparing...' : 'Generate summary' }}
         </button>
-        <button type="button" class="review-insights-secondary"
-          :disabled="!!busyKind || !hasSegments || activeJobs.some(j => j.kind === 'extract')"
-          @click="analyze('extract')">
-          <AppIcon name="list" :size="16" />
-          {{ busyKind === 'extract' ? 'Preparing...' : 'Extract next steps' }}
-        </button>
       </div>
-      <p v-if="!hasSegments" class="review-insights-hint">Record and save some transcript content to enable analysis.</p>
+      <p v-if="!hasSegments" class="review-insights-hint">No transcript available.</p>
       <p v-if="activeJobs.length" class="review-insights-hint" role="status">
         {{ activeJobs.length }} analysis {{ activeJobs.length === 1 ? 'task is' : 'tasks are' }} processing.
       </p>
       <div v-if="error" class="review-insights-error" role="alert">{{ error }}</div>
       <p v-if="notice" class="review-insights-hint" role="status">{{ notice }}</p>
 
+      <div class="review-insights-results" aria-label="Meeting analysis results">
       <section class="review-insights-section">
         <h4>Summary</h4>
-        <p v-if="briefSummary?.content.summary" class="review-insights-narrative">{{ briefSummary.content.summary }}</p>
-        <p v-else class="review-insights-empty-text">No summary yet. Generate one to see the key points here.</p>
+        <p v-if="briefSummary?.content.summary || briefFindings.summary" class="review-insights-narrative">{{ briefSummary?.content.summary || briefFindings.summary }}</p>
+        <p v-else class="review-insights-empty-text">No summary yet.</p>
         <small v-if="briefSummary?.stale" class="review-insights-stale">Transcript changed since this summary was generated.</small>
       </section>
       <section class="review-insights-section">
@@ -434,7 +332,7 @@ onBeforeUnmount(() => { if (pollId) clearInterval(pollId) })
             <strong>{{ item.title }}</strong><small v-if="item.source_ids?.length">{{ evidenceText(item.source_ids) }}</small>
           </li>
         </ul>
-        <p v-else class="review-insights-empty-text">No decisions extracted.</p>
+        <p v-else class="review-insights-empty-text">No decisions.</p>
       </section>
       <section class="review-insights-section">
         <h4>Next steps <span v-if="briefFindings.actions?.length">{{ briefFindings.actions.length }}</span></h4>
@@ -444,179 +342,38 @@ onBeforeUnmount(() => { if (pollId) clearInterval(pollId) })
             <small>{{ item.owner || 'No owner assigned' }}<template v-if="item.due_date"> · {{ item.due_date }}</template></small>
           </li>
         </ul>
-        <p v-else class="review-insights-empty-text">No action items extracted.</p>
+        <p v-else class="review-insights-empty-text">No next steps.</p>
       </section>
-    </template>
-
-    <button type="button" class="review-insights-advanced"
-      :aria-expanded="showAdvanced" @click="showAdvanced = !showAdvanced">
-      <span>{{ showAdvanced ? 'Hide advanced AI tools' : 'More AI tools' }}</span>
-      <AppIcon :name="showAdvanced ? 'chevron-up' : 'chevron-down'" :size="16" />
-    </button>
-  </section>
-  <section v-if="!props.compact || showAdvanced" class="intelligence-panel"
-    aria-label="AI intelligence workspace">
-    <div class="workspace-head">
-      <div class="workspace-identity">
-        <span class="workspace-emblem" aria-hidden="true"><AppIcon name="file-text" :size="23" /></span>
-        <div class="workspace-heading">
-          <span class="eyebrow-small">MEETING INTELLIGENCE</span>
-          <h2>AI Workspace</h2>
-          <p>Turn conversations into decisions, answers, and next steps.</p>
-        </div>
+      <section v-if="briefFindings.open_questions?.length" class="review-insights-section">
+        <h4>Open questions <span>{{ briefFindings.open_questions.length }}</span></h4>
+        <ul class="review-insights-list">
+          <li v-for="(item, i) in briefFindings.open_questions" :key="'open-' + i">
+            <strong>{{ item.title }}</strong>
+            <small v-if="item.source_ids?.length">{{ evidenceText(item.source_ids) }}</small>
+          </li>
+        </ul>
+      </section>
       </div>
-      <div class="workspace-tools">
-        <span class="availability" :class="{ offline: !aiEnabled }">
-          <span class="availability-dot" aria-hidden="true"></span>
-          {{ loading ? 'Checking' : aiEnabled ? 'AI enabled' : 'AI unavailable' }}
-        </span>
-        <button type="button" class="ui-btn ui-btn-quiet" :disabled="refreshing || !aiEnabled" @click="refresh()">
-          <AppIcon name="clock" :size="15" /> {{ refreshing ? 'Refreshing' : 'Refresh' }}
-        </button>
-      </div>
-    </div>
-
-    <div v-if="aiEnabled" class="workspace-meta">
-      <span class="model-pill" :title="modelName"><span class="model-dot"></span>{{ provider || 'Local' }} provider</span>
-      <span class="meta-divider" aria-hidden="true"></span>
-      <span>{{ segments.length }} transcript segments</span>
-      <span class="meta-divider" aria-hidden="true"></span>
-      <span>{{ latestCompleted }} completed {{ latestCompleted === 1 ? 'task' : 'tasks' }}</span>
-    </div>
-
-    <div v-if="error" role="alert" class="feedback feedback-error">
-      <AppIcon name="alert" :size="17" /> <span>{{ error }}</span>
-      <button type="button" class="feedback-close" aria-label="Dismiss error" @click="error = ''">×</button>
-    </div>
-    <div v-if="notice" role="status" class="feedback feedback-info">
-      <AppIcon name="check" :size="16" /> <span>{{ notice }}</span>
-      <button type="button" class="feedback-close" aria-label="Dismiss notice" @click="notice = ''">×</button>
-    </div>
-
-    <div v-if="!loading && !aiEnabled" class="disabled-state">
-      <AppIcon name="alert" :size="23" />
-      <div><strong>Intelligence is not enabled</strong><p>Enable MEETING_AI_ENABLED=1 in the backend and start the separate AI worker to use this workspace.</p></div>
-    </div>
-
-    <template v-if="aiEnabled">
-      <nav class="workspace-nav" aria-label="AI workspace sections">
-        <button v-for="item in views" :key="item.id" type="button" :class="['nav-tab', { selected: view === item.id }]"
-          :aria-current="view === item.id ? 'page' : undefined" @click="view = item.id">{{ item.label }}</button>
-      </nav>
-
-      <div v-if="view === 'overview'" class="workspace-body">
-        <div class="section-heading">
-          <div><h3>Choose a workflow</h3><p>Analysis is generated from saved meeting transcripts.</p></div>
+      <p v-if="briefSummary?.model_name" class="review-inline-provenance" :title="briefSummary.model_name">Generated by {{ briefSummary.model_name }}</p>
+      <p v-if="briefFindings.evidence_audit" class="review-inline-provenance">
+        {{ briefFindings.evidence_audit.claims_with_valid_references }} / {{ briefFindings.evidence_audit.claim_count }} claims linked to sources. This is not independent fact-checking.
+      </p>
+      <details v-if="latestArtifacts.length > 1" class="review-inline-details">
+        <summary>Saved analyses ({{ latestArtifacts.length }})</summary>
+        <label class="review-inline-mode">Select result
+          <select v-model="selectedArtifactId" aria-label="Saved analysis result">
+            <option v-for="artifact in latestArtifacts" :key="artifact.id" :value="artifact.id">{{ kindLabel(artifact.kind) }} · {{ formatDate(artifact.created_at) }}</option>
+          </select>
+        </label>
+        <div v-if="selectedArtifact" class="review-inline-history-content">
+          <p v-if="selectedArtifact.stale" class="review-insights-stale">Transcript changed since this result was generated.</p>
+          <p v-if="selectedContent.summary" class="review-insights-narrative">{{ selectedContent.summary }}</p>
+          <p v-else class="review-insights-empty-text">No narrative summary available.</p>
+          <p class="review-inline-provenance">{{ selectedActionItems.length }} actions · {{ selectedDecisionItems.length }} decisions · {{ selectedOpenItems.length }} open questions</p>
         </div>
-        <div class="mode-grid" role="group" aria-label="Analysis mode">
-          <button v-for="item in modes" :key="item.id" type="button" :class="['mode-card', { chosen: mode === item.id }]"
-            :aria-pressed="mode === item.id" @click="mode = item.id">
-            <span class="mode-name">{{ item.name }}</span><span class="mode-description">{{ item.description }}</span>
-            <span v-if="mode === item.id" class="mode-check" aria-hidden="true"><AppIcon name="check" :size="12" /></span>
-          </button>
-        </div>
-
-        <div class="section-heading action-heading">
-          <div><h3>Quick actions</h3><p>{{ currentMode.name }} workflow · {{ currentMode.description }}</p></div>
-        </div>
-        <div class="action-grid">
-          <button type="button" class="action-card action-primary" :disabled="!!busyKind || !hasSegments || activeJobs.some(j => j.kind === 'summary')" @click="analyze('summary')">
-            <span class="action-icon"><AppIcon name="file-text" :size="19" /></span>
-            <span class="action-content"><strong>Generate notes</strong><small>Structured summary and highlights</small></span>
-            <span class="action-arrow" aria-hidden="true">↗</span>
-          </button>
-          <button type="button" class="action-card" :disabled="!!busyKind || !hasSegments || activeJobs.some(j => j.kind === 'extract')" @click="analyze('extract')">
-            <span class="action-icon"><AppIcon name="list" :size="19" /></span>
-            <span class="action-content"><strong>Extract next steps</strong><small>Action items and decisions</small></span>
-            <span class="action-arrow" aria-hidden="true">↗</span>
-          </button>
-          <button type="button" class="action-card" :disabled="!!busyKind || !hasSegments || activeJobs.some(j => j.kind === 'index_meeting')" @click="indexMeeting">
-            <span class="action-icon"><AppIcon name="save" :size="19" /></span>
-            <span class="action-content"><strong>Index meeting</strong><small>Make content searchable</small></span>
-            <span class="action-arrow" aria-hidden="true">↗</span>
-          </button>
-        </div>
-        <p v-if="!hasSegments" class="inline-hint">Save a meeting with transcript content to enable analysis.</p>
-
-        <div class="overview-grid">
-          <div class="content-card insights-card">
-            <div class="card-header"><div><span class="eyebrow-small">YOUR OUTPUT</span><h3>Latest insights</h3></div>
-              <span v-if="latestArtifacts.length" class="count-pill">{{ latestArtifacts.length }} saved</span>
-            </div>
-            <div v-if="!latestArtifacts.length" class="empty-card">
-              <span class="empty-illustration"><AppIcon name="file-text" :size="25" /></span>
-              <strong>Nothing generated yet</strong>
-              <p>Choose a workflow and generate notes to see your meeting insights here.</p>
-            </div>
-            <template v-else>
-              <div v-if="latestArtifacts.length > 1" class="artifact-switcher" role="group" aria-label="Saved analysis">
-                <button v-for="artifact in latestArtifacts.slice(0, 6)" :key="artifact.id" type="button"
-                  :class="['artifact-choice', { active: selectedArtifact?.id === artifact.id }]"
-                  @click="selectedArtifactId = artifact.id">
-                  {{ kindLabel(artifact.kind) }} <span>{{ formatDate(artifact.created_at) }}</span>
-                </button>
-              </div>
-              <div v-if="selectedArtifact" class="artifact-body">
-                <div class="artifact-topline"><span class="type-label">{{ selectedArtifact.mode }} · {{ kindLabel(selectedArtifact.kind) }}</span>
-                  <span v-if="selectedArtifact.stale" class="status-pill status-failed">Outdated transcript</span></div>
-                <p v-if="selectedContent.summary" class="summary-text">{{ selectedContent.summary }}</p>
-                <p v-else class="empty-inline">No narrative summary was returned for this analysis.</p>
-                <div class="insights-summary">
-                  <div><strong>{{ selectedActionItems.length }}</strong><span>Action items</span></div>
-                  <div><strong>{{ selectedDecisionItems.length }}</strong><span>Decisions</span></div>
-                  <div><strong>{{ selectedOpenItems.length }}</strong><span>Open questions</span></div>
-                </div>
-                <div v-if="selectedActionItems.length" class="finding-section">
-                  <h4>Action items</h4>
-                  <div v-for="(item, i) in selectedActionItems" :key="`action-${i}`" class="finding">
-                    <span class="finding-marker">{{ i + 1 }}</span>
-                    <div><strong>{{ item.title }}</strong><p>{{ item.owner || 'Owner not assigned' }}<span v-if="item.due_date"> · Due {{ item.due_date }}</span></p><small>{{ evidenceText(item.source_ids) }}</small></div>
-                  </div>
-                </div>
-                <div v-if="selectedDecisionItems.length" class="finding-section">
-                  <h4>Decisions</h4>
-                  <div v-for="(item, i) in selectedDecisionItems" :key="`decision-${i}`" class="finding">
-                    <span class="finding-marker marker-teal"><AppIcon name="check" :size="13" /></span>
-                    <div><strong>{{ item.title }}</strong><small>{{ evidenceText(item.source_ids) }}</small></div>
-                  </div>
-                </div>
-                <div v-if="selectedOpenItems.length" class="finding-section">
-                  <h4>Open questions</h4>
-                  <div v-for="(item, i) in selectedOpenItems" :key="`question-${i}`" class="finding">
-                    <span class="finding-marker marker-muted">?</span>
-                    <div><strong>{{ item.title }}</strong><small>{{ evidenceText(item.source_ids) }}</small></div>
-                  </div>
-                </div>
-                <p v-if="selectedArtifact.model_name" class="artifact-provenance" :title="selectedArtifact.model_name">Generated by {{ selectedArtifact.model_name }}</p>
-                <p v-if="selectedContent.evidence_audit" class="artifact-provenance">
-                  Source-linked claims {{ selectedContent.evidence_audit.claims_with_valid_references }}/{{ selectedContent.evidence_audit.claim_count }} - References are not independently fact-checked
-                </p>
-              </div>
-            </template>
-          </div>
-
-          <aside class="content-card activity-card" aria-label="Background task activity">
-            <div class="card-header"><div><span class="eyebrow-small">BACKGROUND WORK</span><h3>Task activity</h3></div>
-              <span class="count-pill">{{ activeJobs.length }} active</span></div>
-            <div v-if="!jobs.length" class="empty-card compact-empty"><strong>No tasks yet</strong><p>New analysis jobs will appear here.</p></div>
-            <div v-else class="job-list">
-              <div v-for="job in recentJobs" :key="job.id" class="job-item">
-                <span :class="['job-indicator', `is-${job.status}`]" aria-hidden="true">
-                  <AppIcon v-if="job.status === 'completed'" name="check" :size="13" />
-                  <AppIcon v-else-if="job.status === 'failed'" name="alert" :size="13" />
-                  <AppIcon v-else name="clock" :size="13" />
-                </span>
-                <div class="job-main"><strong>{{ kindLabel(job.kind) }}</strong>
-                  <div class="job-sub"><span :class="['job-state', `text-${job.status}`]">{{ job.status }}</span><span v-if="job.created_at">· {{ formatDate(job.created_at) }}</span></div>
-                  <p v-if="job.error && job.status === 'failed'" class="job-error" :title="job.error">{{ job.error }}</p>
-                </div>
-                <button v-if="job.status === 'queued'" type="button" class="job-cancel" :disabled="!!busyKind" @click="cancelJob(job)">Cancel</button>
-              </div>
-            </div>
-            <button v-if="jobs.length > 5" type="button" class="text-button view-all" @click="showAllJobs = !showAllJobs">{{ showAllJobs ? 'Show fewer tasks' : `View more (${jobs.length})` }}</button>
-          </aside>
-        </div>
-
+      </details>
+      <details v-if="actions.length || decisions.length" class="review-inline-details">
+        <summary>Review action items and decisions ({{ actions.length + decisions.length }})</summary>
         <div v-if="actions.length || decisions.length" class="review-grid">
           <div class="content-card review-card"><div class="card-header"><h3>Action tracker</h3><span class="count-pill">{{ actions.length }}</span></div>
             <div v-for="item in actions" :key="item.id" class="review-item">
@@ -637,64 +394,67 @@ onBeforeUnmount(() => { if (pollId) clearInterval(pollId) })
             </div>
           </div>
         </div>
-      </div>
-
-      <div v-else-if="view === 'knowledge'" class="workspace-body">
-        <div class="section-heading"><div><h3>Knowledge center</h3><p>Search the current meeting, or explicitly include your other saved sources.</p></div></div>
-        <label class="switch-label"><input v-model="searchAllMeetings" type="checkbox" /> <span>Search all meetings and indexed media</span></label>
-        <div class="knowledge-grid">
-          <div class="content-card knowledge-card"><div class="card-header"><h3>Search your library</h3></div>
-            <div class="input-row"><input v-model="searchText" class="ui-input" type="search" placeholder="Search meetings, topics, or files" aria-label="Knowledge search" @keyup.enter="search" />
-              <button type="button" class="ui-btn ui-btn-solid" :disabled="searching || !searchText.trim()" @click="search">{{ searching ? 'Searching' : 'Search' }}</button></div>
-            <div v-if="searchResults.length" class="search-list"><div v-for="(hit, i) in searchResults" :key="`${hit.source_id}-${i}`" class="search-hit">
-              <span class="source-chip">{{ sourceLabel(hit) }}</span><p>{{ hit.text }}</p>
-            </div></div>
-            <div v-else class="empty-card compact-empty"><strong>No search results yet</strong><p>Index a meeting, then search for a topic or phrase.</p></div>
-          </div>
-          <div class="content-card knowledge-card"><div class="card-header"><h3>Ask your knowledge</h3></div>
-            <p class="card-description">Evidence-only mode. Each returned quote must match an indexed source exactly. This does not independently verify the spoken facts.</p>
-            <div class="input-row"><input v-model="question" class="ui-input" type="text" placeholder="What decisions did we make?" aria-label="Ask a knowledge question" @keyup.enter="ask" />
-              <button type="button" class="ui-btn ui-btn-solid" :disabled="!!busyKind || !question.trim()" @click="ask">Find evidence</button></div>
-            <div v-if="askJob" class="answer-card"><span :class="['status-pill', `status-${askJob.status}`]">{{ askJob.status }}</span>
-              <p v-if="currentAskAnswer" class="answer-text">{{ currentAskAnswer }}</p>
-              <p v-else-if="askJob.error" class="job-error">{{ askJob.error }}</p>
-              <p v-else class="card-description">{{ askJob.status === 'queued' ? 'Waiting for the worker to pick up your question.' : 'Processing your question.' }}</p>
-              <div v-if="currentAskSources.length" class="answer-sources"><strong>Sources</strong><div v-for="(source, i) in currentAskSources" :key="i" class="answer-source"><span class="source-chip">{{ sourceLabel(source) }}</span><span>{{ source.text }}</span></div></div>
+      </details>
+      <details v-if="jobs.length" class="review-inline-details">
+        <summary :title="[provider, modelName].filter(Boolean).join(' · ')">
+          Tasks<span v-if="activeJobs.length"> ({{ activeJobs.length }} active)</span>
+        </summary>
+          <aside class="content-card activity-card" aria-label="Background task activity">
+            <div v-if="!jobs.length" class="empty-card compact-empty"><strong>No tasks yet</strong></div>
+            <div v-else class="job-list">
+              <div v-for="job in recentJobs" :key="job.id" class="job-item">
+                <span :class="['job-indicator', `is-${job.status}`]" aria-hidden="true">
+                  <AppIcon v-if="job.status === 'completed'" name="check" :size="13" />
+                  <AppIcon v-else-if="job.status === 'failed'" name="alert" :size="13" />
+                  <AppIcon v-else name="clock" :size="13" />
+                </span>
+                <div class="job-main"><strong>{{ kindLabel(job.kind) }}</strong>
+                  <div class="job-sub"><span :class="['job-state', `text-${job.status}`]">{{ job.status }}</span><span v-if="job.created_at">· {{ formatDate(job.created_at) }}</span></div>
+                  <p v-if="job.error && job.status === 'failed'" class="job-error" :title="job.error">{{ job.error }}</p>
+                </div>
+                <button v-if="job.status === 'queued'" type="button" class="job-cancel" :disabled="!!busyKind" @click="cancelJob(job)">Cancel</button>
+              </div>
             </div>
-            <div v-else class="empty-card compact-empty"><strong>Start with a question</strong><p>Ask about decisions, key ideas, or follow-up items.</p></div>
-          </div>
-        </div>
-      </div>
-
-      <div v-else-if="view === 'translation'" class="workspace-body">
-        <div class="section-heading"><div><h3>Bilingual transcript</h3><p>Translate finalized segments without modifying the original transcript.</p></div></div>
+            <button v-if="jobs.length > 5" type="button" class="text-button view-all" @click="showAllJobs = !showAllJobs">{{ showAllJobs ? 'Show fewer tasks' : `View more (${jobs.length})` }}</button>
+          </aside>
+      </details>
+    </template>
+    </template>
+    <p v-if="view !== 'overview' && loading" class="review-insights-hint" role="status">Checking AI availability...</p>
+    <div v-else-if="view !== 'overview' && !aiEnabled" class="review-insights-empty">
+      <strong>AI worker unavailable</strong>
+      <p>Enable the local AI worker to use this tool. Existing transcripts remain accessible.</p>
+    </div>
+    <template v-else-if="view === 'translation'">
+      <div v-if="error" class="review-insights-error" role="alert">{{ error }}</div>
+      <div class="workspace-body">
+        <div class="section-heading"><div><h3>Bilingual transcript</h3><p>Translate the saved meeting. Results are stored separately from the source transcript.</p></div></div>
         <div class="content-card translation-card">
-          <div class="translation-toolbar"><label class="switch-label"><input v-model="translationEnabled" type="checkbox" /> <span>Enable translation</span></label>
+          <div class="translation-toolbar">
             <label class="select-label">Target language <select v-model="language" class="ui-select" aria-label="Translation language">
               <option v-for="entry in PHASE1_LANGUAGES" :key="entry[0]" :value="entry[0]">{{ entry[1] }}</option>
             </select></label>
-            <button type="button" class="ui-btn ui-btn-solid" :disabled="!translationEnabled || !!busyKind || !translationRows.length" @click="queueTranslations">Translate new segments</button>
+            <button type="button" class="ui-btn ui-btn-solid"
+              :disabled="translationLoading || translationSubmitting || translationPending || !translationRows.length || translatedCount === translationRows.length"
+              @click="queueTranslations">
+              {{ translationSubmitting ? 'Queueing…' : translationPending ? 'Translating…' : translationFailed ? 'Retry remaining' : 'Translate saved meeting' }}
+            </button>
           </div>
-          <div v-if="!translationEnabled" class="empty-card"><strong>Translation is off</strong><p>Enable translation to queue confirmed segments for bilingual viewing.</p></div>
-          <div v-else-if="!translationRows.length" class="empty-card"><strong>No finalized speech yet</strong><p>Record or open a meeting with transcript content.</p></div>
+          <p v-if="translationError" class="job-error" role="alert">{{ translationError }}</p>
+          <p v-else-if="translationFailed && !translationPending && translatedCount < translationRows.length" class="job-error" role="alert">
+            {{ translation?.last_error || 'Some batches did not finish. Retry the remaining segments.' }}
+          </p>
+          <p v-if="translationRows.length" class="card-description" role="status">
+            {{ translatedCount }} / {{ translationRows.length }} segments translated.
+            <template v-if="translationPending"> Background work waits for active recording to finish.</template>
+          </p>
+          <div v-if="!translationRows.length" class="empty-card">
+            <strong>{{ translationLoading ? 'Loading saved transcript…' : 'No saved speech yet' }}</strong>
+            <p v-if="!translationLoading && !translationError">Save a meeting with transcript content to translate it.</p>
+          </div>
           <div v-else class="translation-list"><div class="translation-head"><span>Original</span><span>Translation</span></div>
             <div v-for="seg in translationRows" :key="seg.id" class="translation-entry"><div><span class="segment-time">{{ formatTime(seg.start_ms) }}</span><p>{{ seg.text }}</p></div>
               <div><span :class="['translation-status', { ready: !!translated[seg.id] }]">{{ translated[seg.id] ? 'Translated' : 'Pending' }}</span><p :class="{ 'placeholder-copy': !translated[seg.id] }">{{ translated[seg.id] || 'Waiting for translation' }}</p></div></div>
-          </div>
-        </div>
-      </div>
-
-      <div v-else-if="view === 'media'" class="workspace-body">
-        <div class="section-heading"><div><h3>Media analysis</h3><p>Bring documents, audio, and video into your searchable knowledge base.</p></div></div>
-        <div class="content-card media-card"><span class="media-mark"><AppIcon name="file-text" :size="27" /></span>
-          <h3>Analyze a file</h3><p>Upload a PDF, document, slide deck, image, or recording. Processing runs in the background.</p>
-          <input ref="mediaInput" class="visually-hidden" type="file" accept=".txt,.md,.pdf,.docx,.pptx,.png,.jpg,.jpeg,.wav,.mp3,.m4a,.mp4,.mov" aria-label="Select media file" :disabled="!!busyKind" @change="upload" />
-          <button type="button" class="ui-btn ui-btn-solid media-pick" :disabled="!!busyKind" @click="mediaInput?.click()">{{ busyKind === 'upload' ? 'Uploading...' : 'Choose file' }}</button>
-          <small>Accepted: PDF, DOCX, PPTX, TXT, images, WAV, MP3, M4A, MP4, MOV</small>
-          <div v-if="mediaJob" class="media-progress"><div><strong>{{ mediaName || 'Uploaded file' }}</strong><span :class="['status-pill', `status-${mediaJob.status}`]">{{ mediaJob.status }}</span></div>
-            <p v-if="mediaJob.error" class="job-error">{{ mediaJob.error }}</p>
-            <p v-else-if="mediaJob.status === 'completed' && mediaJob.result?.summary" class="answer-text">{{ String(mediaJob.result.summary) }}</p>
-            <p v-else class="card-description">{{ mediaJob.status === 'completed' ? 'Media indexing completed.' : 'The AI worker is processing your file.' }}</p>
           </div>
         </div>
       </div>
@@ -845,26 +605,11 @@ onBeforeUnmount(() => { if (pollId) clearInterval(pollId) })
 .disabled-state { margin:18px 26px 26px; display:flex; gap:13px; padding:16px; border:1px solid #e9cba2; border-radius:10px; background:#fff9ef; }
 .disabled-state strong { font-size:12px; }
 .disabled-state p { margin:4px 0 0; color:var(--ai-muted); font-size:11px; }
-.knowledge-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:15px; }
-.knowledge-card { padding-bottom:14px; }
 .card-description { margin:0 18px 12px; font-size:11px; color:var(--ai-muted); }
-.input-row { display:flex; align-items:center; gap:8px; margin:0 18px 15px; }
-.ui-input,.ui-select { width:100%; min-width:0; padding:10px 12px; border:1px solid #dcd6cc; border-radius:8px; background:#fff; color:var(--ai-text); font-size:12px; }
-.input-row .ui-input { flex:1; }
-.ui-input::placeholder { color:#a39b91; }
-.search-list { padding:0 18px; }
-.search-hit { padding:12px 0; border-top:1px solid var(--ai-border); }
-.search-hit p { margin:7px 0 0; line-height:1.75; font-size:12px; white-space:pre-wrap; overflow-wrap:anywhere; }
-.source-chip { display:inline-flex; padding:3px 7px; border-radius:5px; color:var(--ai-teal); background:rgba(22,124,128,.09); font-size:10px; font-weight:650; }
-.answer-card { padding:12px 18px 15px; margin:0 18px; background:#fbfaf8; border-radius:10px; }
-.answer-text { font-size:12.5px; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.85; }
-.answer-card .card-description { margin:8px 0 0; }
-.answer-sources { padding-top:14px; border-top:1px solid var(--ai-border); font-size:11px; }
-.answer-source { display:flex; flex-direction:column; gap:6px; padding-top:10px; line-height:1.65; overflow-wrap:anywhere; }
+.ui-select { width:100%; min-width:0; padding:10px 12px; border:1px solid #dcd6cc; border-radius:8px; background:#fff; color:var(--ai-text); font-size:12px; }
 .translation-card { padding:17px 18px; }
 .translation-toolbar { display:flex; align-items:center; gap:18px; flex-wrap:wrap; margin-bottom:14px; }
-.switch-label,.select-label { display:flex; align-items:center; gap:8px; font-size:11.5px; font-weight:650; }
-.switch-label input { accent-color:var(--ai-primary); width:15px; height:15px; }
+.select-label { display:flex; align-items:center; gap:8px; font-size:11.5px; font-weight:650; }
 .select-label { margin-left:auto; color:var(--ai-muted); }
 .ui-select { width:auto; padding:7px 10px; }
 .translation-head,.translation-entry { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; }
@@ -875,23 +620,13 @@ onBeforeUnmount(() => { if (pollId) clearInterval(pollId) })
 .translation-status { font-size:10px; color:#a5743e; }
 .translation-status.ready { color:var(--ai-teal); }
 .placeholder-copy { color:var(--ai-muted); font-style:italic; }
-.media-card { text-align:center; display:flex; align-items:center; flex-direction:column; padding:34px 22px; }
-.media-mark { display:flex; align-items:center; justify-content:center; border-radius:15px; height:58px; width:58px; background:rgba(218,117,29,.09); color:var(--ai-primary-dark); }
-.media-card h3 { margin:13px 0 4px; font-size:17px; }
-.media-card > p { color:var(--ai-muted); font-size:12px; max-width:430px; margin:0 0 20px; }
-.media-pick { padding:10px 20px; }
-.media-card > small { color:var(--ai-muted); font-size:10.5px; margin-top:15px; }
-.media-progress { margin-top:22px; padding:14px 16px; border:1px solid var(--ai-border); border-radius:10px; text-align:left; width:min(100%,550px); }
-.media-progress > div { display:flex; justify-content:space-between; gap:10px; }
-.media-progress strong { overflow-wrap:anywhere; }
-.media-progress .card-description { margin:6px 0 0; }
 .visually-hidden { position:absolute; height:1px; width:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
 @media (max-width:820px) {
   .workspace-head { padding:20px 18px 12px; }
   .workspace-meta { padding:4px 18px 17px; }
   .workspace-nav { padding:0 13px; }
   .workspace-body { padding:20px 18px 24px; }
-  .overview-grid,.knowledge-grid { grid-template-columns:minmax(0,1fr); }
+  .overview-grid { grid-template-columns:minmax(0,1fr); }
   .feedback { margin-left:18px; margin-right:18px; }
 }
 @media (max-width:640px) {
@@ -937,8 +672,6 @@ onBeforeUnmount(() => { if (pollId) clearInterval(pollId) })
 .review-insights-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .review-insights-header h3{margin:0;font-size:16px;letter-spacing:-.025em;font-weight:770}
 .review-insights-header p{margin:6px 0 0;font-size:12px;line-height:1.6;color:#777981}
-.review-insights-refresh{flex:none;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid #e6e4df;border-radius:9px;background:#fff;color:#7d7e84}
-.review-insights-refresh:hover:not(:disabled){background:#fff5ec;color:#9b4800}
 .review-insights-actions{display:flex;flex-wrap:wrap;gap:8px}
 .review-insights-actions button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:39px;padding:9px 12px;border-radius:9px;font-size:12px;font-weight:700;flex:1 1 155px}
 .review-insights-primary{background:#a94f00;border:1px solid #a94f00;color:#fff}
@@ -964,4 +697,181 @@ onBeforeUnmount(() => { if (pollId) clearInterval(pollId) })
 .review-insights-advanced{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:12px 2px;border:0;border-top:1px solid #ece9e4;background:transparent;color:#8c552b;text-align:left;font-size:11px;font-weight:730}
 .review-insights-advanced:hover{color:#a44e00}
 
+
+/* Integrated Assistant sections with streamlined inline controls. */
+.intelligence-inline {
+  --ai-bg:#fff;
+  --ai-paper:#fcfbf9;
+  --ai-text:#302a25;
+  --ai-muted:#83776c;
+  --ai-border:#e9e2da;
+  --ai-primary:#eb7100;
+  --ai-primary-dark:#a44906;
+  --ai-teal:#995220;
+  display:flex;flex-direction:column;gap:13px;min-width:0;
+  color:#302a25;font-size:12px;
+}
+.intelligence-inline * {box-sizing:border-box;}
+.intelligence-inline button,.intelligence-inline select,.intelligence-inline input {font:inherit;}
+.intelligence-inline button:disabled {cursor:not-allowed;opacity:.55;}
+.intelligence-inline .review-insights-header h3 {font-size:14px;}
+.intelligence-inline .review-insights-header p {font-size:11px;}
+.review-inline-mode {
+  display:flex;align-items:center;justify-content:space-between;gap:9px;
+  min-width:0;color:#73695f;font-size:11px;font-weight:650;
+}
+.review-inline-mode select {
+  min-width:0;max-width:175px;min-height:31px;flex:1;
+  padding:5px 8px;border:1px solid #e6ddd3;border-radius:8px;
+  background:#fff;color:#463b31;
+}
+.review-inline-provenance {
+  margin:3px 0 0;color:#978b7e;line-height:1.6;
+  font-size:10.5px;overflow-wrap:anywhere;
+}
+.review-inline-details {min-width:0;border-top:1px solid #eee9e3;padding-top:11px;}
+.review-inline-details>summary {
+  display:flex;justify-content:space-between;gap:8px;
+  color:#62574c;font-size:11px;font-weight:720;cursor:pointer;
+  list-style:none;padding:5px 0 10px;
+}
+.review-inline-details>summary::-webkit-details-marker {display:none;}
+.review-inline-details>summary:after {content:"⌄";margin-left:auto;color:#a24c14;font-size:15px;}
+.review-inline-details[open]>summary:after {content:"⌃";}
+.review-inline-history-content {padding:8px 0;}
+.review-inline-index {
+  display:flex;justify-content:space-between;align-items:center;gap:9px;
+  padding:8px 0 12px;border-bottom:1px solid #ede8e2;
+  color:#84776a;font-size:11px;
+}
+.review-inline-index .ui-btn {flex:none;white-space:nowrap;}
+.intelligence-inline .workspace-body {min-width:0;padding:0;background:transparent;}
+.intelligence-inline .section-heading {margin:0 0 11px;align-items:stretch;}
+.intelligence-inline .section-heading h3 {font-size:13px;font-weight:760;}
+.intelligence-inline .section-heading p {font-size:11px;line-height:1.55;}
+.intelligence-inline .review-grid,
+.intelligence-inline .overview-grid {
+  display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin:0;
+}
+.intelligence-inline .content-card {
+  min-width:0;background:#fff;border:1px solid #ede7df;
+  border-radius:10px;box-shadow:none;
+}
+.intelligence-inline .card-header {padding:12px 12px 10px;}
+.intelligence-inline .card-header h3 {font-size:12px;}
+.intelligence-inline .card-description {margin:0 12px 12px;font-size:11px;line-height:1.55;}
+.intelligence-inline .ui-btn {cursor:pointer;}
+.intelligence-inline .ui-btn-solid {color:#fff;background:#b85710;border-color:#b85710;}
+.intelligence-inline .translation-card {padding:12px;}
+.intelligence-inline .translation-toolbar {align-items:flex-start;gap:8px;}
+.intelligence-inline .translation-toolbar .select-label {margin:0;flex-wrap:wrap;}
+.intelligence-inline .translation-head {display:none;}
+.intelligence-inline .translation-entry {
+  display:grid;grid-template-columns:minmax(0,1fr);gap:7px;padding:12px 0;
+}
+.intelligence-inline .translation-entry>div:last-child {
+  border-left:2px solid #f0d2b5;padding-left:10px;
+}
+.intelligence-inline .translation-entry p {font-size:11px;line-height:1.55;}
+.intelligence-inline .review-grid {margin-top:8px;}
+.intelligence-inline .review-card {min-width:0;}
+.intelligence-inline .review-item {padding:11px 12px;}
+.intelligence-inline .review-footer {flex-wrap:wrap;}
+.intelligence-inline .job-list {padding:0;}
+.intelligence-inline .job-item {padding:11px 0;}
+.intelligence-inline .activity-card {border:0;background:transparent;}
+.intelligence-inline .empty-card {padding:16px 12px;}
+.intelligence-inline .view-all {padding:10px;}
+.intelligence-inline .review-insights-section {background:transparent;padding:12px 0;border:0;border-bottom:1px solid #eeeae5;border-radius:0;}
+.intelligence-inline .review-insights-actions button {min-height:34px;padding:8px 9px;}
+@media(max-width:560px) {
+  .review-inline-mode {flex-wrap:wrap;}
+  .review-inline-mode select {max-width:none;}
+  .intelligence-inline .review-insights-actions button {flex:1 1 100%;}
+}
+
+/* One compact command row, with evidence below it. */
+.intelligence-inline .review-insights-controls {
+  display:grid;grid-template-columns:minmax(104px,.95fr) minmax(148px,1.05fr);
+  align-items:center;gap:8px;min-width:0;
+}
+.intelligence-inline .review-insights-controls .review-inline-mode {
+  height:36px;min-height:36px;gap:7px;white-space:nowrap;
+}
+.intelligence-inline .review-insights-controls .review-inline-mode select {
+  flex:1;min-width:0;max-width:none;height:36px;min-height:36px;
+  padding:0 22px 0 7px;font-size:11px;
+}
+.intelligence-inline .review-insights-controls .review-insights-primary {
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  height:36px;min-height:36px;min-width:0;width:100%;
+  padding:0 7px;border-radius:9px;
+  font-size:11px;font-weight:700;white-space:nowrap;
+}
+.intelligence-inline .review-insights-section {
+  padding:11px 0;border-bottom:1px solid #eeeae5;
+}
+.intelligence-inline .review-insights-section h4 {
+  margin:0 0 7px;font-size:12px;
+}
+@media(max-width:340px){
+  .intelligence-inline .review-insights-controls {grid-template-columns:minmax(0,1fr);}
+}
+
+/* Assistant overview: aligned controls and a single editorial results surface. */
+.intelligence-inline.review-insights {gap:13px;}
+.intelligence-inline.review-insights .review-insights-controls {
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);
+  align-items:center;gap:10px;margin:0 0 3px;
+}
+.intelligence-inline.review-insights .review-insights-controls .review-inline-mode {
+  display:flex;width:100%;min-width:0;height:40px;min-height:40px;margin:0;
+}
+.intelligence-inline.review-insights .review-insights-controls .review-inline-mode select {
+  display:block;width:100%;height:40px;min-height:40px;
+  padding:0 30px 0 13px;border:1px solid #e5ddd3;
+  border-radius:9px;background-color:#fff;
+  color:#332d28;font-size:12px;font-weight:610;
+}
+.intelligence-inline.review-insights .review-insights-controls .review-insights-primary {
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  width:100%;min-width:0;height:40px;min-height:40px;
+  padding:0 10px;border-radius:9px;font-size:12px;font-weight:680;
+}
+.intelligence-inline.review-insights .review-insights-results {
+  min-width:0;overflow:hidden;background:#fff;
+  border:1px solid #e9e4de;border-radius:13px;
+}
+.intelligence-inline.review-insights .review-insights-results .review-insights-section {
+  display:block;margin:0;padding:18px 19px 19px;
+  border:0;border-bottom:1px solid #eeeae6;border-radius:0;
+  background:#fff;box-shadow:none;
+}
+.intelligence-inline.review-insights .review-insights-results .review-insights-section:last-child {
+  border-bottom:0;
+}
+.intelligence-inline.review-insights .review-insights-results .review-insights-section h4 {
+  display:flex;align-items:center;justify-content:flex-start;
+  gap:8px;margin:0 0 10px;color:#292724;
+  font-size:12px;font-weight:760;line-height:1.3;
+}
+.intelligence-inline.review-insights .review-insights-results .review-insights-section h4:before {
+  content:none;
+}
+.intelligence-inline.review-insights .review-insights-results .review-insights-section h4 span {
+  margin-left:auto;
+}
+.intelligence-inline.review-insights .review-insights-results .review-insights-narrative,
+.intelligence-inline.review-insights .review-insights-results .review-insights-list {
+  margin:0;color:#4f4841;line-height:1.75;font-size:12px;
+}
+.intelligence-inline.review-insights .review-insights-results .review-insights-empty-text {
+  margin:0;color:#9b9289;font-size:11px;line-height:1.55;
+}
+.intelligence-inline.review-insights .review-inline-details {
+  margin-top:0;padding:11px 2px 0;
+}
+@media(max-width:340px){
+  .intelligence-inline.review-insights .review-insights-controls {grid-template-columns:minmax(0,1fr);}
+}
 </style>

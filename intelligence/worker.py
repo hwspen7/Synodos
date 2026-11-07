@@ -12,7 +12,7 @@ from intelligence.contracts import build_chunks, safe_artifact, ALLOWED_MODES
 from intelligence.model_gateway import ModelGateway
 from intelligence.prompts import SYSTEM, transcript_prompt, answer_prompt
 from intelligence import store, retrieval, media
-from phase07.evidence import evidence_audit, referenced_hits
+from runtime_quality.evidence import evidence_audit, referenced_hits
 
 log=logging.getLogger('meeting.intelligence')
 
@@ -162,7 +162,7 @@ def process(job, gateway):
         return output
     if kind == 'speaker_refine':
         # Second opinion only, never mutate a transcript or speaker registry.
-        from speech.offline_speaker import run_offline_refinement
+        from speech.diarization.offline_speaker import run_offline_refinement
         from speech.config import load_settings as load_speech_settings
         data = job.get('payload') or {}
         filename = data.get('filename')
@@ -193,10 +193,14 @@ def process(job, gateway):
             results.append({'segment_id':segment['id'],'source_hash':source_hash(original),'source_text':original,'text':translated})
         return {'target':target,'translations':results,'source':'live_unverified'}
     if kind=='translate':
-        _,segments=_context(job)
+        revision,segments=_context(job)
         target=translation_target(job['payload'].get('target'))
         if not target:
             raise ValueError('A supported translation target is required')
+        if job['payload'].get('workspace') is True:
+            from intelligence.meeting_translation import translate_batch
+            return translate_batch(job['meeting_id'], revision, segments, target,
+                                   job['payload'], gateway)
         requested=job['payload'].get('segment_ids')
         if not isinstance(requested,list) or not 1<=len(requested)<=12:
             raise ValueError('Translation requires 1-12 saved segment IDs')

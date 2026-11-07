@@ -5,7 +5,7 @@ on:
     branches:
       - feature/meeting-knowledge-quality
     paths:
-      - "sessions/registered_identity.py"
+      - "sessions/identity/registered_identity.py"
       - "sessions/processor.py"
       - "sessions/session.py"
       - "storage/speakers.py"
@@ -43,7 +43,7 @@ jobs:
           import ast
           from pathlib import Path
           for file in (
-              "sessions/processor.py", "sessions/registered_identity.py",
+              "sessions/processor.py", "sessions/identity/registered_identity.py",
               "storage/speakers.py", "storage/meetings.py",
               "api/websocket.py", "api/meetings.py", "sessions/session.py",
           ):

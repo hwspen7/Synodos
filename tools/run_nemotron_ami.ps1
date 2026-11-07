@@ -109,21 +109,21 @@ if ($HumanReferenceText) {
 
 if (-not $SkipUnitTests) {
     $modules = @(
-        "tests.quality.test_nemotron_live_stream",
-        "tests.quality.test_nemotron_processor_fusion",
-        "tests.quality.test_ami_nemotron_live_score",
-        "tests.quality.test_asr_stage_trace",
-        "tests.quality.test_asr_priority_vs_nemotron",
-        "tests.quality.test_caption_word_bounds_and_official_turns",
-        "tests.quality.test_ami_nemotron_reference_diagnostic",
-        "tests.quality.test_whisper_window_vad_ablation",
-        "tests.quality.test_caption_acoustic_alignment",
-        "tests.quality.test_content_first_projection",
-        "tests.quality.test_ami_content_first_projection",
-        "tests.quality.test_overlap_content_risk",
-        "tests.quality.test_phase1_language_policy",
-        "tests.quality.test_ami_human_text_reference",
-        "tests.quality.test_phase1_text_acceptance"
+        "tests.quality.speakers.test_nemotron_live_stream",
+        "tests.quality.speakers.test_nemotron_processor_fusion",
+        "tests.quality.ami.test_ami_nemotron_live_score",
+        "tests.quality.recognition.test_asr_stage_trace",
+        "tests.quality.recognition.test_asr_priority_vs_nemotron",
+        "tests.quality.integrity.test_caption_word_bounds_and_official_turns",
+        "tests.quality.ami.test_ami_nemotron_reference_diagnostic",
+        "tests.quality.recognition.test_whisper_window_vad_ablation",
+        "tests.quality.integrity.test_caption_acoustic_alignment",
+        "tests.quality.integrity.test_content_first_projection",
+        "tests.quality.ami.test_ami_content_first_projection",
+        "tests.quality.integrity.test_overlap_content_risk",
+        "tests.quality.recognition.test_language_policy",
+        "tests.quality.ami.test_ami_human_text_reference",
+        "tests.quality.recognition.test_text_acceptance"
     )
     foreach ($module in $modules) {
         & $PythonExe -m unittest $module -v
@@ -178,7 +178,7 @@ $env:MEETING_CAPTION_WORD_BOUNDS = if ($WordBounds.IsPresent) { "1" } else { "0"
 
 # Preflight model weights, Transformers API and CUDA compatibility before
 # starting a timed microphone replay. The subprocess caches weights locally.
-& $PythonExe -c "from speech.nemotron_stream import _model_resources; _model_resources('low_latency'); print('Nemotron model preflight passed')"
+& $PythonExe -c "from speech.diarization.nemotron_stream import _model_resources; _model_resources('low_latency'); print('Nemotron model preflight passed')"
 if ($LASTEXITCODE -ne 0) {
     throw "Nemotron dependencies, CUDA or model weights are unavailable."
 }
@@ -220,7 +220,7 @@ try {
 
         $wsUrl = "ws://127.0.0.1:$Port/ws/audio?language=auto&record_audio=false&translate_to="
         $replayArgs = @(
-            "-m", "tools.live_caption_ws_replay",
+            "-m", "tools.diagnostics.live_caption_ws_replay",
             "--audio", $audio, "--loops", "1", "--speed", "1.0",
             "--final-timeout", "240", "--url", $wsUrl,
             "--output", $replay
@@ -252,12 +252,12 @@ try {
             throw "Missing caption-derived RTTM diagnostics."
         }
 
-        & $PythonExe -m tools.ami_nemotron_live_score `
+        & $PythonExe -m tools.evaluation.ami.ami_nemotron_live_score `
             --root $root --meeting TS3003b --replay $replay `
             --baseline $baseline --output $score --require-under-20
         $derExit = $LASTEXITCODE
 
-        & $PythonExe -m tools.ami_asr_stage_gap_audit `
+        & $PythonExe -m tools.evaluation.ami.ami_asr_stage_gap_audit `
             --root $root --meeting TS3003b --replay $replay `
             --output $gaps
         if ($LASTEXITCODE -ne 0) {
@@ -266,14 +266,14 @@ try {
 
         # Always compute the paired forced-alignment diagnostic. The
         # strict only_words gate above is intentionally NOT rewritten.
-        & $PythonExe -m tools.ami_nemotron_reference_diagnostic `
+        & $PythonExe -m tools.evaluation.ami.ami_nemotron_reference_diagnostic `
             --root $root --meeting TS3003b --replay $replay `
             --output $forced
         if ($LASTEXITCODE -ne 0) {
             throw "Forced-alignment comparison failed."
         }
 
-        & $PythonExe -m tools.ami_asr_stage_gap_audit `
+        & $PythonExe -m tools.evaluation.ami.ami_asr_stage_gap_audit `
             --root $root --meeting TS3003b --replay $replay `
             --reference-protocol forced_aligned --output $forcedGaps
         if ($LASTEXITCODE -ne 0) {
@@ -286,7 +286,7 @@ try {
         $textGateExit = $null
         if ($HumanReferenceText) {
             $textArgs = @(
-                "-m", "tools.phase1_text_acceptance",
+                "-m", "tools.validation.text_acceptance",
                 "--replay", $replay,
                 "--audio-sha256", [string]$r.source_audio_sha256,
                 "--reference-sha256", $humanReferenceHash,
