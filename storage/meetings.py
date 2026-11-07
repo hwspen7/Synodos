@@ -150,6 +150,7 @@ class MeetingStore:
             "hotword_ids": list(state.get("hotword_ids") or []),
             "spk_threshold": float(state.get("spk_threshold", 0.3)),
             "ui_settings": dict(state.get("ui_settings") or {}),
+            "speaker_labels": dict(state.get("speaker_labels") or {}),
         }
 
     @staticmethod
@@ -232,6 +233,38 @@ class MeetingStore:
             state.get("segments") or [], sample_rate,
         )
 
+    @staticmethod
+    def _display_speaker_id(segment: dict, aliases: dict[int, int]) -> int:
+        """Use the same acoustic alias gate as the transcript UI."""
+        sid = int(segment.get("speaker_id", -1))
+        if (segment.get("speaker_final_resolution_status") ==
+                "independent_acoustic_assigned"
+                and sid > 0 and not segment.get("speaker_uncertain")
+                and sid in aliases):
+            return aliases[sid]
+        return sid
+
+    @classmethod
+    def _apply_display_labels(
+        cls, segments: list[dict], state: dict, sample_rate: int,
+    ) -> list[dict]:
+        """Name only the presentation layer, never the saved voice evidence."""
+        labels = state.get("speaker_labels") or {}
+        if not labels:
+            return segments
+        from sessions.channels.corroborated_speaker_channels import saved_speaker_continuity
+
+        aliases = saved_speaker_continuity(segments, sample_rate)
+        out = []
+        for segment in segments:
+            display_id = cls._display_speaker_id(segment, aliases)
+            label = labels.get(str(display_id)) or {}
+            if label.get("name"):
+                out.append({**segment, "speaker_name": label["name"]})
+            else:
+                out.append(segment)
+        return out
+
     def list_segments(self, meeting_id: str) -> list[dict] | None:
         """Return complete safe evidence for later summaries, no voiceprints."""
         payload = self._read_payload(meeting_id)
@@ -244,6 +277,7 @@ class MeetingStore:
 
         segments = self._projected_segments(state, sr)
         aliases = saved_speaker_continuity(segments, sr)
+        segments = self._apply_display_labels(segments, state, sr)
         rows = []
         for segment in segments:
             row = self._segment_summary(segment, sr)
@@ -356,7 +390,9 @@ class MeetingStore:
         meta = payload.get("meta") or {}
         state = payload.get("state") or {}
         sr = int(state.get("sample_rate", meta.get("sample_rate") or 16000))
-        segments = self._projected_segments(state, sr)
+        segments = self._apply_display_labels(
+            self._projected_segments(state, sr), state, sr,
+        )
         merge_gap_s = float(state.get("merge_gap_s", meta.get("merge_gap_s") or 2.0))
         speaker_map = {int(k): int(v) for k, v in (state.get("speaker_map") or {}).items()}
         paragraphs = self._build_paragraphs(segments, sr, merge_gap_s, speaker_map)
