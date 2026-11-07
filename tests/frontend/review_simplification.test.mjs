@@ -18,7 +18,12 @@ test('review starts with an immediately usable overview, not a workflow chooser'
   assert.match(meeting, /:section="intelligenceSection"/)
   assert.match(intelligence, /aria-label="Meeting AI tools"/)
   assert.match(intelligence, /Generate summary/)
-  assert.match(intelligence, /Extract next steps/)
+  assert.doesNotMatch(intelligence, /Extract next steps/)
+  assert.match(intelligence, /@click="analyze\(\)"/)
+  assert.match(intelligence, /briefSummary\.value\?\.content \?\? briefExtraction\.value\?\.content/)
+  assert.match(intelligence, /v-if="briefSummary \|\| briefExtraction"/)
+  assert.match(intelligence, /v-if="jobs\.length"/)
+  assert.doesNotMatch(intelligence, /<h3>Meeting overview<\/h3>/)
   assert.match(intelligence, /briefSummary\?\.content\.summary/)
   assert.match(intelligence, /briefFindings\.decisions/)
   assert.match(intelligence, /briefFindings\.actions/)
@@ -44,8 +49,10 @@ test('speaker confirmation and optional second model remain accessible in one se
   assert.match(meeting, /@reviewed="loadSavedTranscript"/)
 })
 
-test('review uses a three-part responsive tab bar and supported icons', () => {
-  assert.match(styles, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/)
+test('review uses four aligned tabs and supported icons', () => {
+  const theme = read('src/assets/synodos-theme.css')
+  assert.match(theme, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/)
+  assert.match(intelligence, /class="review-insights-controls"/)
   for (const icon of ['chevron-right', 'chevron-up', 'chevron-down']) {
     assert.ok(icons.includes("| '" + icon + "'"), 'Missing icon name ' + icon)
     assert.ok(icons.includes("name === '" + icon + "'"), 'Missing SVG path for ' + icon)
