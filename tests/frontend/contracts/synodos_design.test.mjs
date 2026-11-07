@@ -32,18 +32,25 @@ test('global sidebar lists unique destinations with no meeting-local duplicates'
 
 test('meeting uses a single command bar and keeps all existing tools reachable', () => {
   const meeting = read('src/pages/MeetingPage.vue')
-  const header = meeting.slice(
-    meeting.indexOf('<header class="compact-meeting-header'),
-    meeting.indexOf('</header>') + 9,
-  )
-  assert.match(header, /class="compact-meeting-header synodos-compact-toolbar"/)
+  const start = meeting.indexOf('<Teleport to="#synodos-global-context">')
+  const end = meeting.indexOf('</Teleport>', meeting.indexOf('<Teleport to="#synodos-global-actions">'))
+  const header = meeting.slice(start, end + '</Teleport>'.length)
+  assert.ok(start >= 0 && end > start, 'Global meeting toolbar teleport must exist')
+  const app = read('src/App.vue')
+  assert.match(app, /id="synodos-global-context"/)
+  assert.match(app, /id="synodos-global-actions"/)
+  assert.match(header, /<Teleport to="#synodos-global-actions">/)
+  assert.doesNotMatch(meeting, /<header class="compact-meeting-header/)
+  assert.match(header, /class="synodos-quick-tool synodos-recordings-tool"/)
   for (const operation of [
     "activeReviewTool = 'speakers'", "saveMeeting()", "recording ? stop() : start()",
-    "selectMeetingTool('recordings')", "selectMeetingTool('settings')",
+    "activeMeetingTool === 'recordings' ? 'transcript' : 'recordings'", "selectMeetingTool('settings')",
     "exportMeeting('md')", "exportMeeting('json')", "copyTranscript",
     "activeMeetingTool === 'review' ? 'transcript' : 'review'",
   ]) assert.ok(header.includes(operation), 'Missing command bar action ' + operation)
   assert.match(header, /aria-label="Recognition language"/)
+  assert.ok(header.indexOf('synodos-recordings-tool') < header.indexOf('synodos-meeting-more'))
+  assert.doesNotMatch(header.slice(header.indexOf('synodos-meeting-more')), /> Recordings\s*<\/button>/)
   assert.doesNotMatch(meeting, /class="synodos-participant-stage"|class="synodos-top-controls"|class="synodos-session-bar"/)
   assert.doesNotMatch(meeting, /class="meeting-tool-sidebar"/)
   assert.match(meeting, /class="synodos-meeting-center"/)

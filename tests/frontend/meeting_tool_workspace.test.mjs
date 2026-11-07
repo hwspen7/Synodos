@@ -21,13 +21,16 @@ test('meeting tools share exactly one active destination', () => {
 })
 
 test('meeting-local tools appear once in the compact header, not duplicated in navigation', () => {
-  const header = source.slice(
-    source.indexOf('<header class="compact-meeting-header'),
-    source.indexOf('</header>') + 9,
-  )
+  const start = source.indexOf('<Teleport to="#synodos-global-context">')
+  const end = source.indexOf('</Teleport>', source.indexOf('<Teleport to="#synodos-global-actions">'))
+  const header = source.slice(start, end + '</Teleport>'.length)
+  assert.ok(start >= 0 && end > start, 'Global meeting toolbar teleport must exist')
   for (const tool of ['review', 'recordings', 'settings']) {
     assert.ok(header.includes("'" + tool + "'"), 'Missing tool in header: ' + tool)
   }
+  assert.match(header, /class="synodos-quick-tool synodos-recordings-tool"/)
+  assert.ok(header.indexOf('synodos-recordings-tool') < header.indexOf('synodos-meeting-more'))
+  assert.doesNotMatch(header.slice(header.indexOf('synodos-meeting-more')), /\> Recordings\s*<\/button>/)
   assert.match(header, /class="synodos-meeting-more"/)
   assert.match(source, /class="meeting-detail-panel"/)
   assert.doesNotMatch(source, /class="meeting-tool-sidebar"/)

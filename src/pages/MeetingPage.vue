@@ -880,7 +880,7 @@ onBeforeUnmount(() => stopInternal())
 
 <template>
   <div class="meeting-page">
-    <header class="compact-meeting-header synodos-compact-toolbar">
+    <Teleport to="#synodos-global-context">
       <div class="compact-meeting-heading">
         <button type="button" class="meeting-back" aria-label="Back to meetings"
           title="Back to meetings" @click="router.push('/#meetings')">
@@ -901,6 +901,8 @@ onBeforeUnmount(() => stopInternal())
           </div>
         </div>
       </div>
+    </Teleport>
+    <Teleport to="#synodos-global-actions">
       <div class="synodos-meeting-heading-actions" aria-label="Meeting actions">
         <button type="button" class="synodos-participants-button"
           :title="`${meetingCast.length} speakers in this meeting`"
@@ -924,12 +926,15 @@ onBeforeUnmount(() => stopInternal())
           @click="selectMeetingTool(activeMeetingTool === 'review' ? 'transcript' : 'review')">
           <AppIcon name="edit" :size="16" /><span>AI</span>
         </button>
+          <button type="button" class="synodos-quick-tool synodos-recordings-tool"
+            :class="{ active: activeMeetingTool === 'recordings' }"
+            :aria-pressed="activeMeetingTool === 'recordings'"
+            @click="selectMeetingTool(activeMeetingTool === 'recordings' ? 'transcript' : 'recordings')">
+            <AppIcon name="list" :size="16" /><span>Recordings</span>
+          </button>
         <details ref="moreMenuRef" class="synodos-meeting-more">
           <summary aria-label="More meeting actions" title="More meeting actions">···</summary>
           <div class="synodos-meeting-more-popover">
-            <button type="button" @click="selectMeetingTool('recordings'); closeMeetingActions()">
-              <AppIcon name="list" :size="16" /> Recordings
-            </button>
             <button type="button" @click="selectMeetingTool('settings'); closeMeetingActions()">
               <AppIcon name="settings" :size="16" /> Meeting settings
               <span v-if="settingsPending" class="meeting-tool-unsaved" title="Unsaved changes"></span>
@@ -947,10 +952,12 @@ onBeforeUnmount(() => stopInternal())
           </div>
         </details>
         <button type="button" class="btn btn-ghost toolbar-save"
+          :aria-label="saving ? 'Saving meeting' : 'Save meeting'"
           :disabled="saving" @click="saveMeeting()">
           <AppIcon name="save" :size="16" /> {{ saving ? 'Saving...' : 'Save' }}
         </button>
         <button type="button" class="btn btn-primary compact-record-action"
+          :aria-label="recording ? 'Stop recording' : 'Start recording'"
           :class="{ danger: recording }"
           :disabled="status === 'connecting' || status === 'stopping'"
           @click="recording ? stop() : start()">
@@ -958,7 +965,7 @@ onBeforeUnmount(() => stopInternal())
           {{ recording ? 'Stop recording' : 'Start recording' }}
         </button>
       </div>
-    </header>
+    </Teleport>
 
     <p v-if="settingsPending && !recording" class="hint-text warn-text" role="status">Settings changed. Apply to save them, or start recording to use these values.</p>
     <p v-if="selectedWithoutVoiceprints.length" class="hint-text warn-text" role="status">

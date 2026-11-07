@@ -9,18 +9,20 @@ const page = readFileSync(path.join(root, 'src/pages/MeetingPage.vue'), 'utf8')
 const css = readFileSync(path.join(root, 'src/assets/meeting-tool-layout.css'), 'utf8')
 
 test('a single meeting command bar keeps every critical action reachable', () => {
-  const header = page.slice(
-    page.indexOf('<header class="compact-meeting-header'),
-    page.indexOf('</header>') + 9,
-  )
+  const start = page.indexOf('<Teleport to="#synodos-global-context">')
+  const end = page.indexOf('</Teleport>', page.indexOf('<Teleport to="#synodos-global-actions">'))
+  const header = page.slice(start, end + '</Teleport>'.length)
+  assert.ok(start >= 0 && end > start, 'Global meeting toolbar teleport must exist')
   for (const value of [
-    'meetingTitle', 'statusText', 'synodos-compact-toolbar',
+    'meetingTitle', 'statusText', 'synodos-global-actions',
     "activeReviewTool = 'speakers'", 'synodos-language-control',
     "saveMeeting()", "recording ? stop() : start()",
     "exportMeeting('md')", "exportMeeting('json')", 'copyTranscript',
-    "selectMeetingTool('recordings')", "selectMeetingTool('settings')",
+    "activeMeetingTool === 'recordings' ? 'transcript' : 'recordings'", "selectMeetingTool('settings')",
   ]) assert.ok(header.includes(value), 'Missing header content: ' + value)
   assert.match(page, /class="synodos-meeting-center"/)
+  assert.doesNotMatch(page, /<header class="compact-meeting-header/)
+  assert.match(header, /synodos-recordings-tool/)
   assert.match(page, /class="synodos-transcript-heading"/)
   assert.doesNotMatch(page, /class="meeting-workspace-summary"/)
   assert.doesNotMatch(page, /class="synodos-participant-stage"|class="meeting-tool-sidebar"/)

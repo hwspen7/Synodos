@@ -26,9 +26,13 @@ watch(() => route.fullPath, () => { mobileNavigationOpen.value = false })
           <SynodosMark class="synodos-brand-mark" :size="52" />
           <span class="synodos-brand-name">Synodos</span>
         </RouterLink>
+        <div v-if="isMeeting" id="synodos-global-context" class="synodos-global-context"
+          aria-label="Current meeting"></div>
       </div>
       <div class="synodos-topbar-actions">
-        <span class="synodos-local-status"><span aria-hidden="true"></span> Local</span>
+        <div v-if="isMeeting" id="synodos-global-actions" class="synodos-global-actions"
+          aria-label="Meeting controls"></div>
+        <span v-else class="synodos-local-status"><span aria-hidden="true"></span> Local</span>
       </div>
       <button type="button" class="workspace-mobile-menu synodos-mobile-menu"
         aria-label="Open navigation" @click="mobileNavigationOpen = true">
