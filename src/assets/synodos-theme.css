@@ -350,6 +350,38 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
 .synodos-shell.meeting-route .meeting-primary .speaker-name {
   color:#3c332b;font-size:12px;font-weight:730;
 }
+.synodos-shell.meeting-route .meeting-primary .transcript-speaker-name-button {
+  display:inline-flex;align-items:center;gap:8px;min-width:0;
+  height:32px;max-width:min(100%,380px);padding:2px 6px 2px 0;
+  border:0;border-radius:8px;background:transparent;
+  color:#3c332b;cursor:text;text-align:left;
+}
+.synodos-shell.meeting-route .meeting-primary .transcript-speaker-name-button:hover,
+.synodos-shell.meeting-route .meeting-primary .transcript-speaker-name-button:focus-visible {
+  background:#fff6ec;color:#a14b0b;outline-offset:2px;
+}
+.synodos-shell.meeting-route .meeting-primary .transcript-speaker-name-button .speaker-name {
+  min-width:0;max-width:275px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.synodos-shell.meeting-route .meeting-primary .transcript-speaker-name-pencil {
+  flex:none;opacity:0;color:#a15a25;transition:opacity .14s;
+}
+.synodos-shell.meeting-route .meeting-primary .transcript-speaker-name-button:hover .transcript-speaker-name-pencil,
+.synodos-shell.meeting-route .meeting-primary .transcript-speaker-name-button:focus-visible .transcript-speaker-name-pencil {
+  opacity:1;
+}
+.synodos-shell.meeting-route .meeting-primary .transcript-speaker-name-input {
+  box-sizing:border-box;width:min(240px,60vw);height:30px;min-width:110px;
+  padding:4px 9px;border:1px solid #eb7100;border-radius:7px;
+  background:#fff;color:#352c25;font-size:12px;font-weight:700;
+  outline:0;box-shadow:0 0 0 2px rgba(235,113,0,.11);
+}
+.synodos-shell.meeting-route .meeting-primary .transcript-speaker-name-input[aria-invalid="true"] {
+  border-color:#b64a36;box-shadow:0 0 0 2px rgba(182,74,54,.12);
+}
+.synodos-shell.meeting-route .meeting-primary .transcript-speaker-name-error {
+  margin:0 0 6px 36px;font-size:11px;line-height:1.45;color:#a44735;
+}
 .synodos-shell.meeting-route .meeting-primary .para-time {
   color:#a1968b;font-size:10px;margin-left:auto;
 }
