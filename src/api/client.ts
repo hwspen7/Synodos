@@ -61,10 +61,21 @@ export const meetingsApi = {
       method: 'POST',
       body: JSON.stringify({ title }),
     }),
-  rename: (id: string, title: string) =>
-    request<{ meeting: MeetingSummary }>(`/meetings/${encodeURIComponent(id)}`, {
-      method: 'PATCH', body: JSON.stringify({ title }),
-    }),
+  rename: async (id: string, title: string) => {
+    const path = `/meetings/${encodeURIComponent(id)}`
+    const body = JSON.stringify({ title })
+    try {
+      return await request<{ meeting: MeetingSummary }>(`${path}/rename`, {
+        method: 'POST', body,
+      })
+    } catch (err) {
+      // Older deployments implement PATCH only. Keep existing clients compatible.
+      if (!(err instanceof Error) || !/^(not found|method not allowed|404\b|405\b)/i.test(err.message)) {
+        throw err
+      }
+      return request<{ meeting: MeetingSummary }>(path, { method: 'PATCH', body })
+    }
+  },
   save: (id: string) =>
     request<{ ok: boolean; meeting: MeetingSummary }>(`/meetings/${id}/save`, {
       method: 'POST',

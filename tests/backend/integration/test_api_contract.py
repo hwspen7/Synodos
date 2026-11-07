@@ -29,6 +29,7 @@ class APIContractTests(unittest.TestCase):
             ("/api/meetings/{meeting_id}/save", "POST"),
             ("/api/meetings/{meeting_id}", "DELETE"),
             ("/api/meetings/{meeting_id}", "PATCH"),
+            ("/api/meetings/{meeting_id}/rename", "POST"),
             ("/api/meetings/{meeting_id}/export", "GET"),
             ("/api/speakers", "GET"), ("/api/speakers", "POST"),
             ("/api/speakers/{speaker_id}", "PATCH"),

@@ -553,7 +553,7 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
 }
 .synodos-shell.meeting-route .synodos-global-context .compact-meeting-titles {
   display:flex;flex-direction:row;align-items:center;gap:12px;
-  flex-wrap:nowrap;min-width:0;
+  flex-wrap:nowrap;min-width:0;position:relative;
 }
 .synodos-shell.meeting-route .synodos-global-context .compact-meeting-titles h1 {
   max-width:clamp(120px,17vw,295px);min-width:0;margin:0;overflow:hidden;
@@ -767,6 +767,18 @@ body { color:#2b2622; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
   border:1px solid #eb7100;border-radius:7px;background:#fff;
   color:#292521;font:inherit;font-size:13px;font-weight:650;letter-spacing:0;
   outline:none;box-shadow:0 0 0 2px rgba(235,113,0,.12);
+}
+.synodos-shell.meeting-route .meeting-title-editor[aria-invalid="true"] {
+  border-color:#b64a36;box-shadow:0 0 0 2px rgba(182,74,54,.12);
+}
+.synodos-shell.meeting-route .meeting-title-error {
+  position:absolute;left:0;top:calc(100% + 5px);z-index:80;
+  width:max-content;max-width:min(330px,calc(100vw - 34px));
+  box-sizing:border-box;margin:0;padding:9px 12px;
+  border:1px solid #f0d7cd;border-radius:8px;background:#fff;
+  box-shadow:0 8px 22px rgba(44,29,20,.09);
+  color:#a0422d;font-size:11px;font-weight:500;line-height:1.5;
+  white-space:normal;overflow-wrap:anywhere;
 }
 @media (max-width:1480px) and (min-width:951px) {
   .synodos-shell.meeting-route .synodos-global-actions .synodos-language-control select {

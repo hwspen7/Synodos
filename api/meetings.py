@@ -51,6 +51,7 @@ class MeetingRenamePayload(BaseModel):
         return title
 
 
+@router.post("/api/meetings/{meeting_id}/rename")
 @router.patch("/api/meetings/{meeting_id}")
 async def rename_meeting(meeting_id: str, payload: MeetingRenamePayload) -> dict:
     """Rename a meeting without changing its ID, settings, or transcript."""

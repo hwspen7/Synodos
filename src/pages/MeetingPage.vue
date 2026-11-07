@@ -56,9 +56,11 @@ const renamingMeetingTitle = ref(false)
 const meetingTitleDraft = ref('')
 const meetingTitleInput = ref<HTMLInputElement | null>(null)
 const titleRenamedLocally = ref(false)
+const renameError = ref('')
 
 function editMeetingTitle(): void {
   if (renamingMeetingTitle.value) return
+  renameError.value = ''
   meetingTitleDraft.value = meetingTitle.value || 'Untitled Meeting'
   editingMeetingTitle.value = true
   void nextTick(() => {
@@ -69,31 +71,38 @@ function editMeetingTitle(): void {
 
 function cancelMeetingRename(): void {
   if (renamingMeetingTitle.value) return
+  renameError.value = ''
   editingMeetingTitle.value = false
   meetingTitleDraft.value = meetingTitle.value
 }
 
 async function commitMeetingRename(): Promise<void> {
+  // Enter and blur can both fire while a request is pending. Save only once.
   if (!editingMeetingTitle.value || renamingMeetingTitle.value) return
   const title = meetingTitleDraft.value.trim()
   if (!title) {
-    error.value = 'Meeting title cannot be empty'
+    renameError.value = 'Enter a meeting name.'
     return
   }
   if (title === meetingTitle.value) {
+    renameError.value = ''
     editingMeetingTitle.value = false
     return
   }
   renamingMeetingTitle.value = true
-  error.value = ''
+  renameError.value = ''
   try {
     const { meeting } = await meetingsApi.rename(props.id, title)
     meetingTitle.value = meeting.title
+    meetingTitleDraft.value = meeting.title
     titleRenamedLocally.value = true
     editingMeetingTitle.value = false
-    showToast('Meeting renamed')
+    // Renaming is an inline action. No recording alert or success popup.
   } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
+    const message = err instanceof Error ? err.message : String(err)
+    renameError.value = /method not allowed|^405\b|^404\b|^not found$/i.test(message)
+      ? 'Rename is unavailable on the running server. Restart the backend and retry.'
+      : `Could not save meeting name: ${message}`
   } finally {
     renamingMeetingTitle.value = false
   }
@@ -952,11 +961,14 @@ onBeforeUnmount(() => stopInternal())
             </button>
             <input v-else ref="meetingTitleInput" v-model="meetingTitleDraft"
               class="meeting-title-editor" type="text" maxlength="120"
-              aria-label="Meeting title" :disabled="renamingMeetingTitle"
-              @keydown.enter.prevent="commitMeetingRename"
+              aria-label="Meeting title" :aria-invalid="!!renameError"
+              :disabled="renamingMeetingTitle"
+              @input="renameError = ''"
+              @keydown.enter.stop.prevent="commitMeetingRename"
               @keydown.esc.stop.prevent="cancelMeetingRename"
               @blur="commitMeetingRename" />
           </h1>
+          <p v-if="renameError" class="meeting-title-error" role="alert">{{ renameError }}</p>
           <div class="meeting-running-status" role="status">
             <span class="status-chip" :class="statusClass">
               <span class="status-dot" aria-hidden="true"></span>{{ statusText }}
