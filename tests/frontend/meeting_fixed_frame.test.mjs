@@ -100,3 +100,27 @@ test('Assistant toolbar label and one shared vertical centerline are explicit', 
   assert.match(theme, /\.synodos-global-actions \.synodos-meeting-more \{\s*display:flex;align-items:center;height:34px;/)
   assert.match(theme, /\.meeting-title-trigger \{[\s\S]*?height:34px;/)
 })
+
+test('clicking a transcript speaker avatar or name persists a library profile', () => {
+  const client = readFileSync(path.join(root, 'src/api/client.ts'), 'utf8')
+  const types = readFileSync(path.join(root, 'src/types.ts'), 'utf8')
+  assert.match(page, /class="transcript-speaker-name-button"/)
+  assert.match(page, /@click="editDisplayedSpeaker\(para\)"/)
+  assert.match(page, /class="speaker-dot synodos-speaker-avatar"/)
+  assert.match(page, /class="speaker-name"/)
+  assert.match(page, /@keydown\.enter\.stop\.prevent="commitSpeakerName"/)
+  assert.match(page, /@keydown\.esc\.stop\.prevent="cancelSpeakerName"/)
+  assert.match(page, /@blur="commitSpeakerName"/)
+  assert.match(page, /meetingsApi\.labelSpeaker\(props\.id, id, name\)/)
+  assert.match(page, /speakerLabels\.value = speaker_labels/)
+  assert.match(page, /speakers\.value = \[speaker,/)
+  assert.match(client, /labelSpeaker: \(id: string, speakerId: number, name: string\)/)
+  assert.match(client, /\/speakers\/label/)
+  assert.match(types, /speaker_labels\?: Record<string,/)
+  assert.match(theme, /\.transcript-speaker-name-button \{/)
+  assert.match(theme, /\.transcript-speaker-name-error \{/)
+  assert.doesNotMatch(
+    page.slice(page.indexOf('async function commitSpeakerName'), page.indexOf('const identityReviewSegmentId')),
+    /error\.value|showToast/,
+  )
+})
